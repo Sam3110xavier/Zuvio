@@ -70,7 +70,11 @@ object TmdbMetadataService {
             ?: return emptyList()
         val tmdbId = TmdbService.ensureTmdbId(meta.id, mediaType, meta.imdbId)
             ?: fallbackItemId?.let { TmdbService.ensureTmdbId(it, mediaType, meta.imdbId) }
-            ?: return emptyList()
+        if (tmdbId == null) {
+            log.w { "Cannot load TMDB recommendations: no TMDB ID resolved for ${meta.id} (type=$mediaType, fallback=$fallbackItemId)" }
+            return emptyList()
+        }
+        log.d { "Loading TMDB recommendations for id=$tmdbId type=$mediaType language=${settings.language}" }
         return fetchMoreLikeThis(
             tmdbId = tmdbId.toIntOrNull() ?: return emptyList(),
             mediaType = mediaType,
@@ -1324,7 +1328,12 @@ object TmdbMetadataService {
                 )
             }
         
-        moreLikeThisCache[cacheKey] = items
+        // Empty responses can be transient (rate limits, partial metadata or provider errors).
+        // Keep only useful results in memory so a later details refresh can retry.
+        if (items.isNotEmpty()) {
+            moreLikeThisCache[cacheKey] = items
+        }
+        log.d { "TMDB recommendations resolved ${items.size} items for $mediaType/$tmdbId" }
         return items
     }
 
