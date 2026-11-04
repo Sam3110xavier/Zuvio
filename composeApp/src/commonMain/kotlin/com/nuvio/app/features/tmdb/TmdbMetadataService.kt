@@ -28,6 +28,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 object TmdbMetadataService {
     private val log = Logger.withTag("TmdbMetadata")
@@ -45,7 +47,10 @@ object TmdbMetadataService {
     private val enrichmentCacheLock = SynchronizedObject()
     private val episodeCache = mutableMapOf<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
     private val moreLikeThisCache = mutableMapOf<String, List<MetaPreview>>()
-    private val recommendationSearchCache = mutableMapOf<String, MetaPreview?>()
+    private val recommendationSearchCache = mutableMapOf<String, MetaPreview>()
+    private val recommendationMisses = mutableMapOf<String, TimeMark>()
+    private fun hasRecentRecommendationMiss(key: String, ttlMs: Long): Boolean =
+        recommendationMisses[key]?.elapsedNow()?.inWholeMilliseconds?.let { it < ttlMs } == true
     private val collectionCache = mutableMapOf<String, Pair<String?, List<MetaPreview>>>()
     private val trailerCache = mutableMapOf<String, List<MetaTrailer>>()
     private val personCache = mutableMapOf<String, PersonDetail>()
@@ -77,7 +82,7 @@ object TmdbMetadataService {
         val tmdbId = resolvedId?.toIntOrNull()
             ?: searchRecommendation(
                 title = meta.name,
-                year = (meta.releaseInfo ?: meta.rawReleaseDate)?.take(4)?.toIntOrNull(),
+                year = meta.releaseInfo?.take(4)?.toIntOrNull(),
                 mediaType = mediaType,
             )?.id
                 ?.substringAfter(':')
@@ -102,7 +107,8 @@ object TmdbMetadataService {
                 .takeIf { it == "movie" || it == "tv" } ?: return@withContext null
             val language = "en-US"
             val cacheKey = normalizedType + ":" + normalizedTitle + ":" + (year ?: 0) + ":" + language
-            if (recommendationSearchCache.containsKey(cacheKey)) return@withContext recommendationSearchCache[cacheKey]
+            recommendationSearchCache[cacheKey]?.let { return@withContext it }
+            if (hasRecentRecommendationMiss(cacheKey, 5 * 60 * 1000L)) return@withContext null
             val query = linkedMapOf("query" to title, "language" to language)
             year?.let { query[if (normalizedType == "movie") "year" else "first_air_date_year"] = it.toString() }
             val response = fetch<TmdbTitleSearchResponse>(endpoint = "search/" + normalizedType, query = query)
@@ -142,7 +148,11 @@ object TmdbMetadataService {
                     imdbRating = item.voteAverage?.formatRating(),
                 )
             }
-            recommendationSearchCache[cacheKey] = result
+            if (result != null) {
+                recommendationSearchCache[cacheKey] = result
+            } else {
+                recommendationMisses[cacheKey] = TimeSource.Monotonic.markNow()
+            }
             result
         }
 
@@ -1303,6 +1313,7 @@ object TmdbMetadataService {
     ): List<MetaPreview> {
         val cacheKey = "$tmdbId:$mediaType:$language:recommendations"
         moreLikeThisCache[cacheKey]?.let { return it }
+        if (hasRecentRecommendationMiss(cacheKey, 2 * 60 * 1000L)) return emptyList()
 
         val response = fetch<TmdbRecommendationResponse>(
             endpoint = "$mediaType/$tmdbId/recommendations",
@@ -1344,6 +1355,8 @@ object TmdbMetadataService {
         // Keep only useful results in memory so a later details refresh can retry.
         if (items.isNotEmpty()) {
             moreLikeThisCache[cacheKey] = items
+        } else {
+            recommendationMisses[cacheKey] = TimeSource.Monotonic.markNow()
         }
         log.d { "TMDB recommendations resolved ${items.size} items for $mediaType/$tmdbId" }
         return items

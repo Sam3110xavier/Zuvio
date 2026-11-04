@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -221,7 +222,8 @@ private fun BoxScope.MoreLikeThisOverlay(
     Surface(
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            .padding(horizontal = 16.dp, bottom = 16.dp)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp)
             .widthIn(max = 980.dp)
             .fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
