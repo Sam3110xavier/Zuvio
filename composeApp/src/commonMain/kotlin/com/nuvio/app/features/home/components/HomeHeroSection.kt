@@ -515,8 +515,9 @@ private fun HeroTitleText(
         color = MaterialTheme.colorScheme.onBackground,
         fontWeight = FontWeight.Black,
         textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+        softWrap = true,
         maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
+        overflow = TextOverflow.Clip,
     )
 }
 
@@ -546,7 +547,7 @@ private fun HeroContentBlock(
             Box(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
-                    .aspectRatio(2.6f),
+                    .aspectRatio(2.0f),
                 contentAlignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
             ) {
                 AsyncImage(
