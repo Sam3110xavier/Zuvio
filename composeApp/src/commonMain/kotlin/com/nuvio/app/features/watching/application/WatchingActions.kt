@@ -4,6 +4,8 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.LocalLibraryStatus
 import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watched.episodePlaybackId
@@ -27,7 +29,11 @@ object WatchingActions {
 
     suspend fun togglePosterWatched(preview: MetaPreview) {
         if (!preview.type.isSeriesLikeType()) {
+            val wasWatched = WatchedRepository.isWatched(id = preview.id, type = preview.type)
             WatchedRepository.toggleWatched(preview.toWatchedItem(markedAtEpochMs = 0L))
+            if (!wasWatched) {
+                LibraryRepository.setLocalStatusIfSaved(preview.id, preview.type, LocalLibraryStatus.COMPLETED)
+            }
             return
         }
 
@@ -84,6 +90,7 @@ object WatchingActions {
                 type = meta.type,
                 isFullyWatched = true,
             )
+            LibraryRepository.setLocalStatusIfSaved(meta.id, meta.type, LocalLibraryStatus.COMPLETED)
             WatchProgressRepository.clearProgress(
                 videoIds = releasedMainEpisodes.map(meta::episodePlaybackId),
                 parentMetaId = meta.id,
@@ -155,6 +162,9 @@ object WatchingActions {
                 )?.isCompleted == true
             },
         )
+        if (WatchedRepository.isFullyWatchedSeries(meta.id, meta.type)) {
+            LibraryRepository.setLocalStatusIfSaved(meta.id, meta.type, LocalLibraryStatus.COMPLETED)
+        }
     }
 
     fun onProgressEntryUpdated(entry: WatchProgressEntry, syncRemote: Boolean = true) {
@@ -187,6 +197,13 @@ object WatchingActions {
     fun markContinueWatchingWatched(item: ContinueWatchingItem) {
         if (!item.canMarkWatched()) return
         WatchedRepository.markWatched(item.toWatchedItem())
+        if (!item.parentMetaType.isSeriesLikeType()) {
+            LibraryRepository.setLocalStatusIfSaved(
+                item.parentMetaId,
+                item.parentMetaType,
+                LocalLibraryStatus.COMPLETED,
+            )
+        }
         WatchProgressRepository.clearProgress(
             videoId = item.videoId,
             parentMetaId = item.parentMetaId,

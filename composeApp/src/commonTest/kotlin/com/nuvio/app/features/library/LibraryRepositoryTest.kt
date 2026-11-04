@@ -170,6 +170,12 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `legacy rewatching status maps into watching without a separate section`() {
+        assertEquals(LocalLibraryStatus.WATCHING, LocalLibraryStatus.fromStorage("rewatching"))
+        assertFalse(LocalLibraryStatus.entries.any { it.storageKey == "rewatching" })
+    }
+
+    @Test
     fun `local status selection updates membership and groups saved titles into status sections`() {
         val initial = libraryMembershipWithLocal(
             inLocal = true,
@@ -257,7 +263,6 @@ class LibraryRepositoryTest {
                 LocalLibraryStatus.ON_HOLD.sectionKey to false,
                 LocalLibraryStatus.DROPPED.sectionKey to false,
                 LocalLibraryStatus.COMPLETED.sectionKey to false,
-                LocalLibraryStatus.REWATCHING.sectionKey to false,
                 "trakt:watchlist" to false,
             ),
             membership,

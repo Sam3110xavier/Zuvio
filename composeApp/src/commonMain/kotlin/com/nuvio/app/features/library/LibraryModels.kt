@@ -53,8 +53,7 @@ enum class LocalLibraryStatus(val storageKey: String, val title: String) {
     WATCHING("watching", "Watching"),
     ON_HOLD("on_hold", "On Hold"),
     DROPPED("dropped", "Dropped"),
-    COMPLETED("completed", "Completed"),
-    REWATCHING("rewatching", "Rewatching");
+    COMPLETED("completed", "Completed");
 
     val sectionKey: String
         get() = "local:status:$storageKey"
@@ -62,7 +61,7 @@ enum class LocalLibraryStatus(val storageKey: String, val title: String) {
     companion object {
         fun fromStorage(value: String?): LocalLibraryStatus =
             entries.firstOrNull { it.storageKey.equals(value, ignoreCase = true) }
-                ?: PLANNING
+                ?: if (value.equals("rewatching", ignoreCase = true)) WATCHING else PLANNING
     }
 }
 

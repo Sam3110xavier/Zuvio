@@ -115,6 +115,7 @@ import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.LocalLibraryStatus
 import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.rememberLibrarySectionTitleResolver
@@ -170,6 +171,7 @@ import com.nuvio.app.features.streams.PlaybackAvailability
 import com.nuvio.app.features.streams.rememberPlaybackAvailability
 import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamsRepository
+import com.nuvio.app.features.tracking.UnifiedTrackingStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.TrackingProviderId
@@ -2181,11 +2183,19 @@ internal fun MainAppContent(
                     )
                 },
                 onSelectStatus = { status ->
-                    pickerMembership = selectUnifiedTrackingStatus(
+                    val updatedMembership = selectUnifiedTrackingStatus(
                         tabs = pickerTabs,
                         membership = pickerMembership,
                         status = status,
                     )
+                    pickerMembership = if (
+                        status == UnifiedTrackingStatus.COMPLETED &&
+                        pickerItem?.let { LibraryRepository.isLocallySaved(it.id, it.type) } == true
+                    ) {
+                        selectLocalLibraryStatus(updatedMembership, LocalLibraryStatus.COMPLETED)
+                    } else {
+                        updatedMembership
+                    }
                 },
                 onSelectLocalStatus = { status ->
                     pickerMembership = selectLocalLibraryStatus(pickerMembership, status)

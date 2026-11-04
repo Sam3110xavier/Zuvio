@@ -358,6 +358,26 @@ object LibraryRepository {
         pushToServer(snapshot)
     }
 
+    /**
+     * Changes only the local Nuvio Library status for an existing saved item.
+     * Tracking-provider memberships and status writes are deliberately untouched.
+     */
+    fun setLocalStatusIfSaved(id: String, type: String, status: LocalLibraryStatus): Boolean {
+        ensureLoaded()
+        val existing = localState.find(id, type) ?: return false
+        if (existing.localStatus == status.storageKey) return true
+        val snapshot = localState.upsert(existing.copy(localStatus = status.storageKey))
+        persist(snapshot)
+        publish()
+        pushToServer(snapshot)
+        return true
+    }
+
+    fun isLocallySaved(id: String, type: String): Boolean {
+        ensureLoaded()
+        return localState.contains(id, type)
+    }
+
     fun remove(id: String) {
         ensureLoaded()
         val result = localState.removeById(id)

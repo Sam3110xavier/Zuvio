@@ -118,6 +118,7 @@ import com.nuvio.app.features.details.components.TrailerPlayerPopup
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.LocalLibraryStatus
 import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.PendingTrackingMembershipRemoval
 import com.nuvio.app.features.library.TrackingMembershipRemovalConfirmationHost
@@ -140,6 +141,7 @@ import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
 import com.nuvio.app.features.trakt.TraktCommentsSettings
 import com.nuvio.app.features.trakt.TraktConnectionMode
+import com.nuvio.app.features.tracking.UnifiedTrackingStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.toggleTrackingLibraryMembership
@@ -1520,11 +1522,19 @@ fun MetaDetailsScreen(
                                 )
                             },
                             onSelectStatus = { status ->
-                                pickerMembership = selectUnifiedTrackingStatus(
+                                val updatedMembership = selectUnifiedTrackingStatus(
                                     tabs = pickerTabs,
                                     membership = pickerMembership,
                                     status = status,
                                 )
+                                pickerMembership = if (
+                                    status == UnifiedTrackingStatus.COMPLETED &&
+                                    LibraryRepository.isLocallySaved(meta.id, meta.type)
+                                ) {
+                                    selectLocalLibraryStatus(updatedMembership, LocalLibraryStatus.COMPLETED)
+                                } else {
+                                    updatedMembership
+                                }
                             },
                             onSelectLocalStatus = { status ->
                                 pickerMembership = selectLocalLibraryStatus(pickerMembership, status)
