@@ -86,6 +86,29 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `active source exposes only its own membership destinations plus local library`() {
+        val tabs = libraryTabsForActiveSource(
+            listOf(
+                TrackingLibraryTab(
+                    key = "wetrakr:planning",
+                    title = "Planning",
+                    providerId = TrackingProviderId.WETRAKR,
+                    kind = TrackingLibraryTabKind.WATCHLIST,
+                ),
+                TrackingLibraryTab(
+                    key = "wetrakr:waiting",
+                    title = "Waiting",
+                    providerId = TrackingProviderId.WETRAKR,
+                    kind = TrackingLibraryTabKind.STATUS,
+                    isMembershipDestination = false,
+                ),
+            ),
+        )
+        assertEquals(listOf("local", "wetrakr:planning"), tabs.map { it.key })
+        assertFalse(tabs.any { it.key.startsWith("trakt:") })
+    }
+
+    @Test
     fun `library membership always includes local state before Trakt membership`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,

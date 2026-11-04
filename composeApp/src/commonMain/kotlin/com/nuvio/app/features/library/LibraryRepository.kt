@@ -404,10 +404,7 @@ object LibraryRepository {
     }
 
     fun libraryListTabs(item: LibraryItem? = null): List<TrackingLibraryTab> =
-        libraryTabsWithLocal(
-            TrackingProviderRegistry.connectedLibraryProviders()
-                .flatMap { provider -> provider.snapshot().tabs },
-        ).filter { tab ->
+        libraryTabsForActiveSource(activeLibraryProvider()?.snapshot()?.tabs.orEmpty()).filter { tab ->
             item == null || (tab.supportsContentType(item.type) && (!item.isServerItem || tab.key == LOCAL_LIBRARY_LIST_KEY))
         }
 
@@ -429,8 +426,11 @@ object LibraryRepository {
         val inLocal = localState.contains(item.id, item.type)
         val memberships = linkedMapOf<String, Boolean>()
         if (!item.isServerItem) {
-            TrackingProviderRegistry.connectedLibraryProviders().forEach { provider ->
-                memberships += provider.membership(item)
+            activeLibraryProvider()?.let { provider ->
+                val supportedKeys = provider.snapshot().tabs
+                    .filter { it.isMembershipDestination && it.supportsContentType(item.type) }
+                    .mapTo(mutableSetOf(), TrackingLibraryTab::key)
+                memberships += provider.membership(item).filterKeys(supportedKeys::contains)
             }
         }
         return libraryMembershipWithLocal(inLocal = inLocal, providerMembership = memberships)
@@ -616,6 +616,7 @@ object LibraryRepository {
             // Keep provider-supported destinations visible even when a list is empty. The
             // vertical selector should describe provider capabilities, not only populated lists.
             val providerSections = providerSnapshot.tabs
+                .filter { tab -> tab.isMembershipDestination }
                 .map { tab ->
                     sectionsByKey[tab.key] ?: LibrarySection(
                         type = tab.key,
@@ -750,6 +751,9 @@ internal fun localLibraryListTab(): TrackingLibraryTab =
 
 internal fun libraryTabsWithLocal(providerTabs: List<TrackingLibraryTab>): List<TrackingLibraryTab> =
     listOf(localLibraryListTab()) + providerTabs
+
+internal fun libraryTabsForActiveSource(providerTabs: List<TrackingLibraryTab>): List<TrackingLibraryTab> =
+    libraryTabsWithLocal(providerTabs.filter(TrackingLibraryTab::isMembershipDestination))
 
 internal fun libraryMembershipWithLocal(
     inLocal: Boolean,

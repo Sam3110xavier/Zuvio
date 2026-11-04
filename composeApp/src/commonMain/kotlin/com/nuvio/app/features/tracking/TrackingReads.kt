@@ -26,9 +26,16 @@ data class TrackingLibraryTab(
     val privacy: LibraryListPrivacy? = null,
 )
 
+private fun String.normalizedTrackingContentType(): String = when (trim().lowercase()) {
+    "movie", "movies", "film", "films" -> "movie"
+    "series", "tv", "show", "shows" -> "series"
+    "anime-series", "anime-movie" -> "anime"
+    else -> trim().lowercase()
+}
+
 fun TrackingLibraryTab.supportsContentType(contentType: String): Boolean =
     supportedContentTypes == null || supportedContentTypes.any { supported ->
-        supported.equals(contentType, ignoreCase = true)
+        supported.normalizedTrackingContentType() == contentType.normalizedTrackingContentType()
     }
 
 fun TrackingLibraryTab.membershipTitle(): String =
@@ -41,6 +48,7 @@ enum class UnifiedTrackingStatus(val title: String) {
     ON_HOLD("On Hold"),
     DROPPED("Dropped"),
     REWATCHING("Rewatching"),
+    COMPLETED("Completed"),
 }
 
 fun TrackingLibraryTab.unifiedTrackingStatus(): UnifiedTrackingStatus? {
@@ -55,13 +63,14 @@ fun TrackingLibraryTab.unifiedTrackingStatus(): UnifiedTrackingStatus? {
         "watching" in normalized || "current" in normalized -> UnifiedTrackingStatus.WATCHING
         "on hold" in normalized || "hold" in normalized || "paused" in normalized -> UnifiedTrackingStatus.ON_HOLD
         "dropped" in normalized -> UnifiedTrackingStatus.DROPPED
+        "completed" in normalized || "watched" in normalized -> UnifiedTrackingStatus.COMPLETED
         else -> null
     }
 }
 
 fun unifiedTrackingStatuses(tabs: List<TrackingLibraryTab>): List<UnifiedTrackingStatus> {
     val statuses = tabs
-        .filter { it.kind == TrackingLibraryTabKind.STATUS }
+        .filter { it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST }
         .mapNotNullTo(linkedSetOf(), TrackingLibraryTab::unifiedTrackingStatus)
     val hasWatchlistOnlyProvider = tabs
         .filter { it.providerId != null && it.isMembershipDestination }
@@ -89,16 +98,23 @@ fun selectedUnifiedTrackingStatus(
         val statusTabs = providerTabs.filter { it.kind == TrackingLibraryTabKind.STATUS }
         if (hasStatusProvider && statusTabs.isEmpty()) return@mapNotNull null
         val candidates = if (statusTabs.isNotEmpty()) {
-            statusTabs
+            providerTabs.filter {
+                it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST
+            }
         } else {
             providerTabs.filter { it.kind == TrackingLibraryTabKind.WATCHLIST }
                 .takeIf { it.size == 1 }
                 .orEmpty()
         }
-        candidates
-            .filter { membership[it.key] == true }
-            .mapNotNullTo(linkedSetOf(), TrackingLibraryTab::unifiedTrackingStatus)
-            .singleOrNull()
+        val selected = candidates.filter { membership[it.key] == true }
+        val mappedStatuses = selected.mapNotNullTo(linkedSetOf(), TrackingLibraryTab::unifiedTrackingStatus)
+        when {
+            mappedStatuses.size == 1 -> mappedStatuses.single()
+            mappedStatuses.isEmpty() && candidates.size == 1 &&
+                candidates.single().kind == TrackingLibraryTabKind.WATCHLIST && selected.isNotEmpty() ->
+                UnifiedTrackingStatus.PLAN_TO_WATCH
+            else -> null
+        }
     }.distinct()
     return selectedStatuses.singleOrNull()
 }
@@ -119,8 +135,11 @@ fun selectUnifiedTrackingStatus(
                 updated[nativeTabs.single().key] = true
                 return@forEach
             }
-            val statusTabs = nativeTabs.filter { it.kind == TrackingLibraryTabKind.STATUS }
-            // Clear stale statuses even when this provider does not support the selected unified status.
+            val statusTabs = nativeTabs.filter {
+                it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST
+            }
+            // Select only a native destination that represents this status; clear previous
+            // provider statuses so the title cannot remain in multiple library sections.
             statusTabs.forEach { tab -> updated[tab.key] = tab.unifiedTrackingStatus() == status }
         }
     return updated

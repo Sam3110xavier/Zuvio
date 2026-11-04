@@ -75,6 +75,47 @@ class TrackingReadsTest {
     }
 
     @Test
+    fun `WeTrakr exposes only its supported status vocabulary including planning and watched`() {
+        val tabs = listOf(
+            tab("wetrakr:planning", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.WATCHLIST, "wetrakr"),
+            tab("wetrakr:watching", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS, "wetrakr"),
+            tab("wetrakr:watched", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS, "wetrakr"),
+            tab("wetrakr:waiting", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS, "wetrakr", isMembershipDestination = false),
+            tab("wetrakr:paused", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS, "wetrakr"),
+            tab("wetrakr:dropped", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS, "wetrakr"),
+        )
+        assertEquals(
+            listOf(
+                UnifiedTrackingStatus.PLAN_TO_WATCH,
+                UnifiedTrackingStatus.WATCHING,
+                UnifiedTrackingStatus.ON_HOLD,
+                UnifiedTrackingStatus.DROPPED,
+                UnifiedTrackingStatus.COMPLETED,
+            ),
+            unifiedTrackingStatuses(tabs),
+        )
+        val planning = selectUnifiedTrackingStatus(tabs, emptyMap(), UnifiedTrackingStatus.PLAN_TO_WATCH)
+        assertTrue(planning["wetrakr:planning"] == true)
+        assertFalse(planning["wetrakr:watching"] == true)
+        assertEquals(UnifiedTrackingStatus.PLAN_TO_WATCH, selectedUnifiedTrackingStatus(tabs, planning))
+        val watched = selectUnifiedTrackingStatus(tabs, planning, UnifiedTrackingStatus.COMPLETED)
+        assertTrue(watched["wetrakr:watched"] == true)
+        assertFalse(watched["wetrakr:planning"] == true)
+    }
+
+    @Test
+    fun `media type aliases are normalized for provider support`() {
+        val movieTab = tab("movie", TrackingProviderId.WETRAKR, TrackingLibraryTabKind.STATUS)
+            .copy(supportedContentTypes = setOf("movie"))
+        val animeTab = tab("anime", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS)
+            .copy(supportedContentTypes = setOf("anime"))
+        assertTrue(movieTab.supportsContentType("film"))
+        assertTrue(movieTab.supportsContentType("Movies"))
+        assertTrue(animeTab.supportsContentType("anime-series"))
+        assertFalse(movieTab.supportsContentType("series"))
+    }
+
+    @Test
     fun `selecting a status clears stale statuses from providers without that status`() {
         val tabs = listOf(
             tab("simkl:watching", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
