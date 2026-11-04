@@ -21,7 +21,9 @@ internal object ReleaseSelector {
             )
         }
         .filter { candidate -> channel == UpdateChannel.BETA || !candidate.prerelease }
-        .sortedByDescending(ReleaseCandidate::version)
+        // GitHub's releases endpoint is already ordered newest-created first. Preserve that
+        // order: legacy build-like patch numbers (for example 0.6.603) must not outrank
+        // a newer correctly versioned release (for example 0.6.7).
         .map(ReleaseCandidate::release)
         .toList()
 

@@ -35,6 +35,18 @@ class ReleaseSelectorTest {
     }
 
     @Test
+    fun `beta selection follows GitHub release chronology instead of malformed patch numbers`() {
+        val releases = listOf(
+            release("0.6.7-beta"),
+            release("0.6.603-beta")
+        )
+
+        val selected = ReleaseSelector.eligibleReleases(releases, UpdateChannel.BETA)
+
+        assertEquals(listOf("0.6.7-beta", "0.6.603-beta"), selected.map { it.tagName })
+    }
+
+    @Test
     fun `legacy release title marks beta without tag suffix`() {
         val releases = listOf(
             release(tag = "0.7.18", name = "Beta 0.7.18 Hotfix"),
