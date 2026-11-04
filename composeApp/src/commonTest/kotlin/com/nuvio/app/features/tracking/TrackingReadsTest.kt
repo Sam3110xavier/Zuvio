@@ -41,7 +41,6 @@ class TrackingReadsTest {
         assertTrue(updated["simkl:dropped"] == true)
         assertFalse(updated["simkl:watching"] == true)
         assertFalse(updated["simkl:completed"] == true)
-        assertFalse(updated["simkl:completed"] == true)
         assertTrue(updated["anilist:dropped"] == true)
         assertFalse(updated["anilist:completed"] == true)
         assertTrue(updated["mdblist:watchlist"] == true)

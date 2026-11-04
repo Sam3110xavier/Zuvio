@@ -331,6 +331,10 @@ internal class LibraryLocalState {
         itemsById.values.firstOrNull { it.id == id }
     }
 
+    fun find(id: String, type: String): LibraryItem? = synchronized(lock) {
+        itemsById[libraryItemKey(id, type)]
+    }
+
     fun installPushJob(
         snapshot: LibraryLocalSnapshot,
         job: Job,

@@ -11,7 +11,6 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 private val librarySectionTitleResources: Map<String, StringResource> = mapOf(
-    "local:status:planning" to Res.string.library_status_plan_to_watch,
     "local:status:watching" to Res.string.library_status_watching,
     "local:status:on_hold" to Res.string.library_status_on_hold,
     "local:status:completed" to Res.string.library_status_completed,

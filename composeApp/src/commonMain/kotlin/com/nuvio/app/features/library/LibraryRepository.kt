@@ -423,7 +423,7 @@ object LibraryRepository {
 
     suspend fun getMembershipSnapshot(item: LibraryItem): Map<String, Boolean> {
         ensureLoaded()
-        val savedLocalItem = localState.findById(item.id)?.takeIf { it.type == item.type }
+        val savedLocalItem = localState.find(item.id, item.type)
         val inLocal = savedLocalItem != null
         val memberships = linkedMapOf<String, Boolean>()
         if (!item.isServerItem) {
@@ -501,7 +501,7 @@ object LibraryRepository {
         }
         if (updateLocal) {
             if (localDesired) {
-                val existingLocalItem = localState.findById(item.id)?.takeIf { it.type == item.type }
+                val existingLocalItem = localState.find(item.id, item.type)
                 val desiredLocalStatus = selectedLocalLibraryStatus(desiredMembership)?.storageKey
                     ?: existingLocalItem?.localStatus
                     ?: item.localStatus
