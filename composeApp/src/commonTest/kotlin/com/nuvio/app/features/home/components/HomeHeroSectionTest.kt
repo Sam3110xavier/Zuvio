@@ -88,6 +88,33 @@ class HomeHeroSectionTest {
     }
 
     @Test
+    fun `logo URL duplicated from hero artwork is not treated as a title logo`() {
+        val item = MetaPreview(
+            id = "same-artwork",
+            type = "series",
+            name = "Actual title",
+            banner = "https://example.com/banner.jpg",
+            logo = "https://example.com/banner.jpg",
+        )
+
+        assertEquals(false, isDistinctHomeHeroLogo(item, requireNotNull(item.logo)))
+    }
+
+    @Test
+    fun `separate logo URL remains eligible regardless of poster textless flag`() {
+        val item = MetaPreview(
+            id = "separate-logo",
+            type = "series",
+            name = "Actual title",
+            banner = "https://example.com/banner.jpg",
+            logo = "https://example.com/logo.png",
+            posterTextless = false,
+        )
+
+        assertEquals(true, isDistinctHomeHeroLogo(item, requireNotNull(item.logo)))
+    }
+
+    @Test
     fun `logo validation rejects portrait and landscape poster aspect ratios`() {
         assertEquals(true, isValidHomeHeroLogo(widthPx = 1200, heightPx = 400))
         assertEquals(false, isValidHomeHeroLogo(widthPx = 1600, heightPx = 900))
