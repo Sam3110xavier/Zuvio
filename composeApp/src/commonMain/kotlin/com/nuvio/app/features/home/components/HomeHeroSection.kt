@@ -72,7 +72,6 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
 private const val HERO_BACKGROUND_PARALLAX = 0.055f
-private const val HERO_BACKGROUND_SCALE = 1.14f
 private const val HERO_CONTENT_PARALLAX = 0.18f
 private const val HERO_SCROLL_PARALLAX = 0.3f
 private const val HERO_SCROLL_DOWN_SCALE_MULTIPLIER = 0.0001f
@@ -111,34 +110,41 @@ internal enum class HomeHeroArtworkAnchor {
 internal data class HomeHeroArtworkSelection(
     val imageUrl: String,
     val anchor: HomeHeroArtworkAnchor,
+    val showTitleOverlay: Boolean,
 )
 
 internal fun homeHeroOrientation(windowWidthPx: Int, windowHeightPx: Int): HomeHeroOrientation =
     if (windowWidthPx > windowHeightPx) HomeHeroOrientation.Landscape else HomeHeroOrientation.Portrait
 
-internal fun isHomeHeroEligible(item: MetaPreview): Boolean =
-    !item.poster.isNullOrBlank() || !item.landscapePoster.isNullOrBlank()
+internal fun isHomeHeroEligible(
+    item: MetaPreview,
+    orientation: HomeHeroOrientation,
+): Boolean = selectHomeHeroArtwork(item, orientation) != null
 
 internal fun selectHomeHeroArtwork(
     item: MetaPreview,
     orientation: HomeHeroOrientation,
 ): HomeHeroArtworkSelection? {
-    val candidates: List<Pair<String?, HomeHeroArtworkAnchor>> = when (orientation) {
-        HomeHeroOrientation.Portrait -> listOf(
-            item.poster to HomeHeroArtworkAnchor.Center,
-            item.landscapePoster to HomeHeroArtworkAnchor.Start,
-            item.banner to HomeHeroArtworkAnchor.Center,
-        )
+    // Poster artwork normally contains its own title. Only show a title overlay when
+    // the addon explicitly marks the poster as textless.
+    val candidates = when (orientation) {
         HomeHeroOrientation.Landscape -> listOf(
-            item.landscapePoster to HomeHeroArtworkAnchor.Center,
-            item.banner to HomeHeroArtworkAnchor.Center,
-            item.poster to HomeHeroArtworkAnchor.Bottom,
+            Triple(item.landscapePoster, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.banner, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.background, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.poster, HomeHeroArtworkAnchor.Center, item.posterTextless),
+        )
+        HomeHeroOrientation.Portrait -> listOf(
+            Triple(item.banner, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.background, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.poster, HomeHeroArtworkAnchor.Center, item.posterTextless),
         )
     }
     val selected = candidates.firstOrNull { !it.first.isNullOrBlank() } ?: return null
     return HomeHeroArtworkSelection(
         imageUrl = requireNotNull(selected.first),
         anchor = selected.second,
+        showTitleOverlay = selected.third,
     )
 }
 
@@ -165,11 +171,12 @@ fun HomeHeroSection(
     showMdbListRatings: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    val heroItems = remember(items) { items.filter(::isHomeHeroEligible) }
-    if (heroItems.isEmpty()) return
-
     val windowSize = LocalWindowInfo.current.containerSize
     val orientation = homeHeroOrientation(windowSize.width, windowSize.height)
+    val heroItems = remember(items, orientation) {
+        items.filter { isHomeHeroEligible(it, orientation) }
+    }
+    if (heroItems.isEmpty()) return
     var selectedItemKey by remember { mutableStateOf<String?>(null) }
     val selectedItemIndex = homeHeroItemIndexForKey(heroItems, selectedItemKey)
     val pagerKeys = remember(heroItems) { heroItems.map { it.stableKey() } }
@@ -304,8 +311,8 @@ fun HomeHeroSection(
                                         alpha = layer.visibility
                                         translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
                                         translationY = heroBackgroundScrollTranslationY(offset)
-                                        scaleX = HERO_BACKGROUND_SCALE * scrollScale
-                                        scaleY = HERO_BACKGROUND_SCALE * scrollScale
+                                        scaleX = scrollScale
+                                        scaleY = scrollScale
                                     },
                                 alignment = when (artwork.anchor) {
                                     HomeHeroArtworkAnchor.Center ->
@@ -380,6 +387,7 @@ fun HomeHeroSection(
                                 ) {
                                     HeroContentBlock(
                                         item = item,
+                                        showTitleOverlay = selectHomeHeroArtwork(item, orientation)?.showTitleOverlay ?: false,
                                         layout = layout,
                                         showImdbRating = showImdbRating,
                                         showMdbListRatings = showMdbListRatings,
@@ -515,6 +523,7 @@ private fun HeroTitleText(
 @Composable
 private fun HeroContentBlock(
     item: MetaPreview,
+    showTitleOverlay: Boolean,
     layout: HomeHeroLayout,
     showImdbRating: Boolean,
     showMdbListRatings: Boolean,
@@ -531,7 +540,9 @@ private fun HeroContentBlock(
             .animateContentSize(),
         horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
     ) {
-        if (logoUrl != null) {
+        if (!showTitleOverlay) {
+            // Embedded poster titles are already part of the artwork.
+        } else if (logoUrl != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)

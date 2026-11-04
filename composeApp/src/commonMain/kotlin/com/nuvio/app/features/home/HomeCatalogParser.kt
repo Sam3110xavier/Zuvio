@@ -49,7 +49,7 @@ internal object HomeCatalogParser {
                     type = type,
                     name = name,
                     poster = meta.string("poster"),
-                    banner = meta.string("banner") ?: meta.string("background"),
+                    banner = meta.string("banner"),
                     logo = meta.string("logo"),
                     posterShape = meta.string("posterShape").toPosterShape(),
                     description = meta.string("description"),
@@ -62,6 +62,8 @@ internal object HomeCatalogParser {
                     landscapePoster = landscapePoster,
                     runtime = meta.string("runtime")?.trim()?.takeIf { it.isNotBlank() },
                     status = meta.string("status")?.trim()?.takeIf { it.isNotBlank() },
+                    background = meta.string("background"),
+                    posterTextless = meta.string("posterTextless")?.toBooleanStrictOrNull() ?: false,
                 )
                 if (seenKeys.add(item.stableKey())) {
                     add(item)

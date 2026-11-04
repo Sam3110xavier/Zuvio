@@ -27,6 +27,10 @@ data class MetaPreview(
     val ageRating: String? = null,
     val language: String? = null,
     val externalRatings: List<MetaExternalRating> = emptyList(),
+    /** Dedicated backdrop URL; kept separate from banner for deterministic hero priority. */
+    val background: String? = null,
+    /** Optional addon extension for posters known to contain no embedded title text. */
+    val posterTextless: Boolean = false,
 )
 
 fun MetaPreview.stableKey(): String = "$type:$id"

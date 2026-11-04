@@ -25,90 +25,50 @@ class HomeHeroSectionTest {
     }
 
     @Test
-    fun `portrait orientation prefers portrait poster`() {
-        val item = MetaPreview(
-            id = "portrait",
-            type = "movie",
-            name = "Portrait",
-            poster = "poster.jpg",
-            landscapePoster = "landscape.jpg",
-            banner = "banner.jpg",
-        )
-
+    fun `portrait priority is banner then backdrop then poster`() {
+        val item = MetaPreview(id = "portrait", type = "movie", name = "Portrait", poster = "poster.jpg", banner = "banner.jpg", background = "backdrop.jpg")
         val selection = selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)
-
-        assertEquals("poster.jpg", selection?.imageUrl)
-        assertEquals(HomeHeroArtworkAnchor.Center, selection?.anchor)
+        assertEquals("banner.jpg", selection?.imageUrl)
+        assertEquals(true, selection?.showTitleOverlay)
     }
 
     @Test
-    fun `portrait orientation uses landscape poster and preserves title side crop`() {
-        val item = MetaPreview(
-            id = "landscape",
-            type = "movie",
-            name = "Landscape",
-            landscapePoster = "landscape.jpg",
-            banner = "banner.jpg",
-        )
-
-        val selection = selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)
-
-        assertEquals("landscape.jpg", selection?.imageUrl)
-        assertEquals(HomeHeroArtworkAnchor.Start, selection?.anchor)
+    fun `portrait uses backdrop before poster and poster has no overlay by default`() {
+        val item = MetaPreview(id = "portrait", type = "movie", name = "Portrait", poster = "poster.jpg", background = "backdrop.jpg")
+        val backdrop = selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)
+        assertEquals("backdrop.jpg", backdrop?.imageUrl)
+        assertEquals(true, backdrop?.showTitleOverlay)
+        val poster = selectHomeHeroArtwork(item.copy(background = null), HomeHeroOrientation.Portrait)
+        assertEquals("poster.jpg", poster?.imageUrl)
+        assertEquals(false, poster?.showTitleOverlay)
     }
 
     @Test
-    fun `landscape orientation prefers landscape poster then banner then portrait poster`() {
-        val landscapeItem = MetaPreview(
-            id = "landscape",
-            type = "movie",
-            name = "Landscape",
-            poster = "poster.jpg",
-            landscapePoster = "landscape.jpg",
-            banner = "banner.jpg",
-        )
-        val bannerItem = landscapeItem.copy(landscapePoster = null)
-        val posterItem = bannerItem.copy(banner = null)
-
-        assertEquals(
-            "landscape.jpg",
-            selectHomeHeroArtwork(landscapeItem, HomeHeroOrientation.Landscape)?.imageUrl,
-        )
-        assertEquals(
-            "banner.jpg",
-            selectHomeHeroArtwork(bannerItem, HomeHeroOrientation.Landscape)?.imageUrl,
-        )
-        val portraitFallback = selectHomeHeroArtwork(posterItem, HomeHeroOrientation.Landscape)
-        assertEquals("poster.jpg", portraitFallback?.imageUrl)
-        assertEquals(HomeHeroArtworkAnchor.Bottom, portraitFallback?.anchor)
+    fun `textless poster opts into logo or text overlay`() {
+        val item = MetaPreview(id = "textless", type = "movie", name = "Textless", poster = "poster.jpg", posterTextless = true)
+        assertEquals(true, selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)?.showTitleOverlay)
     }
 
     @Test
-    fun `portrait selection falls back to banner when called without poster candidates`() {
-        val item = MetaPreview(
-            id = "banner",
-            type = "movie",
-            name = "Banner",
-            banner = "banner.jpg",
-        )
-
-        assertEquals(
-            "banner.jpg",
-            selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)?.imageUrl,
-        )
-        assertEquals(false, isHomeHeroEligible(item))
+    fun `landscape priority is landscape poster then banner then backdrop then poster`() {
+        val all = MetaPreview(id = "landscape", type = "movie", name = "Landscape", poster = "poster.jpg", landscapePoster = "landscape.jpg", banner = "banner.jpg", background = "backdrop.jpg")
+        assertEquals("landscape.jpg", selectHomeHeroArtwork(all, HomeHeroOrientation.Landscape)?.imageUrl)
+        assertEquals("banner.jpg", selectHomeHeroArtwork(all.copy(landscapePoster = null), HomeHeroOrientation.Landscape)?.imageUrl)
+        assertEquals("backdrop.jpg", selectHomeHeroArtwork(all.copy(landscapePoster = null, banner = null), HomeHeroOrientation.Landscape)?.imageUrl)
+        val poster = selectHomeHeroArtwork(all.copy(landscapePoster = null, banner = null, background = null), HomeHeroOrientation.Landscape)
+        assertEquals("poster.jpg", poster?.imageUrl)
+        assertEquals(false, poster?.showTitleOverlay)
     }
 
     @Test
-    fun `hero filters out entries without either poster variant`() {
-        assertEquals(
-            false,
-            isHomeHeroEligible(MetaPreview(id = "banner", type = "movie", name = "Banner", banner = "banner.jpg")),
-        )
-        assertEquals(
-            true,
-            isHomeHeroEligible(MetaPreview(id = "landscape", type = "movie", name = "Landscape", landscapePoster = "landscape.jpg")),
-        )
+    fun `hero eligibility follows the active orientation`() {
+        val banner = MetaPreview(id = "banner", type = "movie", name = "Banner", banner = "banner.jpg")
+        val backdrop = MetaPreview(id = "backdrop", type = "movie", name = "Backdrop", background = "backdrop.jpg")
+        val wideOnly = MetaPreview(id = "wide", type = "movie", name = "Wide", landscapePoster = "wide.jpg")
+        assertEquals(true, isHomeHeroEligible(banner, HomeHeroOrientation.Portrait))
+        assertEquals(true, isHomeHeroEligible(backdrop, HomeHeroOrientation.Portrait))
+        assertEquals(false, isHomeHeroEligible(wideOnly, HomeHeroOrientation.Portrait))
+        assertEquals(false, isHomeHeroEligible(MetaPreview(id = "empty", type = "movie", name = "Empty"), HomeHeroOrientation.Portrait))
     }
 
     @Test
