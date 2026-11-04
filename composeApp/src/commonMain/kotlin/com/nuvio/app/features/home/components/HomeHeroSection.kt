@@ -159,6 +159,16 @@ internal fun isValidHomeHeroLogo(widthPx: Int, heightPx: Int): Boolean =
         heightPx > 0 &&
         widthPx.toFloat() / heightPx.toFloat() >= HOME_HERO_LOGO_MIN_ASPECT_RATIO
 
+internal fun isDistinctHomeHeroLogo(item: MetaPreview, logoUrl: String): Boolean {
+    val candidate = logoUrl.trim()
+    return candidate.isNotEmpty() && listOfNotNull(
+        item.poster,
+        item.banner,
+        item.background,
+        item.landscapePoster,
+    ).none { artworkUrl -> artworkUrl.trim() == candidate }
+}
+
 @Composable
 fun HomeHeroSection(
     items: List<MetaPreview>,
@@ -543,7 +553,7 @@ private fun HeroContentBlock(
     ) {
         if (!showTitleOverlay) {
             // Embedded poster titles are already part of the artwork.
-        } else if (logoUrl != null && item.posterTextless) {
+        } else if (logoUrl != null && isDistinctHomeHeroLogo(item, logoUrl)) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
