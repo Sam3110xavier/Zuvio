@@ -201,9 +201,7 @@ object CustomPosterUrlResolver {
                     return true
                 }
             }
-            // Optional pipe expressions resolve to an empty segment when none of
-            // their supported IDs are available, just like optional single tokens.
-            return token.optional
+            return false
         }
         val value = lookup(token.keys[0], ids, rawId, rawIdType, typedId, type, shape)
         if (value == null) {

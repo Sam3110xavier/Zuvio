@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -42,7 +41,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -370,9 +368,6 @@ fun HomeHeroSection(
     }
 }
 
-internal fun isValidHomeHeroLogoAspectRatio(width: Float, height: Float): Boolean =
-    width.isFinite() && height.isFinite() && width > 0f && height > 0f && width / height >= 2.3f
-
 private data class HeroPageLayer(
     val itemIndex: Int,
     val visibility: Float,
@@ -428,9 +423,6 @@ private fun HeroContentBlock(
     var logoLoadError by remember(item.type, item.id, item.logo) {
         mutableStateOf(false)
     }
-    var logoAspectRatioValid by remember(item.type, item.id, item.logo) {
-        mutableStateOf<Boolean?>(null)
-    }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
 
     Column(
@@ -443,28 +435,17 @@ private fun HeroContentBlock(
             AsyncImage(
                 model = logoUrl,
                 contentDescription = item.name,
-                modifier = if (logoAspectRatioValid == true) {
-                    Modifier
-                        .fillMaxWidth(layout.logoWidthFraction)
-                        .aspectRatio(2.6f)
-                        .clickable(enabled = onItemClick != null) {
-                            onItemClick?.invoke(item)
-                        }
-                } else {
-                    // Load and inspect the supplied logo without briefly rendering a
-                    // portrait poster in the wide hero-logo slot.
-                    Modifier.size(1.dp).alpha(0f)
-                },
+                modifier = Modifier
+                    .fillMaxWidth(layout.logoWidthFraction)
+                    .aspectRatio(2.6f)
+                    .clickable(enabled = onItemClick != null) {
+                        onItemClick?.invoke(item)
+                    },
                 alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
-                onSuccess = { state ->
-                    val imageSize = state.painter.intrinsicSize
-                    logoAspectRatioValid = isValidHomeHeroLogoAspectRatio(imageSize.width, imageSize.height)
-                },
                 onError = { logoLoadError = true },
             )
-        }
-        if (logoUrl == null || logoLoadError || logoAspectRatioValid != true) {
+        } else {
             Text(
                 text = item.name,
                 modifier = Modifier

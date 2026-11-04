@@ -7,15 +7,6 @@ import kotlin.test.assertEquals
 class HomeHeroSectionTest {
 
     @Test
-    fun `hero rejects logos too narrow for the wide title slot`() {
-        assertEquals(true, isValidHomeHeroLogoAspectRatio(1200f, 400f))
-        assertEquals(false, isValidHomeHeroLogoAspectRatio(1200f, 550f))
-        assertEquals(false, isValidHomeHeroLogoAspectRatio(1200f, 800f))
-        assertEquals(false, isValidHomeHeroLogoAspectRatio(0f, 400f))
-        assertEquals(false, isValidHomeHeroLogoAspectRatio(Float.NaN, 400f))
-    }
-
-    @Test
     fun `first and last indicators select adjacent pages across the loop`() {
         assertEquals(79, heroPageForItem(currentPage = 80, itemIndex = 7, itemCount = 8))
         assertEquals(88, heroPageForItem(currentPage = 87, itemIndex = 0, itemCount = 8))
