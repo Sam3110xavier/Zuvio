@@ -1,6 +1,7 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -473,7 +474,7 @@ private fun GeminiApiKeySettingsRow(
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Button(onClick = { onSave(draft.trim()) }, enabled = draft.trim() != apiKey) {
-                Text(stringResource(Res.string.action_save))
+                Text("Save")
             }
         }
     }
