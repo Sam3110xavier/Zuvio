@@ -543,7 +543,7 @@ private fun HeroContentBlock(
     ) {
         if (!showTitleOverlay) {
             // Embedded poster titles are already part of the artwork.
-        } else if (logoUrl != null) {
+        } else if (logoUrl != null && item.posterTextless) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
