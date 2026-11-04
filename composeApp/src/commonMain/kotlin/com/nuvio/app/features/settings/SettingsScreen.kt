@@ -66,7 +66,10 @@ import com.nuvio.app.features.addons.hasPendingEnabledManifests
 import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.home.HomeAddonLayoutItem
+import com.nuvio.app.features.home.HomeAddonRowOrderPolicy
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.HomeCatalogSettingsUiState
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.mdblist.MdbListSettings
@@ -113,6 +116,7 @@ private fun watchPartyRow(onClick: () -> Unit): (() -> Unit)? {
 private fun SettingsPage.isEnabledByPolicy(): Boolean =
     when (this) {
         SettingsPage.SupportersContributors -> AppFeaturePolicy.supportersContributorsPageEnabled
+        SettingsPage.CloudStream, SettingsPage.Telegram -> AppFeaturePolicy.pluginsEnabled
         SettingsPage.PlaybackP2p -> P2pSettingsRepository.isVisible
         SettingsPage.PlaybackBuffer -> !isIos
         else -> true
@@ -145,6 +149,7 @@ fun SettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
+    onCloudStreamClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -326,6 +331,11 @@ fun SettingsScreen(
         } else {
             onPluginsClick
         }
+        val openCloudStream = if (onNavigatePage != null) {
+            { openPage(SettingsPage.CloudStream) }
+        } else {
+            onCloudStreamClick
+        }
         val openAccount = if (onNavigatePage != null) {
             { openPage(SettingsPage.Account) }
         } else {
@@ -410,8 +420,11 @@ fun SettingsScreen(
                         homescreenShowCatalogType = homescreenSettingsUiState.showCatalogType,
                         homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                         homescreenItems = homescreenSettingsUiState.items,
+                        homescreenAddonGroups = homescreenSettingsUiState.addonGroups,
+                        homescreenAddonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
                         homescreenCatalogLoading = addonManifestsLoading,
                         homescreenCatalogErrorMessage = addonManifestErrorMessage,
+                        homescreenSettingsUiState = homescreenSettingsUiState,
                         metaScreenSettingsUiState = metaScreenSettingsUiState,
                         continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
                         posterCardStyleUiState = posterCardStyleUiState,
@@ -454,8 +467,11 @@ fun SettingsScreen(
                         homescreenShowCatalogType = homescreenSettingsUiState.showCatalogType,
                         homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                         homescreenItems = homescreenSettingsUiState.items,
+                        homescreenAddonGroups = homescreenSettingsUiState.addonGroups,
+                        homescreenAddonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
                         homescreenCatalogLoading = addonManifestsLoading,
                         homescreenCatalogErrorMessage = addonManifestErrorMessage,
+                        homescreenSettingsUiState = homescreenSettingsUiState,
                         metaScreenSettingsUiState = metaScreenSettingsUiState,
                         continueWatchingPreferencesUiState = continueWatchingPreferencesUiState,
                         posterCardStyleUiState = posterCardStyleUiState,
@@ -465,6 +481,7 @@ fun SettingsScreen(
                         onContinueWatchingClick = openContinueWatching,
                         onAddonsClick = openAddons,
                         onPluginsClick = openPlugins,
+                        onCloudStreamClick = openCloudStream,
                         onAccountClick = openAccount,
                         onSupportersContributorsClick = openSupportersContributors,
                         onLicensesAttributionsClick = openLicensesAttributions,
@@ -510,8 +527,11 @@ private fun MobileSettingsScreen(
     homescreenShowCatalogType: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
+    homescreenAddonGroups: List<HomeAddonLayoutItem>,
+    homescreenAddonRowOrderPolicy: HomeAddonRowOrderPolicy,
     homescreenCatalogLoading: Boolean,
     homescreenCatalogErrorMessage: String?,
+    homescreenSettingsUiState: HomeCatalogSettingsUiState,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
@@ -521,6 +541,7 @@ private fun MobileSettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
+    onCloudStreamClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -568,6 +589,11 @@ private fun MobileSettingsScreen(
                     SettingsPage.Plugins -> {
                         if (AppFeaturePolicy.pluginsEnabled) {
                             onPluginsClick()
+                        }
+                    }
+                    SettingsPage.CloudStream -> {
+                        if (AppFeaturePolicy.pluginsEnabled) {
+                            onCloudStreamClick()
                         }
                     }
                     SettingsPage.Homescreen -> onHomescreenClick()
@@ -726,8 +752,10 @@ private fun MobileSettingsScreen(
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = false,
                     showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
+                    showCloudStreamEntry = AppFeaturePolicy.pluginsEnabled,
                     onAddonsClick = onAddonsClick,
                     onPluginsClick = onPluginsClick,
+                    onCloudStreamClick = onCloudStreamClick,
                     onMediaServersClick = { onPageChange(SettingsPage.MediaServers) },
                 )
                 SettingsPage.Addons -> addonsSettingsContent()
@@ -740,14 +768,24 @@ private fun MobileSettingsScreen(
                     onBack = onNavigateBack,
                 )
                 SettingsPage.Plugins -> if (AppFeaturePolicy.pluginsEnabled) pluginsSettingsContent() else addonsSettingsContent()
+                SettingsPage.CloudStream -> if (
+                    AppFeaturePolicy.pluginsEnabled
+                ) cloudStreamSettingsContent() else addonsSettingsContent()
                 SettingsPage.Homescreen -> homescreenSettingsContent(
                     isTablet = false,
                     heroEnabled = homescreenHeroEnabled,
                     showCatalogType = homescreenShowCatalogType,
                     hideUnreleasedContent = homescreenHideUnreleasedContent,
                     items = homescreenItems,
+                    addonGroups = homescreenAddonGroups,
+                    addonRowOrderPolicy = homescreenAddonRowOrderPolicy,
                     isCatalogLoading = homescreenCatalogLoading,
                     catalogErrorMessage = homescreenCatalogErrorMessage,
+                    onMergedRowsClick = { onPageChange(SettingsPage.MergedRows) },
+                )
+                SettingsPage.MergedRows -> mergedHomeRowsSettingsContent(
+                    isTablet = false,
+                    uiState = homescreenSettingsUiState,
                 )
                 SettingsPage.MetaScreen -> metaScreenSettingsContent(
                     isTablet = false,
@@ -758,6 +796,9 @@ private fun MobileSettingsScreen(
                     onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                     onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                     onDebridClick = { onPageChange(SettingsPage.Debrid) },
+                    onTelegramClick = if (AppFeaturePolicy.pluginsEnabled) {
+                        { onPageChange(SettingsPage.Telegram) }
+                    } else null,
                 )
                 SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                     isTablet = false,
@@ -771,6 +812,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = debridSettings,
                 )
+                SettingsPage.Telegram -> telegramSettingsContent(isTablet = false)
                 SettingsPage.TraktAuthentication -> trackingSettingsContent(
                     isTablet = false,
                     traktUiState = traktAuthUiState,
@@ -858,8 +900,11 @@ private fun TabletSettingsScreen(
     homescreenShowCatalogType: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
+    homescreenAddonGroups: List<HomeAddonLayoutItem>,
+    homescreenAddonRowOrderPolicy: HomeAddonRowOrderPolicy,
     homescreenCatalogLoading: Boolean,
     homescreenCatalogErrorMessage: String?,
+    homescreenSettingsUiState: HomeCatalogSettingsUiState,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
     continueWatchingPreferencesUiState: ContinueWatchingPreferencesUiState,
     posterCardStyleUiState: PosterCardStyleUiState,
@@ -1127,8 +1172,10 @@ private fun TabletSettingsScreen(
                     SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                         isTablet = true,
                         showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
+                        showCloudStreamEntry = AppFeaturePolicy.pluginsEnabled,
                         onAddonsClick = { openInlinePage(SettingsPage.Addons) },
                         onPluginsClick = { openInlinePage(SettingsPage.Plugins) },
+                        onCloudStreamClick = { openInlinePage(SettingsPage.CloudStream) },
                         onMediaServersClick = { openInlinePage(SettingsPage.MediaServers) },
                     )
                     SettingsPage.Addons -> addonsSettingsContent()
@@ -1141,14 +1188,24 @@ private fun TabletSettingsScreen(
                         onBack = onNavigateBack,
                     )
                     SettingsPage.Plugins -> if (AppFeaturePolicy.pluginsEnabled) pluginsSettingsContent() else addonsSettingsContent()
+                    SettingsPage.CloudStream -> if (
+                        AppFeaturePolicy.pluginsEnabled
+                    ) cloudStreamSettingsContent() else addonsSettingsContent()
                     SettingsPage.Homescreen -> homescreenSettingsContent(
                         isTablet = true,
                         heroEnabled = homescreenHeroEnabled,
                         showCatalogType = homescreenShowCatalogType,
                         hideUnreleasedContent = homescreenHideUnreleasedContent,
                         items = homescreenItems,
+                    addonGroups = homescreenAddonGroups,
+                        addonRowOrderPolicy = homescreenAddonRowOrderPolicy,
                         isCatalogLoading = homescreenCatalogLoading,
                         catalogErrorMessage = homescreenCatalogErrorMessage,
+                        onMergedRowsClick = { onPageChange(SettingsPage.MergedRows) },
+                    )
+                    SettingsPage.MergedRows -> mergedHomeRowsSettingsContent(
+                        isTablet = true,
+                        uiState = homescreenSettingsUiState,
                     )
                     SettingsPage.MetaScreen -> metaScreenSettingsContent(
                         isTablet = true,
@@ -1159,6 +1216,9 @@ private fun TabletSettingsScreen(
                         onTmdbClick = { onPageChange(SettingsPage.TmdbEnrichment) },
                         onMdbListClick = { onPageChange(SettingsPage.MdbListRatings) },
                         onDebridClick = { onPageChange(SettingsPage.Debrid) },
+                        onTelegramClick = if (AppFeaturePolicy.pluginsEnabled) {
+                            { onPageChange(SettingsPage.Telegram) }
+                        } else null,
                     )
                     SettingsPage.TmdbEnrichment -> tmdbSettingsContent(
                         isTablet = true,
@@ -1172,6 +1232,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = debridSettings,
                     )
+                    SettingsPage.Telegram -> telegramSettingsContent(isTablet = true)
                     SettingsPage.TraktAuthentication -> trackingSettingsContent(
                         isTablet = true,
                         traktUiState = traktAuthUiState,

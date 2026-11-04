@@ -52,6 +52,59 @@ class PartySyncTest {
     }
 
     @Test
+    fun localPositionEstimateAdvancesAtEffectivePlaybackRate() {
+        assertEquals(
+            10_525L,
+            PartySync.estimatedLocalPositionMs(
+                positionMs = 10_000L,
+                elapsedMs = 500L,
+                playbackRate = 1.05f,
+                isPlaying = true,
+                isLoading = false,
+            ),
+        )
+    }
+
+    @Test
+    fun localPositionEstimateDoesNotAdvanceWhilePausedOrLoading() {
+        assertEquals(
+            10_000L,
+            PartySync.estimatedLocalPositionMs(10_000L, 500L, 1.5f, isPlaying = false, isLoading = false),
+        )
+        assertEquals(
+            10_000L,
+            PartySync.estimatedLocalPositionMs(10_000L, 500L, 1.5f, isPlaying = true, isLoading = true),
+        )
+    }
+
+    @Test
+    fun localPositionEstimateBoundsExtrapolationAndDuration() {
+        assertEquals(
+            11_000L,
+            PartySync.estimatedLocalPositionMs(10_000L, 5_000L, 1f, isPlaying = true, isLoading = false),
+        )
+        assertEquals(
+            10_500L,
+            PartySync.estimatedLocalPositionMs(
+                positionMs = 10_000L,
+                elapsedMs = 1_000L,
+                playbackRate = 1f,
+                isPlaying = true,
+                isLoading = false,
+                durationMs = 10_500L,
+            ),
+        )
+    }
+
+    @Test
+    fun stalePositionSamplesAreNotUsedForRoutineCorrection() {
+        assertTrue(PartySync.isPositionSampleFresh(0L))
+        assertTrue(PartySync.isPositionSampleFresh(PartySync.MAX_LOCAL_POSITION_EXTRAPOLATION_MS))
+        assertFalse(PartySync.isPositionSampleFresh(PartySync.MAX_LOCAL_POSITION_EXTRAPOLATION_MS + 1L))
+        assertFalse(PartySync.isPositionSampleFresh(-1L))
+    }
+
+    @Test
     fun higherSequenceWins() {
         assertTrue(PartySync.isNewer(playback(seq = 3), playback(seq = 2)))
         assertFalse(PartySync.isNewer(playback(seq = 2), playback(seq = 3)))
@@ -65,6 +118,144 @@ class PartySyncTest {
         assertTrue(PartySync.isNewer(second, first))
         assertFalse(PartySync.isNewer(first, second))
         assertFalse(PartySync.isNewer(first, first))
+    }
+
+    @Test
+    fun rateNudgeDeadbandAvoidsTinyAudioSpeedUpdates() {
+        assertTrue(PartySync.shouldUpdateNudge(currentRate = null, targetRate = 1.01f))
+        assertFalse(PartySync.shouldUpdateNudge(currentRate = 1.01f, targetRate = 1.0105f))
+        assertTrue(PartySync.shouldUpdateNudge(currentRate = 1.01f, targetRate = 1.016f))
+        assertFalse(PartySync.shouldUpdateNudge(currentRate = 1.01f, targetRate = 1.01f))
+    }
+
+    @Test
+    fun nudgeRestorationPreservesBaseRateWhenPartyStateDisappears() {
+        assertEquals(1.5f, PartySync.nudgeRestorationRate(authoritativeRate = null, savedBaseRate = 1.5f))
+        assertEquals(1.25f, PartySync.nudgeRestorationRate(authoritativeRate = 1.25f, savedBaseRate = 1.5f))
+        assertEquals(1f, PartySync.nudgeRestorationRate(authoritativeRate = null, savedBaseRate = null))
+    }
+
+    @Test
+    fun subsecondDriftDoesNotStartRateNudging() {
+        assertEquals(
+            PartyCorrection.InSync,
+            PartySync.correction(10_250, 10_000, playback(), nudging = false),
+        )
+        assertIs<PartyCorrection.Nudge>(
+            PartySync.correction(10_400, 10_000, playback(), nudging = false),
+        )
+    }
+
+    @Test
+    fun rateNudgesMoveInBoundedSteps() {
+        assertEquals(1.51f, PartySync.smoothNudge(null, 1.5f, 1.55f), 0.0001f)
+        assertEquals(1.50f, PartySync.smoothNudge(1.51f, 1.5f, 1.47f), 0.0001f)
+        assertEquals(1.55f, PartySync.smoothNudge(1.55f, 1.5f, 1.55f), 0.0001f)
+    }
+
+    @Test
+    fun stateUpdatesSeekOnlyForAnAuthoritativePositionJump() {
+        val previous = playback(seq = 1, positionMs = 10_000, at = 1_000_000)
+        val rateUpdate = playback(seq = 2, positionMs = 11_000, rate = 1.5f, at = 1_001_000)
+
+        assertFalse(PartySync.isSeekTransition(previous, rateUpdate))
+        assertFalse(
+            PartySync.shouldSeekForPlaybackUpdate(
+                previous = previous,
+                next = rateUpdate,
+                localPositionMs = 15_000,
+                expectedPositionMs = 11_000,
+                initialSync = false,
+                ownUpdate = false,
+            ),
+        )
+
+        val seek = playback(seq = 3, positionMs = 50_000, at = 1_002_000)
+        assertTrue(PartySync.isSeekTransition(rateUpdate, seek))
+        assertTrue(PartySync.shouldDeferSeek(rateUpdate, seek, seekInFlight = true))
+        assertFalse(PartySync.shouldDeferSeek(rateUpdate, seek, seekInFlight = false))
+        assertTrue(
+            PartySync.shouldSeekForPlaybackUpdate(
+                previous = rateUpdate,
+                next = seek,
+                localPositionMs = 11_500,
+                expectedPositionMs = 50_000,
+                initialSync = false,
+                ownUpdate = false,
+            ),
+        )
+    }
+
+    @Test
+    fun rapidRepeatedSeeksRemainAuthoritativeWhileAnEarlierSeekSettles() {
+        val lastApplied = playback(seq = 1, positionMs = 10_000, at = 1_000_000)
+        val firstSkip = playback(seq = 2, positionMs = 20_000, at = 1_001_000)
+        val secondSkip = playback(seq = 3, positionMs = 30_000, at = 1_002_000)
+        val thirdSkip = playback(seq = 4, positionMs = 40_000, at = 1_003_000)
+
+        // While the first seek is settling, each newer state still represents a real seek.
+        // The runtime can leave these states pending and apply the latest target after settling.
+        for (target in listOf(firstSkip, secondSkip, thirdSkip)) {
+            assertTrue(PartySync.isSeekTransition(lastApplied, target))
+            assertTrue(PartySync.shouldDeferSeek(lastApplied, target, seekInFlight = true))
+        }
+        assertFalse(PartySync.shouldDeferSeek(lastApplied, thirdSkip, seekInFlight = false))
+    }
+
+    @Test
+    fun pausedPlaybackDoesNotSeekForSubsecondPositionNoise() {
+        val paused = playback(paused = true, positionMs = 20_000)
+        assertEquals(
+            PartyCorrection.InSync,
+            PartySync.correction(
+                localPositionMs = 20_548,
+                expectedPositionMs = 20_000,
+                playback = paused,
+                nudging = false,
+            ),
+        )
+        assertFalse(
+            PartySync.shouldSeekForPlaybackUpdate(
+                previous = playback(seq = 1, positionMs = 10_000, at = 1_000_000),
+                next = playback(seq = 2, paused = true, positionMs = 11_000, at = 1_001_000),
+                localPositionMs = 11_548,
+                expectedPositionMs = 11_000,
+                initialSync = false,
+                ownUpdate = false,
+            ),
+        )
+    }
+
+    @Test
+    fun initialAlignmentSeeksButOwnStateDoesNotEchoASeek() {
+        val local = playback(seq = 2, positionMs = 30_000, at = 1_001_000)
+        assertTrue(
+            PartySync.shouldSeekForPlaybackUpdate(
+                previous = null,
+                next = local,
+                localPositionMs = 0,
+                expectedPositionMs = 30_000,
+                initialSync = true,
+                ownUpdate = false,
+            ),
+        )
+        assertFalse(
+            PartySync.shouldSeekForPlaybackUpdate(
+                previous = playback(seq = 1, positionMs = 10_000, at = 1_000_000),
+                next = local,
+                localPositionMs = 0,
+                expectedPositionMs = 30_000,
+                initialSync = false,
+                ownUpdate = true,
+            ),
+        )
+    }
+
+    @Test
+    fun staleTimelineAnchorCannotBeTreatedAsANewSeek() {
+        val previous = playback(seq = 4, positionMs = 10_000, at = 1_000_000)
+        val stale = playback(seq = 5, positionMs = 0, at = 999_000)
+        assertFalse(PartySync.isSeekTransition(previous, stale))
     }
 
     @Test
@@ -91,6 +282,43 @@ class PartySyncTest {
     fun nudgingKeepsGoingUntilCloseEnough() {
         assertIs<PartyCorrection.Nudge>(PartySync.correction(10_150, 10_000, playback(), nudging = true))
         assertEquals(PartyCorrection.InSync, PartySync.correction(10_050, 10_000, playback(), nudging = true))
+    }
+
+    @Test
+    fun largerDriftGetsStrongerCorrectionThanSmallDrift() {
+        val small = assertIs<PartyCorrection.Nudge>(
+            PartySync.correction(10_400, 10_000, playback(), nudging = false),
+        )
+        val large = assertIs<PartyCorrection.Nudge>(
+            PartySync.correction(11_800, 10_000, playback(), nudging = false),
+        )
+        // The guest is ahead of the room, so stronger correction means a lower rate.
+        assertTrue(small.rate < 1f)
+        assertTrue(large.rate < small.rate)
+    }
+
+    @Test
+    fun correctionRateStaysWithinSupportedPlaybackRange() {
+        val fastBase = assertIs<PartyCorrection.Nudge>(
+            PartySync.correction(10_500, 10_000, playback(rate = 4f), nudging = false),
+        )
+        val slowBase = assertIs<PartyCorrection.Nudge>(
+            PartySync.correction(9_500, 10_000, playback(rate = 0.25f), nudging = false),
+        )
+        assertTrue(fastBase.rate in PartySync.MIN_PLAYBACK_RATE..PartySync.MAX_PLAYBACK_RATE)
+        assertTrue(slowBase.rate in PartySync.MIN_PLAYBACK_RATE..PartySync.MAX_PLAYBACK_RATE)
+    }
+
+    @Test
+    fun speedLimitDoesNotPretendAnImpossibleNudgeIsActive() {
+        assertEquals(
+            PartyCorrection.InSync,
+            PartySync.correction(9_000, 10_000, playback(rate = 4f), nudging = false),
+        )
+        assertEquals(
+            PartyCorrection.InSync,
+            PartySync.correction(11_000, 10_000, playback(rate = 0.25f), nudging = false),
+        )
     }
 
     @Test

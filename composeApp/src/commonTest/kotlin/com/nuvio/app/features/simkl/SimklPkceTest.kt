@@ -40,7 +40,7 @@ class SimklPkceTest {
     }
 
     @Test
-    fun `authorization URL uses browser host and exact S256 method`() {
+    fun `authorization URL uses OAuth 2 host and exact S256 method`() {
         val url = buildSimklAuthorizationUrl(
             clientId = "client id",
             redirectUri = "nuvio://auth/simkl",
@@ -49,9 +49,10 @@ class SimklPkceTest {
             material = SimklPkceMaterial("verifier", "challenge", "state"),
         )
 
-        assertTrue(url.startsWith("https://simkl.com/oauth/authorize?"))
+        assertTrue(url.startsWith("https://simkl.com/oauth2/authorize?"))
         assertTrue("client_id=client+id" in url || "client_id=client%20id" in url)
         assertTrue("code_challenge_method=S256" in url)
+        assertTrue("scope=media:read%20media:write" in url)
         assertTrue("redirect_uri=nuvio%3A%2F%2Fauth%2Fsimkl" in url)
     }
 

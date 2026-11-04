@@ -510,12 +510,14 @@ internal object EmbeddedSubtitleTimelineLoader {
                 null,
                 false,
                 isQuickTimeContainer(initial.bytes, sourceUrl),
-            ) { track ->
-                track?.takeIf {
-                    it.type == C.TRACK_TYPE_TEXT &&
-                        isSupportedIndexedMp4SubtitleMime(it.format.sampleMimeType)
-                }
-            }
+                { track ->
+                    track?.takeIf {
+                        it.type == C.TRACK_TYPE_TEXT &&
+                            isSupportedIndexedMp4SubtitleMime(it.format.sampleMimeType)
+                    }
+                },
+                false,
+            )
         } catch (error: Exception) {
             return null
         }

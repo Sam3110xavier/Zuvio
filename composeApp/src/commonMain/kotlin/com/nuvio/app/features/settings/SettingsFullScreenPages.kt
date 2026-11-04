@@ -24,6 +24,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepositor
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_settings_page_account
 import nuvio.composeapp.generated.resources.compose_settings_page_addons
+import nuvio.composeapp.generated.resources.compose_settings_page_cloudstream
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
@@ -33,6 +34,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun HomescreenSettingsScreen(
     onBack: () -> Unit,
+    onMergedRowsClick: () -> Unit,
 ) {
     val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val homescreenCatalogRefreshKey = remember(addonsUiState.addons) {
@@ -77,8 +79,11 @@ fun HomescreenSettingsScreen(
             showCatalogType = homescreenSettingsUiState.showCatalogType,
             hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
             items = homescreenSettingsUiState.items,
+            addonGroups = homescreenSettingsUiState.addonGroups,
+            addonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
             isCatalogLoading = addonManifestsLoading,
             catalogErrorMessage = addonManifestErrorMessage,
+            onMergedRowsClick = onMergedRowsClick,
         )
     }
 }
@@ -184,6 +189,28 @@ fun PluginsSettingsScreen(
             )
         }
         pluginsSettingsContent()
+    }
+}
+
+@Composable
+fun CloudStreamSettingsScreen(
+    onBack: () -> Unit,
+) {
+    if (!AppFeaturePolicy.pluginsEnabled) {
+        AddonsSettingsScreen(onBack)
+        return
+    }
+
+    NuvioScreen(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = stringResource(Res.string.compose_settings_page_cloudstream),
+                onBack = onBack,
+            )
+        }
+        cloudStreamSettingsContent()
     }
 }
 

@@ -4,23 +4,43 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeContent
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioStatusModal
@@ -32,8 +52,10 @@ import com.nuvio.app.features.p2p.formatP2pMegabytes
 import com.nuvio.app.features.p2p.formatP2pSpeed
 import com.nuvio.app.features.player.skip.internalSkipAction
 import com.nuvio.app.features.servers.ServerStreams
+import com.nuvio.app.features.livetv.LiveTvRepository
 import com.nuvio.app.features.streams.streamAddonInstanceId
 import com.nuvio.app.isIos
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -172,9 +194,45 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 commitHorizontalSeekState = gestureCallbacks.commitHorizontalSeek,
             ),
     ) {
+        deadLinkStatusMessage?.let { status ->
+            val isUnavailable = status.startsWith("Skipping unavailable source")
+            val statusIcon = if (isUnavailable) "⚠" else "↻"
+            val statusTitle = if (isUnavailable) "Source unavailable" else "Switching source"
+            val detail = status.substringAfter(" · ", "").takeIf { it.isNotBlank() }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 20.dp, start = 16.dp, end = 16.dp),
+                color = Color(0xE61A202B),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 8.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = statusIcon, color = if (isUnavailable) Color(0xFFFFC66D) else Color(0xFF8BCBFF))
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(text = statusTitle, fontWeight = FontWeight.SemiBold)
+                        if (detail != null) {
+                            Text(
+                                text = detail,
+                                color = Color(0xFFCAD3E0),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
         val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
         val playbackKey = activePlaybackKey
         val sourcePlaybackKey = playbackKey.copy(playbackEngine = null)
+        val playerSurfaceEngineKey = playbackKey.playbackEngine ?: playerSettingsUiState.androidPlaybackEngine
         val initialPositionRequestKey = currentInitialPositionRequestKey()
 
         LaunchedEffect(sourcePlaybackKey) {
@@ -201,10 +259,41 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         val resolvedAutoEngine = resolvedAutoEngineState.value
 
         if (playerSurfaceSourceUrl != null) {
-            key(playbackKey) {
+            // Keep the player surface alive across URL/source changes so Android can replace
+            // the MediaSource without tearing down a compatible audio output. The engine is
+            // still a key because switching playback engines requires a new native surface.
+            key(playerSurfaceEngineKey) {
                 val active = remember { mutableStateOf(true) }
                 DisposableEffect(Unit) {
                     onDispose { active.value = false }
+                }
+                // Genres/country come from metadata that can load after first composition, so
+                // the resolution re-runs while the source is still loading; once playback has
+                // loaded the engine is frozen, because a late metadata update must never
+                // restart a playing stream.
+                val resolvedAutoEngineState =
+                    remember(playbackKey.copy(playbackEngine = null), playerSettingsUiState.androidPlaybackEngine) { mutableStateOf<AndroidPlaybackEngine?>(null) }
+                if (!initialLoadCompleted || resolvedAutoEngineState.value == null) {
+                    resolvedAutoEngineState.value = resolveAutoPlaybackEngine(
+                        playbackEngineSetting = playerSettingsUiState.androidPlaybackEngine,
+                        videoId = activeVideoId,
+                        streamFilename = activeTorrentFilename ?: activeStreamFilename,
+                        streamName = activeStreamTitle,
+                        streamDescription = activeStreamSubtitle,
+                        contentTitle = title,
+                        genres = playerMeta?.genres.orEmpty(),
+                        country = playerMeta?.country,
+                    )
+                }
+                val resolvedAutoEngine = resolvedAutoEngineState.value
+                // Failover and manual switches are scoped to one source: a new source re-arms
+                // the failover and clears the previous engine choice. Keyed on the source, not
+                // on the full playbackKey, which includes the engine override — an effect keyed
+                // on it would undo the very switch that changed the key.
+                LaunchedEffect(playbackKey.copy(playbackEngine = null)) {
+                    engineFailoverTriggered = false
+                    engineFailoverDisarmed = false
+                    playbackEngineOverride = null
                 }
                 PlatformPlayerSurface(
                     sourceUrl = playerSurfaceSourceUrl,
@@ -213,6 +302,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                     sourceResponseHeaders = activeSourceResponseHeaders,
                     externalSubtitles = externalSubtitles,
                     streamType = activeStreamType,
+                    isLive = activeProviderAddonId == "live-tv",
                     modifier = videoModifier,
                     playWhenReady = shouldPlay,
                     initialPositionMs = activeInitialPositionMs.takeIf { it > 0L },
@@ -308,6 +398,51 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             panelVisible = showPartyPanel && !isInPip,
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
+        Box(modifier = panelModifier) {
+            RenderPlayerModals(displayedPositionMs = displayedPositionMs)
+            RenderParty(runtime = runtime)
+            if (activeProviderAddonId == "live-tv" && !playerControlsLocked && !isInPip) {
+                IconButton(
+                    onClick = {
+                        showLiveTvChannelsPanel = true
+                        controlsVisible = true
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Top))
+                        .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding / 4),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tv,
+                        contentDescription = stringResource(Res.string.live_tv_player_channels),
+                        tint = Color.White,
+                    )
+                }
+            }
+        }
+
+        val completedMedia = completionRatingMedia
+        val completionPromptKey = pendingCompletionRatingPromptKey
+        if (showCompletionRatingPrompt && completedMedia != null && completionPromptKey != null) {
+            CompletionRatingPrompt(
+                profileId = profileId,
+                seriesTitle = title,
+                media = completedMedia,
+                posterUrl = completedMedia.posterUrl ?: poster ?: playerMeta?.poster,
+                onOptionsReady = {
+                    if (pendingCompletionRatingPromptKey == completionPromptKey) {
+                        lastCompletionRatingPromptKey = completionPromptKey
+                    }
+                },
+                onDismiss = {
+                    showCompletionRatingPrompt = false
+                    completionRatingMedia = null
+                    if (pendingCompletionRatingPromptKey == completionPromptKey) {
+                        pendingCompletionRatingPromptKey = null
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -533,7 +668,7 @@ private fun BoxScope.RenderPlaybackOverlays(
         metrics = metrics,
         horizontalSafePadding = horizontalSafePadding,
         onUnlock = { unlockPlayerControls() },
-        showOpeningOverlay = playerSettingsUiState.showLoadingOverlay && !initialLoadCompleted && errorMessage == null,
+        showOpeningOverlay = (playerSettingsUiState.showLoadingOverlay && !initialLoadCompleted || deadLinkStatusMessage != null) && errorMessage == null,
         backdropArtwork = background ?: poster,
         logo = logo,
         title = title,
@@ -541,7 +676,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             flushWatchProgress()
             args.onBack()
         },
-        openingLoadingMessage = if (playerSettingsUiState.showPlayerLoadingStatus) {
+        openingLoadingMessage = deadLinkStatusMessage ?: if (playerSettingsUiState.showPlayerLoadingStatus) {
             p2pInitialLoadingMessage ?: playerLoadingStatusMessage(
                 showStatus = true,
                 controllerReady = playerController != null,
@@ -602,6 +737,28 @@ private fun BoxScope.RenderPlaybackOverlays(
 
 @Composable
 private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
+    LiveTvChannelsPanel(
+        visible = showLiveTvChannelsPanel,
+        currentStreamUrl = activeSourceUrl,
+        onChannelSelected = { channel ->
+            scope.launch {
+                try {
+                    switchToLiveTvChannel(LiveTvRepository.prepareForPlayback(channel))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    showLiveTvChannelsPanel = false
+                    errorMessage = error.message?.takeIf(String::isNotBlank)
+                        ?: "Could not prepare this channel for playback."
+                    controlsVisible = !playerControlsLocked
+                }
+            }
+        },
+        onDismiss = {
+            showLiveTvChannelsPanel = false
+            controlsVisible = true
+        },
+    )
     PlayerChaptersPanel(
         visible = showChaptersPanel && chapters.isNotEmpty(),
         chapters = chapters,

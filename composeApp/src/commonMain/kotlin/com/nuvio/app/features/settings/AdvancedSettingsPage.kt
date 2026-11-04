@@ -140,6 +140,7 @@ internal fun LazyListScope.advancedSettingsContent(
             }
         }
     }
+    debugLogsSettingsContent(isTablet = isTablet)
 }
 
 @Composable

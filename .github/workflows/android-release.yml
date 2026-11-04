@@ -1,3 +1,4 @@
+# Refresh workflow discovery in the fork; no runtime behavior changed.
 name: Build Mobile Release
 
 on:
@@ -117,8 +118,8 @@ jobs:
             > release-notes.md
 
           if [[ ! -s release-notes.md ]]; then
-            echo "No release-note commits were found." >&2
-            exit 1
+            echo "No user-facing release-note commits were found; using a maintenance-release note."
+            printf '%s\n' '- Maintenance release; no user-facing changes were detected by the release-notes filter.' > release-notes.md
           fi
 
           {
@@ -144,6 +145,13 @@ jobs:
       RELEASE_VERSION: ${{ needs.prepare.outputs.tag }}
       RELEASE_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
       RELEASE_KEYSTORE_BASE64: ${{ secrets.NUVIO_RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_STORE_PASSWORD: ${{ secrets.NUVIO_RELEASE_STORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.NUVIO_RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.NUVIO_RELEASE_KEY_PASSWORD }}
+      TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+      TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+      SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+      MDBLIST_CLIENT_ID: ${{ secrets.MDBLIST_CLIENT_ID }}
 
     steps:
       - name: Check out source
@@ -161,11 +169,27 @@ jobs:
       - name: Configure release properties
         run: |
           keystore_path="${RUNNER_TEMP}/nuvio-release.jks"
+          : "${RELEASE_STORE_PASSWORD:?Missing GitHub Actions secret NUVIO_RELEASE_STORE_PASSWORD}"
+          : "${RELEASE_KEY_ALIAS:?Missing GitHub Actions secret NUVIO_RELEASE_KEY_ALIAS}"
+          : "${RELEASE_KEY_PASSWORD:?Missing GitHub Actions secret NUVIO_RELEASE_KEY_PASSWORD}"
+
           printf '%s' "${RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${keystore_path}"
           printf '%s' "${RELEASE_PROPERTIES_BASE64}" | base64 --decode > local.properties
 
-          sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_STORE_FILE)[[:space:]]*=/d' local.properties
-          printf '\nNUVIO_RELEASE_STORE_FILE=%s\n' "${keystore_path}" >> local.properties
+          # Keep signing credentials sourced from their dedicated Actions secrets.
+          # Strip stale/local signing values first so local.properties cannot override them.
+          sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_STORE_FILE|NUVIO_RELEASE_STORE_PASSWORD|NUVIO_RELEASE_KEY_ALIAS|NUVIO_RELEASE_KEY_PASSWORD)[[:space:]]*=/d' local.properties
+          printf '\nNUVIO_RELEASE_STORE_FILE=%s\nNUVIO_RELEASE_STORE_PASSWORD=%s\nNUVIO_RELEASE_KEY_ALIAS=%s\nNUVIO_RELEASE_KEY_PASSWORD=%s\n' \
+            "${keystore_path}" "${RELEASE_STORE_PASSWORD}" "${RELEASE_KEY_ALIAS}" "${RELEASE_KEY_PASSWORD}" >> local.properties
+
+          # Override tracking client IDs from dedicated Actions secrets when configured.
+          for property_name in TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET SIMKL_CLIENT_ID MDBLIST_CLIENT_ID; do
+            value="${!property_name:-}"
+            if [[ -n "${value}" ]]; then
+              sed -i "/^[[:space:]]*${property_name}[[:space:]]*=/d" local.properties
+              printf '%s=%s\n' "${property_name}" "${value}" >> local.properties
+            fi
+          done
 
           required_properties=(
             NUVIO_RELEASE_STORE_PASSWORD
@@ -181,6 +205,17 @@ jobs:
             fi
           done
 
+          # Validate the actual keystore secret before Gradle spends several minutes building.
+          # Do not print passwords or the expected alias (GitHub may mask its value in logs).
+          if ! keytool -list -keystore "${keystore_path}" -storepass "${RELEASE_STORE_PASSWORD}" -alias "${RELEASE_KEY_ALIAS}" >/dev/null 2>&1; then
+            echo "Release signing preflight failed: the configured alias is not present in the supplied keystore, or the keystore password is incorrect." >&2
+            echo "Aliases available in the supplied keystore:" >&2
+            if ! keytool -list -keystore "${keystore_path}" -storepass "${RELEASE_STORE_PASSWORD}" 2>&1 | sed -n '1,25p' >&2; then
+              echo "The keystore could not be opened. Check NUVIO_RELEASE_KEYSTORE_BASE64 and NUVIO_RELEASE_STORE_PASSWORD." >&2
+            fi
+            exit 1
+          fi
+
       - name: Build full release APKs
         run: ./gradlew :androidApp:assembleFullRelease -Pnuvio.app.versionName="${RELEASE_VERSION}" --stacktrace
 
@@ -191,9 +226,10 @@ jobs:
           path: androidApp/build/outputs/apk/full/release/*.apk
           if-no-files-found: error
 
+  # iOS packaging is intentionally disabled: this workflow is for Android APK releases.
   ios:
-    name: Build iOS IPA
-    if: inputs.mode != 'dry-run'
+    name: Build iOS IPA (disabled)
+    if: false
     needs: prepare
     runs-on: xcode-27
     timeout-minutes: 120
@@ -267,7 +303,6 @@ jobs:
     needs:
       - prepare
       - android
-      - ios
     runs-on: ubuntu-latest
     permissions:
       contents: write

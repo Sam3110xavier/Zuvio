@@ -38,7 +38,7 @@ data class PlayerSettingsUiState(
     val showPlayerLoadingStatus: Boolean = true,
     val pauseOverlayEnabled: Boolean = true,
     val showParentalGuide: Boolean = true,
-    val resizeMode: PlayerResizeMode = PlayerResizeMode.Fit,
+    val resizeMode: PlayerResizeMode = PlayerResizeMode.BestFit,
     val holdToSpeedEnabled: Boolean = true,
     val holdToSpeedValue: Float = 2f,
     val touchGesturesEnabled: Boolean = true,
@@ -76,9 +76,12 @@ data class PlayerSettingsUiState(
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
     val streamAutoPlaySource: StreamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES,
     val streamAutoPlaySelectedAddons: Set<String> = emptySet(),
+    val streamAutoPlayAddonPriority: List<String> = emptyList(),
     val streamAutoPlaySelectedPlugins: Set<String> = emptySet(),
     val streamAutoPlayRegex: String = "",
     val streamAutoPlayTimeoutSeconds: Int = 3,
+    val deadLinkTimeoutEnabled: Boolean = true,
+    val deadLinkTimeoutSeconds: Int = 10,
     val skipIntroEnabled: Boolean = true,
     val autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet(),
     val animeSkipEnabled: Boolean = false,
@@ -124,7 +127,7 @@ object PlayerSettingsRepository {
     private var showPlayerLoadingStatus = true
     private var pauseOverlayEnabled = true
     private var showParentalGuide = true
-    private var resizeMode = PlayerResizeMode.Fit
+    private var resizeMode = PlayerResizeMode.BestFit
     private var holdToSpeedEnabled = true
     private var holdToSpeedValue = 2f
     private var touchGesturesEnabled = true
@@ -162,9 +165,12 @@ object PlayerSettingsRepository {
     private var streamAutoPlayMode = StreamAutoPlayMode.MANUAL
     private var streamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES
     private var streamAutoPlaySelectedAddons: Set<String> = emptySet()
+    private var streamAutoPlayAddonPriority: List<String> = emptyList()
     private var streamAutoPlaySelectedPlugins: Set<String> = emptySet()
     private var streamAutoPlayRegex = ""
     private var streamAutoPlayTimeoutSeconds = 3
+    private var deadLinkTimeoutEnabled = true
+    private var deadLinkTimeoutSeconds = 10
     private var skipIntroEnabled = true
     private var autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet()
     private var animeSkipEnabled = false
@@ -215,7 +221,7 @@ object PlayerSettingsRepository {
         showPlayerLoadingStatus = true
         pauseOverlayEnabled = true
         showParentalGuide = true
-        resizeMode = PlayerResizeMode.Fit
+        resizeMode = PlayerResizeMode.BestFit
         holdToSpeedEnabled = true
         holdToSpeedValue = 2f
         touchGesturesEnabled = true
@@ -254,9 +260,12 @@ object PlayerSettingsRepository {
         streamAutoPlayMode = StreamAutoPlayMode.MANUAL
         streamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES
         streamAutoPlaySelectedAddons = emptySet()
+        streamAutoPlayAddonPriority = emptyList()
         streamAutoPlaySelectedPlugins = emptySet()
         streamAutoPlayRegex = ""
         streamAutoPlayTimeoutSeconds = 3
+        deadLinkTimeoutEnabled = true
+        deadLinkTimeoutSeconds = 10
         skipIntroEnabled = true
         autoSkipSegmentTypes = emptySet()
         animeSkipEnabled = false
@@ -294,15 +303,12 @@ object PlayerSettingsRepository {
     }
 
     private fun loadFromDisk() {
-        hasLoaded = true
         useLegacyPlayerLayout = PlayerSettingsStorage.loadUseLegacyPlayerLayout() ?: false
         showLoadingOverlay = PlayerSettingsStorage.loadShowLoadingOverlay() ?: true
         showPlayerLoadingStatus = PlayerSettingsStorage.loadShowPlayerLoadingStatus() ?: true
         pauseOverlayEnabled = PlayerSettingsStorage.loadPauseOverlayEnabled() ?: true
         showParentalGuide = PlayerSettingsStorage.loadShowParentalGuide() ?: true
-        resizeMode = PlayerSettingsStorage.loadResizeMode()
-            ?.let { runCatching { PlayerResizeMode.valueOf(it) }.getOrNull() }
-            ?: PlayerResizeMode.Fit
+        resizeMode = PlayerResizeMode.fromStoredName(PlayerSettingsStorage.loadResizeMode())
         holdToSpeedEnabled = PlayerSettingsStorage.loadHoldToSpeedEnabled() ?: true
         holdToSpeedValue = PlayerSettingsStorage.loadHoldToSpeedValue() ?: 2f
         touchGesturesEnabled = PlayerSettingsStorage.loadTouchGesturesEnabled() ?: true
@@ -389,6 +395,9 @@ object PlayerSettingsRepository {
             ?.let { runCatching { StreamAutoPlaySource.valueOf(it) }.getOrNull() }
             ?: StreamAutoPlaySource.ALL_SOURCES
         streamAutoPlaySelectedAddons = PlayerSettingsStorage.loadStreamAutoPlaySelectedAddons() ?: emptySet()
+        streamAutoPlayAddonPriority = (PlayerSettingsStorage.loadStreamAutoPlayAddonPriority() ?: emptyList())
+            .filter { it.isNotBlank() }
+            .distinct()
         streamAutoPlaySelectedPlugins = PlayerSettingsStorage.loadStreamAutoPlaySelectedPlugins() ?: emptySet()
         if (!AppFeaturePolicy.pluginsEnabled) {
             val normalizedSource = normalizeStreamAutoPlaySource(streamAutoPlaySource)
@@ -403,6 +412,10 @@ object PlayerSettingsRepository {
         }
         streamAutoPlayRegex = PlayerSettingsStorage.loadStreamAutoPlayRegex() ?: ""
         streamAutoPlayTimeoutSeconds = PlayerSettingsStorage.loadStreamAutoPlayTimeoutSeconds() ?: 3
+        deadLinkTimeoutEnabled = PlayerSettingsStorage.loadDeadLinkTimeoutEnabled() ?: true
+        deadLinkTimeoutSeconds = DeadLinkTimeoutPolicy.normalizeSeconds(
+            PlayerSettingsStorage.loadDeadLinkTimeoutSeconds() ?: DeadLinkTimeoutPolicy.DEFAULT_SECONDS,
+        )
         // Legacy migration: 11 was the old sentinel for "unlimited"
         if (streamAutoPlayTimeoutSeconds == 11) {
             streamAutoPlayTimeoutSeconds = Int.MAX_VALUE
@@ -459,6 +472,7 @@ object PlayerSettingsRepository {
         iosContrast = PlayerSettingsStorage.loadIosContrast() ?: 0
         iosSaturation = PlayerSettingsStorage.loadIosSaturation() ?: 0
         iosGamma = PlayerSettingsStorage.loadIosGamma() ?: 0
+        hasLoaded = true
         publish()
     }
 
@@ -872,6 +886,15 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveStreamAutoPlaySelectedAddons(addons)
     }
 
+    fun setStreamAutoPlayAddonPriority(priority: List<String>) {
+        ensureLoaded()
+        val normalized = priority.filter { it.isNotBlank() }.distinct()
+        if (streamAutoPlayAddonPriority == normalized) return
+        streamAutoPlayAddonPriority = normalized
+        publish()
+        PlayerSettingsStorage.saveStreamAutoPlayAddonPriority(normalized)
+    }
+
     fun setStreamAutoPlaySelectedPlugins(plugins: Set<String>) {
         ensureLoaded()
         val normalizedPlugins = if (AppFeaturePolicy.pluginsEnabled) plugins else emptySet()
@@ -895,6 +918,23 @@ object PlayerSettingsRepository {
         streamAutoPlayTimeoutSeconds = seconds
         publish()
         PlayerSettingsStorage.saveStreamAutoPlayTimeoutSeconds(seconds)
+    }
+
+    fun setDeadLinkTimeoutEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (deadLinkTimeoutEnabled == enabled) return
+        deadLinkTimeoutEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDeadLinkTimeoutEnabled(enabled)
+    }
+
+    fun setDeadLinkTimeoutSeconds(seconds: Int) {
+        ensureLoaded()
+        val normalized = DeadLinkTimeoutPolicy.normalizeSeconds(seconds)
+        if (deadLinkTimeoutSeconds == normalized) return
+        deadLinkTimeoutSeconds = normalized
+        publish()
+        PlayerSettingsStorage.saveDeadLinkTimeoutSeconds(normalized)
     }
 
     fun setSkipIntroEnabled(enabled: Boolean) {
@@ -1252,9 +1292,12 @@ object PlayerSettingsRepository {
             streamAutoPlayMode = streamAutoPlayMode,
             streamAutoPlaySource = streamAutoPlaySource,
             streamAutoPlaySelectedAddons = streamAutoPlaySelectedAddons,
+            streamAutoPlayAddonPriority = streamAutoPlayAddonPriority,
             streamAutoPlaySelectedPlugins = streamAutoPlaySelectedPlugins,
             streamAutoPlayRegex = streamAutoPlayRegex,
             streamAutoPlayTimeoutSeconds = streamAutoPlayTimeoutSeconds,
+            deadLinkTimeoutEnabled = deadLinkTimeoutEnabled,
+            deadLinkTimeoutSeconds = deadLinkTimeoutSeconds,
             skipIntroEnabled = skipIntroEnabled,
             autoSkipSegmentTypes = autoSkipSegmentTypes,
             animeSkipEnabled = animeSkipEnabled,

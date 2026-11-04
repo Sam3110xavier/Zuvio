@@ -6,13 +6,68 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+import java.net.URL
+import java.security.MessageDigest
 import java.util.Properties
+
+abstract class DownloadCloudStreamRuntimeTask : DefaultTask() {
+    @get:Input
+    abstract val sourceUrl: Property<String>
+
+    @get:Input
+    abstract val expectedSha256: Property<String>
+
+    @get:OutputFile
+    abstract val outputFile: RegularFileProperty
+
+    @TaskAction
+    fun downloadRuntime() {
+        val destination = outputFile.get().asFile
+        val expectedHash = expectedSha256.get()
+        val temporary = destination.resolveSibling(destination.name + ".download")
+
+        fun sha256(file: java.io.File): String =
+            MessageDigest.getInstance("SHA-256")
+                .digest(file.readBytes())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        try {
+            if (!destination.isFile || sha256(destination) != expectedHash) {
+                destination.parentFile.mkdirs()
+                val connection = URL(sourceUrl.get()).openConnection().apply {
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                    useCaches = false
+                }
+                connection.getInputStream().use { input ->
+                    temporary.outputStream().use { output -> input.copyTo(output) }
+                }
+                check(temporary.isFile && temporary.length() > 0L) {
+                    "CloudStream runtime AAR download was empty"
+                }
+                val actualHash = sha256(temporary)
+                check(actualHash == expectedHash) {
+                    "CloudStream runtime AAR SHA-256 mismatch: $actualHash"
+                }
+                if (destination.exists()) check(destination.delete()) {
+                    "Could not replace existing CloudStream runtime AAR"
+                }
+                check(temporary.renameTo(destination)) {
+                    "Could not install CloudStream runtime AAR"
+                }
+            }
+        } finally {
+            temporary.delete()
+        }
+    }
+}
 
 abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:OutputDirectory
@@ -45,6 +100,27 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
 
     @get:Input
     abstract val tmdbApiKey: Property<String>
+
+    @get:Input
+    abstract val traktClientId: Property<String>
+
+    @get:Input
+    abstract val traktClientSecret: Property<String>
+
+    @get:Input
+    abstract val traktRedirectUri: Property<String>
+
+    @get:Input
+    abstract val simklClientId: Property<String>
+
+    @get:Input
+    abstract val simklRedirectUri: Property<String>
+
+    @get:Input
+    abstract val simklAppName: Property<String>
+
+    @get:Input
+    abstract val mdblistClientId: Property<String>
 
     @TaskAction
     fun generate() {
@@ -101,9 +177,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.trakt
                 |
                 |object TraktConfig {
-                |    const val CLIENT_ID = "${props.getProperty("TRAKT_CLIENT_ID", "")}" 
-                |    const val CLIENT_SECRET = "${props.getProperty("TRAKT_CLIENT_SECRET", "")}" 
-                |    const val REDIRECT_URI = "${props.getProperty("TRAKT_REDIRECT_URI", "nuvio://auth/trakt")}" 
+                |    const val CLIENT_ID = "${traktClientId.get()}" 
+                |    const val CLIENT_SECRET = "${traktClientSecret.get()}" 
+                |    const val REDIRECT_URI = "${traktRedirectUri.get()}" 
                 |}
                 """.trimMargin()
             )
@@ -116,9 +192,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.simkl
                 |
                 |object SimklConfig {
-                |    const val CLIENT_ID = "${props.getProperty("SIMKL_CLIENT_ID", "")}"
-                |    const val REDIRECT_URI = "${props.getProperty("SIMKL_REDIRECT_URI", "nuvio://auth/simkl")}"
-                |    const val APP_NAME = "${props.getProperty("SIMKL_APP_NAME", "nuvio")}"
+                |    const val CLIENT_ID = "${simklClientId.get()}"
+                |    const val REDIRECT_URI = "${simklRedirectUri.get()}"
+                |    const val APP_NAME = "${simklAppName.get()}"
                 |}
                 """.trimMargin()
             )
@@ -131,7 +207,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.mdblist
                 |
                 |object MdbListConfig {
-                |    const val CLIENT_ID = "${props.getProperty("MDBLIST_CLIENT_ID", "")}"
+                |    const val CLIENT_ID = "${mdblistClientId.get()}"
                 |}
                 """.trimMargin()
             )
@@ -171,7 +247,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.features.debrid
                 |
                 |object PremiumizeConfig {
-                |    const val CLIENT_ID = "${props.getProperty("PREMIUMIZE_CLIENT_ID", "")}"
+                |    const val CLIENT_ID = "${props.getProperty("PREMIUMIZE_CLIENT_ID", "") }"
                 |}
                 """.trimMargin()
             )
@@ -199,7 +275,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |
                 |object CommunityConfig {
                 |    const val CONTRIBUTIONS_URL = "${props.getProperty("CONTRIBUTIONS_URL", "")}" 
-                |    const val SUPPORTERS_WALL_URL = "${props.getProperty("SUPPORTERS_WALL_URL", "https://nuvio.tv/api/supporters/wall")}"
+                |    const val SUPPORTERS_WALL_URL = "${props.getProperty("SUPPORTERS_WALL_URL", "https://nuvio.tv/api/supporters/wall") }"
                 |    const val DONATIONS_BASE_URL = "${props.getProperty("DONATIONS_BASE_URL", "")}" 
                 |    const val DONATIONS_DONATE_URL = "${props.getProperty("DONATIONS_DONATE_URL", "")}" 
                 |}
@@ -259,6 +335,12 @@ val iosDistributionSourceDir = if (iosDistribution == "full") {
 val iosFrameworkBundleId = "com.nuvio.media"
 val nuvioEngineAppleFramework = rootProject.file("../nuvio-engine/platform/apple/NuvioEngine.xcframework")
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
+val cloudStreamRuntimeAar = layout.projectDirectory.file("libs/cloudstream-runtime-api-4.8.0-3496e5f.aar")
+val downloadCloudStreamRuntime = tasks.register<DownloadCloudStreamRuntimeTask>("downloadCloudStreamRuntime") {
+    sourceUrl.set("https://raw.githubusercontent.com/yesnt10/NuvioMobile-Enhanced/894499115fb1a69cd4bb34d6969a74832f0e5636/composeApp/libs/cloudstream-runtime-api-4.8.0-3496e5f.aar")
+    expectedSha256.set("b67a4384bea1f4072123b86c5f164471422d9c6c12845d5067f12db44674d427")
+    outputFile.set(cloudStreamRuntimeAar)
+}
 val generatedRuntimeConfigDir = layout.buildDirectory.dir("generated/runtime-config/kotlin")
 val requestedGradleTasks = gradle.startParameter.taskNames.map { taskName ->
     taskName.substringAfterLast(':').lowercase()
@@ -315,13 +397,31 @@ fun runtimeConfigBoolean(key: String, default: Boolean): Boolean =
         else -> default
     }
 
+// MDBList is optional; keep an empty value when no client ID is configured.
+val mdblistClientIdValue = runtimeConfigValue("MDBLIST_CLIENT_ID")
+
 val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generateRuntimeConfigs") {
     outputDir.set(generatedRuntimeConfigDir)
     localPropertiesFile.set(rootProject.layout.projectDirectory.file("local.properties"))
+    // Tracking credentials may be supplied either by local.properties or GitHub Actions env vars.
+    traktClientId.set(runtimeConfigValue("TRAKT_CLIENT_ID"))
+    traktClientSecret.set(runtimeConfigValue("TRAKT_CLIENT_SECRET"))
+    traktRedirectUri.set(runtimeConfigValue("TRAKT_REDIRECT_URI", "nuvio://auth/trakt"))
+    simklClientId.set(runtimeConfigValue("SIMKL_CLIENT_ID"))
+    simklRedirectUri.set(runtimeConfigValue("SIMKL_REDIRECT_URI", "nuvio://auth/simkl"))
+    simklAppName.set(runtimeConfigValue("SIMKL_APP_NAME", "nuvio"))
+    mdblistClientId.set(mdblistClientIdValue)
     appVersionName.set(releaseAppVersionName)
     appVersionCode.set(releaseAppVersionCode)
-    supabaseUrl.set(runtimeConfigValue("NUVIO_SUPABASE_URL"))
-    supabaseAnonKey.set(runtimeConfigValue("NUVIO_SUPABASE_ANON_KEY"))
+    supabaseUrl.set(
+        runtimeConfigValue("NUVIO_SUPABASE_URL", "https://api.nuvio.tv")
+    )
+    supabaseAnonKey.set(
+        runtimeConfigValue(
+            "NUVIO_SUPABASE_ANON_KEY",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI"
+        )
+    )
     supabaseFallbackUrl.set(runtimeConfigValue("NUVIO_SUPABASE_FALLBACK_URL"))
     sentryDsn.set(runtimeConfigValue("SENTRY_DSN"))
     tmdbApiKey.set(runtimeConfigValue("TMDB_API_KEY"))
@@ -451,7 +551,12 @@ kotlin {
                 // libass - atlas-based subtitle rendering (from NuvioMedia/nuvio-libass)
                 implementation(files("libs/nuvio-libass-release.aar"))
                 implementation(libs.ktor.client.okhttp)
+                implementation("org.tukaani:xz:1.10")
                 implementation(libs.sentry.android)
+                // Use the complete Maven Media3 player stack at one pinned version.
+                // Legacy precompiled core/UI/data-source AARs are intentionally excluded
+                // below because they do not follow the version catalog.
+                implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.exoplayer.dash)
                 implementation(libs.androidx.media3.exoplayer.smoothstreaming)
@@ -463,15 +568,48 @@ kotlin {
                 implementation(libs.androidx.media3.common)
                 implementation(libs.androidx.media3.container)
                 implementation(libs.androidx.media3.extractor)
+                implementation(libs.androidx.media3.ui)
+                implementation(libs.androidx.media3.database)
                 implementation("com.google.guava:guava:33.3.1-android")
-                implementation("androidx.media3:media3-database:1.8.0")
-                implementation("androidx.media3:media3-effect:1.8.0")
+                implementation(libs.androidx.media3.effect)
                 implementation("androidx.annotation:annotation-experimental:1.3.1")
                 implementation(libs.mpv.android.lib)
-                implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
+                // Keep Nuvio's custom decoder extensions and native streaming engine.
+                // Maven now supplies the standard ExoPlayer, HLS, common, data-source,
+                // extractor and UI components to prevent old AARs shadowing Media3.
+                implementation(
+                    fileTree(
+                        mapOf(
+                            "dir" to "libs",
+                            "include" to listOf(
+                                "lib-decoder-*-release.aar",
+                                "lib-nuvio-engine-android-0.1.6.aar",
+                            ),
+                        ),
+                    ),
+                )
                 if (androidDistribution == "full") {
+                    // TDLib-backed Telegram streaming; native JNI and generated Java API are shipped in this pinned AAR.
+                    implementation("com.github.capullo-tech:lib-tdlib-android:11850efeb5791d4fd386c0eeec1ebce4c5080435")
+                    implementation("io.ktor:ktor-server-core:${libs.versions.ktor.get()}")
+                    implementation("io.ktor:ktor-server-cio:${libs.versions.ktor.get()}")
                     implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+                    implementation(files(cloudStreamRuntimeAar).builtBy(downloadCloudStreamRuntime))
                     implementation(libs.ksoup)
+                    implementation("androidx.annotation:annotation:1.10.0")
+                    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
+                    implementation("org.jsoup:jsoup:1.22.1")
+                    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+                    implementation("com.github.Blatzar:NiceHttp:0.4.18")
+                    implementation("me.xdrop:fuzzywuzzy:1.4.0")
+                    implementation("org.mozilla:rhino:1.8.1")
+                    implementation("com.uwetrottmann.tmdb2:tmdb-java:2.13.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-core:0.6.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.6.0")
+                    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3") {
+                        exclude(group = "org.mozilla", module = "rhino-engine")
+                    }
+                    implementation(kotlin("reflect"))
                 }
             }
         }
@@ -550,12 +688,4 @@ configurations.matching { it.name == "iosMainImplementation" }.configureEach {
     project.dependencies.add(name, libs.ktor.client.darwin)
 }
 
-configurations.all {
-    exclude(group = "androidx.media3", module = "media3-exoplayer")
-    exclude(group = "androidx.media3", module = "media3-exoplayer-hls")
-    exclude(group = "androidx.media3", module = "media3-ui")
-    exclude(group = "androidx.media3", module = "media3-common")
-    exclude(group = "androidx.media3", module = "media3-datasource")
-    exclude(group = "androidx.media3", module = "media3-datasource-okhttp")
-    exclude(group = "androidx.media3", module = "media3-extractor")
-}
+

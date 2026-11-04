@@ -33,10 +33,15 @@ internal object ServerPlayback {
         val (provider, playback, session) = ServerRepository.call(target.item.connectionId) { provider, session ->
             Triple(provider, provider.preparePlayback(session, ServerPlaybackRequest(target, capabilities())), session)
         }
+        val nextPlayback = ActivePlayback(provider, session, playback)
         val orphans = synchronized(lock) {
+            // Remove old unstarted sessions before inserting the new one. A server may reuse
+            // the same direct-play URL; inserting first and removing by URL would accidentally
+            // remove the new session along with the old one.
             val unstarted = active.filterValues { !it.started }.keys.toList()
-            active[playback.url] = ActivePlayback(provider, session, playback)
-            unstarted.mapNotNull(active::remove)
+                .mapNotNull(active::remove)
+            active[playback.url] = nextPlayback
+            unstarted
         }
         orphans.forEach { it.stop() }
         return stream.copy(

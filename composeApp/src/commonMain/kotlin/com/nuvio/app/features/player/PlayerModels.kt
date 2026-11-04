@@ -11,6 +11,7 @@ import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_label
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_label
+import com.nuvio.app.features.streams.StreamAutoPlayPreferredQuality
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeMark
@@ -52,6 +53,7 @@ data class PlayerLaunch(
     val subtitleExtras: SubtitleRequestExtras? = null,
     val sourceFilename: String? = null,
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
+    val semiAutoSelectedQuality: StreamAutoPlayPreferredQuality? = null,
 )
 
 object PlayerLaunchStore {
@@ -143,10 +145,21 @@ object PlayerLaunchStore {
     }
 }
 
-enum class PlayerResizeMode {
-    Fit,
-    Fill,
-    Zoom,
+enum class PlayerResizeMode(val label: String) {
+    BestFit("Best Fit"),
+    Fit("Fit"),
+    Fill("Fill"),
+    Zoom("Zoom"),
+    Ratio16x9("16:9");
+
+    companion object {
+        fun fromStoredName(value: String?): PlayerResizeMode = when (value) {
+            // "Full" was used by the temporary custom implementation; restore it as
+            // the official Nuvio Fill mode while preserving the two added modes.
+            "Full" -> Fill
+            else -> entries.firstOrNull { it.name == value } ?: BestFit
+        }
+    }
 }
 
 enum class AndroidPlaybackEngine(

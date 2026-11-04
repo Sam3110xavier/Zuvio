@@ -38,6 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download and verify published IPA
+        id: verify
         run: |
           release_json="${RUNNER_TEMP}/release.json"
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "${release_json}"
@@ -48,8 +49,13 @@ jobs:
           fi
 
           mapfile -t ipa_names < <(jq -r '.assets[] | select(.name | endswith(".ipa")) | .name' "${release_json}")
+          if (( ${#ipa_names[@]} == 0 )); then
+            echo "No IPA asset in ${RELEASE_TAG}; this is an Android-only release, so the iOS sideload source will not be changed."
+            echo "has_ipa=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           if (( ${#ipa_names[@]} != 1 )); then
-            echo "Expected exactly one published IPA, found ${#ipa_names[@]}." >&2
+            echo "Expected at most one published IPA, found ${#ipa_names[@]}." >&2
             exit 1
           fi
 
@@ -74,8 +80,10 @@ jobs:
             echo "Published IPA digest ${remote_digest} does not match downloaded digest sha256:${local_digest}." >&2
             exit 1
           fi
+          echo "has_ipa=true" >> "${GITHUB_OUTPUT}"
 
       - name: Update sideload source
+        if: steps.verify.outputs.has_ipa == 'true'
         run: |
           release_json="${RUNNER_TEMP}/release.json"
           release_notes="${RUNNER_TEMP}/release-notes.md"
@@ -98,6 +106,7 @@ jobs:
             --download-url "${download_url}"
 
       - name: Commit sideload source
+        if: steps.verify.outputs.has_ipa == 'true'
         run: |
           if [[ -z "$(git status --porcelain -- store.json)" ]]; then
             echo "store.json is already current for ${RELEASE_VERSION}."

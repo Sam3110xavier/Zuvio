@@ -166,6 +166,7 @@ internal fun AddonsSettingsPageContent(
                         AddonRepository.refreshAddon(
                             manifestUrl = addon.manifestUrl,
                             forceRefresh = true,
+                            notifyOnSuccess = true,
                         )
                     },
                     onEnabledChange = { enabled ->
