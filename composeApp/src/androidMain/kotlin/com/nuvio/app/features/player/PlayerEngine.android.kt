@@ -442,13 +442,16 @@ private fun ExoPlayerSurface(
     }
 
     fun ExoPlayer.setPlaybackMediaItem(videoMediaItem: MediaItem, startPositionMs: Long? = null) {
-        if (!sourceAudioUrl.isNullOrBlank()) {
-            // Keep libass parsing for addon ASS subtitles, like sources the player builds itself.
-            val mediaSourceFactory = getAssMediaSourceFactoryCompat()
+        // Keep libass parsing for add-on ASS subtitles when the compatibility factory is
+        // available; otherwise use the normal per-source factory.
+        val mediaSourceFactory = if (!sourceAudioUrl.isNullOrBlank()) {
+            getAssMediaSourceFactoryCompat()
                 ?: DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-        // Build each source with the current stream's factory. The ExoPlayer itself is kept
-        // alive across ordinary source switches so a compatible audio output can be reused.
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        } else {
+            DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        }
+        // Keep the ExoPlayer alive across ordinary source switches so a compatible audio
+        // output can be reused. Both tracks must use the same source factory.
         val mediaSource = if (!sourceAudioUrl.isNullOrBlank()) {
             val videoSource = mediaSourceFactory.createMediaSource(videoMediaItem)
             val audioSource = mediaSourceFactory.createMediaSource(playbackMediaItemFromUrl(sourceAudioUrl))
@@ -643,12 +646,18 @@ private fun ExoPlayerSurface(
         onDispose { nowPlayingController.release() }
     }
 
-    LaunchedEffect(exoPlayer, resolvedMediaItem, initialPositionRequestKey) {
+    LaunchedEffect(
+        exoPlayer,
+        resolvedMediaItem,
+        initialPositionRequestKey,
+        dataSourceFactory,
+        extractorsFactory,
+        sourceAudioUrl,
+        attachedAddonSubtitleConfig,
+    ) {
         val mediaItem = attachedAddonSubtitleConfig?.let { config ->
             resolvedMediaItem.buildUpon().setSubtitleConfigurations(listOf(config)).build()
         } ?: resolvedMediaItem
-    LaunchedEffect(exoPlayer, resolvedMediaItem, initialPositionRequestKey, dataSourceFactory, extractorsFactory, sourceAudioUrl) {
-        val mediaItem = resolvedMediaItem
         val requestedStartPositionMs = fallbackStartPositionMs
             ?: initialPositionMs?.takeIf { it > 0L }
         playbackDiagnostics.attempt += 1
