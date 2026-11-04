@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -52,6 +57,7 @@ fun TrackingListPickerDialog(
     val otherLists = destinations.filter { tab ->
         tab.providerId != null && tab.unifiedTrackingStatus() == null
     }
+    var showOtherLists by remember(tabs) { mutableStateOf(false) }
 
     DialogSurface(
         onDismissRequest = onDismiss,
@@ -136,19 +142,22 @@ fun TrackingListPickerDialog(
                 if (otherLists.isNotEmpty()) {
                     item(key = "other-tracking-lists-heading") {
                         Text(
-                            text = "Other lists",
+                            text = if (showOtherLists) "Hide other lists (${otherLists.size})" else "Other lists (${otherLists.size})",
+                            modifier = Modifier.fillMaxWidth().clickable(enabled = !isPending) { showOtherLists = !showOtherLists },
                             style = MaterialTheme.typography.labelLarge,
                             color = tokens.colors.textMuted,
                         )
                     }
-                    items(otherLists, key = { it.key }) { tab ->
-                        DialogOption(
-                            text = tab.membershipTitle(),
-                            selected = membership[tab.key] == true,
-                            enabled = !isPending,
-                            role = Role.Checkbox,
-                            onClick = { onToggle(tab.key) },
-                        )
+                    if (showOtherLists) {
+                        items(otherLists, key = { it.key }) { tab ->
+                            DialogOption(
+                                text = tab.membershipTitle(),
+                                selected = membership[tab.key] == true,
+                                enabled = !isPending,
+                                role = Role.Checkbox,
+                                onClick = { onToggle(tab.key) },
+                            )
+                        }
                     }
                 }
             }

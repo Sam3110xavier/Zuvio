@@ -194,7 +194,7 @@ fun LibraryScreen(
                 section.copy(
                     items = section.items.filter { item ->
                         selectedLibraryType.isNullOrBlank() ||
-                            (item.mediaCategory ?: item.type).equals(selectedLibraryType, ignoreCase = true)
+                            normalizeLibraryMediaType(item.mediaCategory ?: item.type) == normalizeLibraryMediaType(selectedLibraryType.orEmpty())
                     },
                 )
             }

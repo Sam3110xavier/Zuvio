@@ -370,6 +370,9 @@ fun HomeHeroSection(
     }
 }
 
+internal fun isValidHomeHeroLogoAspectRatio(width: Float, height: Float): Boolean =
+    width.isFinite() && height.isFinite() && width > 0f && height > 0f && width / height >= 2.3f
+
 private data class HeroPageLayer(
     val itemIndex: Int,
     val visibility: Float,
@@ -456,15 +459,7 @@ private fun HeroContentBlock(
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
                     val imageSize = state.painter.intrinsicSize
-                    logoAspectRatioValid =
-                        if (
-                            imageSize.width.isFinite() && imageSize.height.isFinite() &&
-                            imageSize.width > 0f && imageSize.height > 0f
-                        ) {
-                            imageSize.width / imageSize.height >= 1.2f
-                        } else {
-                            true
-                        }
+                    logoAspectRatioValid = isValidHomeHeroLogoAspectRatio(imageSize.width, imageSize.height)
                 },
                 onError = { logoLoadError = true },
             )

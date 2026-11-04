@@ -211,7 +211,7 @@ internal fun Throwable.toWeTrakrSyncError(): WeTrakrSyncError = when {
 }
 
 internal val WeTrakrMedia.isMovie: Boolean
-    get() = type.equals(WeTrakrMediaType.MOVIE, ignoreCase = true)
+    get() = type.trim().lowercase() in setOf("movie", "movies", "film", "films")
 
 internal val WeTrakrMedia.contentType: String
     get() = if (isMovie) "movie" else "series"

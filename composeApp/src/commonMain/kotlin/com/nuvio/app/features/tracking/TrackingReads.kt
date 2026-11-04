@@ -120,13 +120,8 @@ fun selectUnifiedTrackingStatus(
                 return@forEach
             }
             val statusTabs = nativeTabs.filter { it.kind == TrackingLibraryTabKind.STATUS }
-            val matchingTabs = statusTabs.filter { it.unifiedTrackingStatus() == status }
-            if (matchingTabs.isNotEmpty()) {
-                // Clear the previous status too, including non-selectable Completed destinations.
-                statusTabs.forEach { tab ->
-                    updated[tab.key] = tab.unifiedTrackingStatus() == status
-                }
-            }
+            // Clear stale statuses even when this provider does not support the selected unified status.
+            statusTabs.forEach { tab -> updated[tab.key] = tab.unifiedTrackingStatus() == status }
         }
     return updated
 }

@@ -74,6 +74,23 @@ class TrackingReadsTest {
         assertEquals(UnifiedTrackingStatus.PLAN_TO_WATCH, selectedUnifiedTrackingStatus(tabs, updated))
     }
 
+    @Test
+    fun `selecting a status clears stale statuses from providers without that status`() {
+        val tabs = listOf(
+            tab("simkl:watching", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
+            tab("simkl:dropped", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
+            tab("anilist:planning", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS, "anilist"),
+            tab("anilist:watching", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS, "anilist"),
+        )
+        val initial = mapOf("simkl:watching" to true, "anilist:planning" to true)
+        val updated = selectUnifiedTrackingStatus(tabs, initial, UnifiedTrackingStatus.DROPPED)
+        assertTrue(updated["simkl:dropped"] == true)
+        assertFalse(updated["simkl:watching"] == true)
+        assertFalse(updated["anilist:planning"] == true)
+        assertFalse(updated["anilist:watching"] == true)
+        assertEquals(UnifiedTrackingStatus.DROPPED, selectedUnifiedTrackingStatus(tabs, updated))
+    }
+
     private fun tab(
         key: String,
         provider: TrackingProviderId?,

@@ -25,7 +25,7 @@ internal data class WeTrakrStatusDefinition(
     val isMembershipDestination: Boolean = true,
 )
 
-private val weTrakrAllTypes = setOf("movie", "series", "tv", "show", "anime")
+private val weTrakrAllTypes = setOf("movie", "movies", "film", "films", "series", "tv", "show", "anime")
 private val weTrakrSeriesTypes = setOf("series", "tv", "show", "anime")
 
 internal val weTrakrStatusDefinitions = listOf(
@@ -53,7 +53,7 @@ internal fun weTrakrStatusFor(status: TrackingListStatus, isMovie: Boolean): Str
 
 internal fun weTrakrTypeMatches(isMovie: Boolean, contentType: String?): Boolean {
     val normalized = contentType?.trim()?.lowercase()?.takeIf(String::isNotEmpty) ?: return true
-    return if (normalized == "movie" || normalized == "film") isMovie else !isMovie
+    return if (normalized in setOf("movie", "movies", "film", "films")) isMovie else !isMovie
 }
 
 internal fun weTrakrShowKey(contentId: String): String = "show:${normalizeWeTrakrContentId(contentId)}"
