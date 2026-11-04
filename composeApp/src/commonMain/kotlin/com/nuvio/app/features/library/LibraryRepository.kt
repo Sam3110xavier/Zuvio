@@ -782,7 +782,7 @@ internal fun libraryMembershipWithLocal(
 ): Map<String, Boolean> =
     linkedMapOf<String, Boolean>(LOCAL_LIBRARY_LIST_KEY to inLocal).apply {
         LocalLibraryStatus.entries.forEach { status ->
-            this[status.sectionKey] = status == LocalLibraryStatus.fromStorage(localStatus)
+            this[status.sectionKey] = inLocal && status == LocalLibraryStatus.fromStorage(localStatus)
         }
         putAll(providerMembership)
     }
