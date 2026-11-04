@@ -45,6 +45,7 @@ object TmdbMetadataService {
     private val enrichmentCacheLock = SynchronizedObject()
     private val episodeCache = mutableMapOf<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
     private val moreLikeThisCache = mutableMapOf<String, List<MetaPreview>>()
+    private val recommendationSearchCache = mutableMapOf<String, MetaPreview?>()
     private val collectionCache = mutableMapOf<String, Pair<String?, List<MetaPreview>>>()
     private val trailerCache = mutableMapOf<String, List<MetaTrailer>>()
     private val personCache = mutableMapOf<String, PersonDetail>()
@@ -55,6 +56,82 @@ object TmdbMetadataService {
     private val backdropCacheMutex = Mutex()
     private val backdropRequests = Semaphore(4)
 
+    suspend fun getMoreLikeThisForMeta(
+        meta: MetaDetails,
+        fallbackItemId: String? = null,
+        fallbackItemType: String? = null,
+    ): List<MetaPreview> {
+        val settings = TmdbSettingsRepository.snapshot()
+        if (!settings.useMoreLikeThis || TmdbSettingsRepository.effectiveApiKey().isBlank()) return emptyList()
+        val preferredType = meta.type.takeIf(String::isNotBlank) ?: fallbackItemType.orEmpty()
+        val mediaType = TmdbService.normalizeMediaType(preferredType)
+            .takeIf { it == "movie" || it == "tv" }
+            ?: TmdbService.normalizeMediaType(fallbackItemType.orEmpty()).takeIf { it == "movie" || it == "tv" }
+            ?: return emptyList()
+        val tmdbId = TmdbService.ensureTmdbId(meta.id, mediaType, meta.imdbId)
+            ?: fallbackItemId?.let { TmdbService.ensureTmdbId(it, mediaType, meta.imdbId) }
+            ?: return emptyList()
+        return fetchMoreLikeThis(
+            tmdbId = tmdbId.toIntOrNull() ?: return emptyList(),
+            mediaType = mediaType,
+            language = normalizeTmdbLanguage(settings.language),
+        )
+    }
+
+    suspend fun searchRecommendation(title: String, year: Int?, mediaType: String): MetaPreview? =
+        withContext(Dispatchers.Default) {
+            val normalizedTitle = normalizeRecommendationTitle(title)
+            if (normalizedTitle.isBlank()) return@withContext null
+            val normalizedType = TmdbService.normalizeMediaType(mediaType)
+                .takeIf { it == "movie" || it == "tv" } ?: return@withContext null
+            val language = "en-US"
+            val cacheKey = normalizedType + ":" + normalizedTitle + ":" + (year ?: 0) + ":" + language
+            if (recommendationSearchCache.containsKey(cacheKey)) return@withContext recommendationSearchCache[cacheKey]
+            val query = linkedMapOf("query" to title, "language" to language)
+            year?.let { query[if (normalizedType == "movie") "year" else "first_air_date_year"] = it.toString() }
+            val response = fetch<TmdbTitleSearchResponse>(endpoint = "search/" + normalizedType, query = query)
+                ?: return@withContext null
+            val candidate = response.results.mapNotNull { item ->
+                val itemTitle = (item.title ?: item.name ?: item.originalTitle ?: item.originalName)
+                    ?.trim()?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                val itemYear = (item.releaseDate ?: item.firstAirDate)?.take(4)?.toIntOrNull()
+                val candidateTitle = normalizeRecommendationTitle(itemTitle)
+                val exactTitle = candidateTitle == normalizedTitle
+                val closeTitle = candidateTitle.contains(normalizedTitle) || normalizedTitle.contains(candidateTitle)
+                if (!exactTitle && !closeTitle) return@mapNotNull null
+                val yearDistance = if (year == null || itemYear == null) 0 else kotlin.math.abs(year - itemYear)
+                if (yearDistance > 2) return@mapNotNull null
+                Triple(item, if (exactTitle) 0 else 1, yearDistance)
+            }.minWithOrNull(
+                compareBy<Triple<TmdbTitleSearchResult, Int, Int>>(
+                    { it.second }, { it.third }, { -(it.first.voteAverage ?: 0.0) },
+                ),
+            )?.first
+            val result = candidate?.let { item ->
+                val itemTitle = item.title ?: item.name ?: item.originalTitle ?: item.originalName ?: return@let null
+                val itemId = item.id.takeIf { it > 0 } ?: return@let null
+                val posterUrl = buildImageUrl(item.posterPath, "w500")
+                val backdropUrl = buildImageUrl(item.backdropPath, "w1280")
+                if (posterUrl == null && backdropUrl == null) return@let null
+                MetaPreview(
+                    id = "tmdb:" + itemId,
+                    type = if (normalizedType == "tv") "series" else "movie",
+                    name = itemTitle,
+                    poster = posterUrl,
+                    banner = backdropUrl ?: buildImageUrl(item.posterPath, "w780"),
+                    posterShape = PosterShape.Landscape,
+                    description = item.overview?.trim()?.takeIf(String::isNotBlank),
+                    releaseInfo = (item.releaseDate ?: item.firstAirDate)?.take(4),
+                    rawReleaseDate = item.releaseDate ?: item.firstAirDate,
+                    imdbRating = item.voteAverage?.formatRating(),
+                )
+            }
+            recommendationSearchCache[cacheKey] = result
+            result
+        }
+
+    private fun normalizeRecommendationTitle(value: String): String =
+        value.lowercase().filter(Char::isLetterOrDigit)
     suspend fun fetchLocalizedBackdrop(id: String, type: String, language: String): String? =
         withContext(Dispatchers.Default) {
             val mediaType = TmdbService.normalizeMediaType(type)
@@ -1246,8 +1323,7 @@ object TmdbMetadataService {
                     imdbRating = recommendation.voteAverage?.formatRating(),
                 )
             }
-            .take(12)
-
+        
         moreLikeThisCache[cacheKey] = items
         return items
     }
@@ -2037,6 +2113,23 @@ private data class TmdbCollectionRef(
     val name: String? = null,
 )
 
+@Serializable
+private data class TmdbTitleSearchResponse(val results: List<TmdbTitleSearchResult> = emptyList())
+
+@Serializable
+private data class TmdbTitleSearchResult(
+    val id: Int = 0,
+    val title: String? = null,
+    @SerialName("original_title") val originalTitle: String? = null,
+    val name: String? = null,
+    @SerialName("original_name") val originalName: String? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    val overview: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("first_air_date") val firstAirDate: String? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+)
 @Serializable
 private data class TmdbRecommendationResponse(
     val results: List<TmdbRecommendationItem> = emptyList(),
