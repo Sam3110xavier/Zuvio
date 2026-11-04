@@ -152,6 +152,24 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `local status survives local storage payload round trip`() {
+        val state = LibraryLocalState()
+        val token = state.beginProfileLoad(profileId = 1).snapshot.token
+        state.completeProfileLoad(token, activeProfileId = 1, items = emptyList())
+        val snapshot = state.upsert(
+            libraryItem(id = "saved", savedAtEpochMs = 10L)
+                .copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey),
+        )
+
+        val decoded = LibraryStoragePayloadCodec.decode(LibraryStoragePayloadCodec.encode(snapshot))
+
+        assertEquals(
+            LocalLibraryStatus.COMPLETED.storageKey,
+            decoded.items.single().localStatus,
+        )
+    }
+
+    @Test
     fun `local status selection updates membership and groups saved titles into status sections`() {
         val initial = libraryMembershipWithLocal(
             inLocal = true,
