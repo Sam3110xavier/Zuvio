@@ -545,20 +545,13 @@ object LibraryRepository {
         ensureLoaded()
         val targetProvider = TrackingProviderRegistry.connectedLibraryProviders()
             .firstOrNull { provider -> provider.snapshot().tabs.any { tab -> tab.key == listKey } }
-        val isLocalLibrarySection = listKey == LOCAL_LIBRARY_LIST_KEY || listKey.startsWith("local:status:")
+        val isLocalLibrarySection = isLocalLibrarySectionKey(listKey)
         val currentMembership = if (isLocalLibrarySection) {
             mapOf(LOCAL_LIBRARY_LIST_KEY to localState.contains(item.id, item.type))
         } else {
             targetProvider?.membership(item).orEmpty()
         }
-        val desiredMembership = if (isLocalLibrarySection) {
-            currentMembership + (LOCAL_LIBRARY_LIST_KEY to false)
-        } else {
-            libraryMembershipWithRemovedList(
-                currentMembership = currentMembership,
-                listKey = listKey,
-            )
-        }
+        val desiredMembership = libraryMembershipAfterRemovingSection(currentMembership, listKey)
         return applyMembershipChanges(
             item = item,
             desiredMembership = desiredMembership,
@@ -812,9 +805,25 @@ internal fun localLibrarySections(items: List<LibraryItem>): List<LibrarySection
         val sectionItems = items
             .filter { LocalLibraryStatus.fromStorage(it.localStatus) == status }
             .sortedByDescending(LibraryItem::savedAtEpochMs)
-        sectionItems.takeIf(List<LibraryItem>::isNotEmpty)?.let {
+        sectionItems.takeIf { it.isNotEmpty() }?.let {
             LibrarySection(type = status.sectionKey, displayTitle = status.title, items = it)
         }
+    }
+
+internal fun isLocalLibrarySectionKey(listKey: String): Boolean =
+    listKey == LOCAL_LIBRARY_LIST_KEY || listKey.startsWith("local:status:")
+
+internal fun libraryMembershipAfterRemovingSection(
+    currentMembership: Map<String, Boolean>,
+    listKey: String,
+): Map<String, Boolean> =
+    if (isLocalLibrarySectionKey(listKey)) {
+        currentMembership.toMutableMap().apply {
+            this[LOCAL_LIBRARY_LIST_KEY] = false
+            LocalLibraryStatus.entries.forEach { status -> this[status.sectionKey] = false }
+        }
+    } else {
+        libraryMembershipWithRemovedList(currentMembership, listKey)
     }
 
 internal fun libraryMembershipWithRemovedList(

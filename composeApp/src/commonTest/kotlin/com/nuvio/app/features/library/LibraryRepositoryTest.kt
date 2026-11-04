@@ -198,6 +198,33 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `unselected local library item has no selected local status`() {
+        val membership = libraryMembershipWithLocal(inLocal = false)
+        assertFalse(membership["local"] == true)
+        assertNull(selectedLocalLibraryStatus(membership))
+        assertTrue(LocalLibraryStatus.entries.none { membership[it.sectionKey] == true })
+    }
+
+    @Test
+    fun `removing a local status section removes only local library membership`() {
+        val current = libraryMembershipWithLocal(
+            inLocal = true,
+            providerMembership = mapOf("trakt:watchlist" to true),
+            localStatus = LocalLibraryStatus.WATCHING.storageKey,
+        )
+        val updated = libraryMembershipAfterRemovingSection(
+            currentMembership = current,
+            listKey = LocalLibraryStatus.WATCHING.sectionKey,
+        )
+        assertFalse(updated["local"] == true)
+        assertTrue(LocalLibraryStatus.entries.none { updated[it.sectionKey] == true })
+        assertTrue(updated["trakt:watchlist"] == true)
+        assertTrue(isLocalLibrarySectionKey(LOCAL_LIBRARY_LIST_KEY))
+        assertTrue(isLocalLibrarySectionKey(LocalLibraryStatus.DROPPED.sectionKey))
+        assertFalse(isLocalLibrarySectionKey("trakt:watchlist"))
+    }
+
+    @Test
     fun `library membership always includes local state before Trakt membership`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,
