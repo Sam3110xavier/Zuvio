@@ -115,6 +115,7 @@ import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.rememberLibrarySectionTitleResolver
 import com.nuvio.app.features.library.LibrarySortOption
@@ -338,6 +339,26 @@ internal fun MainAppContent(
             coroutineScope.launch {
                 withFrameNanos { }
                 selectedPosterActionTarget = target
+            }
+        }
+        val openLibraryMembershipPicker: (LibraryItem, String) -> Unit = { libraryItem, title ->
+            pickerItem = libraryItem
+            pickerTitle = title
+            pickerTabs = LibraryRepository.libraryListTabs(libraryItem)
+            pickerMembership = pickerTabs.associate { tab -> tab.key to false }
+            pickerPending = true
+            pickerError = null
+            showLibraryListPicker = true
+            coroutineScope.launch {
+                runCatching {
+                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
+                    val tabs = LibraryRepository.libraryListTabs(libraryItem)
+                    pickerTabs = tabs
+                    pickerMembership = snapshot
+                }.onFailure { error ->
+                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
+                }
+                pickerPending = false
             }
         }
         val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
@@ -1928,6 +1949,9 @@ internal fun MainAppContent(
                                 } else {
                                     PosterZoomOverlayExitAnimation.COLLAPSE
                                 },
+                                onLongSelected = posterActionTarget.libraryItem?.let { libraryItem ->
+                                    { openLibraryMembershipPicker(libraryItem, preview.name) }
+                                },
                                 onSelected = {
                                     val libraryItem = posterActionTarget.libraryItem
                                         ?: preview.toLibraryItem(savedAtEpochMs = 0L)
@@ -2008,26 +2032,7 @@ internal fun MainAppContent(
                                         if (!isRemoteLibrarySource) {
                                             LibraryRepository.toggleLocalSaved(libraryItem)
                                         } else {
-                                            pickerItem = libraryItem
-                                            pickerTitle = preview.name
-                                            pickerTabs = LibraryRepository.libraryListTabs(libraryItem)
-                                            pickerMembership = pickerTabs.associate { it.key to false }
-                                            pickerPending = true
-                                            pickerError = null
-                                            showLibraryListPicker = true
-                                            coroutineScope.launch {
-                                                runCatching {
-                                                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                                    val tabs = LibraryRepository.libraryListTabs(libraryItem)
-                                                    pickerTabs = tabs
-                                                    pickerMembership = tabs.associate { tab ->
-                                                        tab.key to (snapshot[tab.key] == true)
-                                                    }
-                                                }.onFailure { error ->
-                                                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
-                                                }
-                                                pickerPending = false
-                                            }
+                                            openLibraryMembershipPicker(libraryItem, preview.name)
                                         }
                                     }
                                 },
@@ -2185,6 +2190,9 @@ internal fun MainAppContent(
                         membership = pickerMembership,
                         status = status,
                     )
+                },
+                onSelectLocalStatus = { status ->
+                    pickerMembership = selectLocalLibraryStatus(pickerMembership, status)
                 },
                 onDismiss = {
                     if (!pickerPending) {

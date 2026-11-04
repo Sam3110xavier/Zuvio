@@ -15,7 +15,7 @@ class TrackingReadsTest {
             tab("simkl:plantowatch", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
             tab("simkl:hold", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
             tab("simkl:dropped", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
-            tab("simkl:completed", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl", isMembershipDestination = false),
+            tab("simkl:completed", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
             tab("anilist:current", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS, "anilist"),
             tab("anilist:planning", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS, "anilist"),
             tab("anilist:paused", TrackingProviderId.ANILIST, TrackingLibraryTabKind.STATUS, "anilist"),
@@ -41,6 +41,7 @@ class TrackingReadsTest {
         assertTrue(updated["simkl:dropped"] == true)
         assertFalse(updated["simkl:watching"] == true)
         assertFalse(updated["simkl:completed"] == true)
+        assertFalse(updated["simkl:completed"] == true)
         assertTrue(updated["anilist:dropped"] == true)
         assertFalse(updated["anilist:completed"] == true)
         assertTrue(updated["mdblist:watchlist"] == true)
@@ -51,6 +52,22 @@ class TrackingReadsTest {
             UnifiedTrackingStatus.DROPPED,
             selectedUnifiedTrackingStatus(tabs, updated),
         )
+    }
+
+    @Test
+    fun `Simkl completed status is a selectable native destination`() {
+        val tabs = listOf(
+            tab("simkl:watching", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
+            tab("simkl:completed", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
+            tab("simkl:dropped", TrackingProviderId.SIMKL, TrackingLibraryTabKind.STATUS, "simkl"),
+        )
+        assertEquals(
+            listOf(UnifiedTrackingStatus.WATCHING, UnifiedTrackingStatus.DROPPED, UnifiedTrackingStatus.COMPLETED),
+            unifiedTrackingStatuses(tabs),
+        )
+        val updated = selectUnifiedTrackingStatus(tabs, mapOf("simkl:watching" to true), UnifiedTrackingStatus.COMPLETED)
+        assertTrue(updated["simkl:completed"] == true)
+        assertFalse(updated["simkl:watching"] == true)
     }
 
     @Test

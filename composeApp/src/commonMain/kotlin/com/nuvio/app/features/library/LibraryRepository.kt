@@ -423,7 +423,8 @@ object LibraryRepository {
 
     suspend fun getMembershipSnapshot(item: LibraryItem): Map<String, Boolean> {
         ensureLoaded()
-        val inLocal = localState.contains(item.id, item.type)
+        val savedLocalItem = localState.findById(item.id)?.takeIf { it.type == item.type }
+        val inLocal = savedLocalItem != null
         val memberships = linkedMapOf<String, Boolean>()
         if (!item.isServerItem) {
             activeLibraryProvider()?.let { provider ->
@@ -433,7 +434,11 @@ object LibraryRepository {
                 memberships += provider.membership(item).filterKeys(supportedKeys::contains)
             }
         }
-        return libraryMembershipWithLocal(inLocal = inLocal, providerMembership = memberships)
+        return libraryMembershipWithLocal(
+            inLocal = inLocal,
+            providerMembership = memberships,
+            localStatus = savedLocalItem?.localStatus ?: item.localStatus,
+        )
     }
 
     suspend fun applyMembershipChanges(
@@ -494,10 +499,16 @@ object LibraryRepository {
                 requiredRemovalConfirmations = requiredConfirmations,
             )
         }
-        if (updateLocal && localDesired != currentlyInLocal) {
+        if (updateLocal) {
             if (localDesired) {
-                save(item)
-            } else {
+                val existingLocalItem = localState.findById(item.id)?.takeIf { it.type == item.type }
+                val desiredLocalStatus = selectedLocalLibraryStatus(desiredMembership)?.storageKey
+                    ?: existingLocalItem?.localStatus
+                    ?: item.localStatus
+                if (!currentlyInLocal || existingLocalItem?.localStatus != desiredLocalStatus) {
+                    save(item.copy(localStatus = desiredLocalStatus))
+                }
+            } else if (currentlyInLocal) {
                 remove(item.id, item.type)
             }
         }
@@ -651,16 +662,7 @@ object LibraryRepository {
 
         val items = localSnapshot.items
             .sortedByDescending { it.savedAtEpochMs }
-        val sections = items
-            .groupBy { it.type }
-            .map { (type, typeItems) ->
-                LibrarySection(
-                    type = type,
-                    displayTitle = type.toLibraryDisplayTitle(),
-                    items = typeItems.sortedByDescending { it.savedAtEpochMs },
-                )
-            }
-            .sortedBy { it.displayTitle }
+        val sections = localLibrarySections(items)
 
         val newUiState = LibraryUiState(
             sourceMode = LibrarySourceMode.LOCAL,
@@ -776,9 +778,36 @@ internal fun mergeHiddenProviderMembership(
 internal fun libraryMembershipWithLocal(
     inLocal: Boolean,
     providerMembership: Map<String, Boolean> = emptyMap(),
+    localStatus: String = LocalLibraryStatus.PLANNING.storageKey,
 ): Map<String, Boolean> =
     linkedMapOf<String, Boolean>(LOCAL_LIBRARY_LIST_KEY to inLocal).apply {
+        LocalLibraryStatus.entries.forEach { status ->
+            this[status.sectionKey] = status == LocalLibraryStatus.fromStorage(localStatus)
+        }
         putAll(providerMembership)
+    }
+
+internal fun selectedLocalLibraryStatus(membership: Map<String, Boolean>): LocalLibraryStatus? =
+    LocalLibraryStatus.entries.firstOrNull { status -> membership[status.sectionKey] == true }
+
+internal fun selectLocalLibraryStatus(
+    membership: Map<String, Boolean>,
+    status: LocalLibraryStatus,
+): Map<String, Boolean> = membership.toMutableMap().apply {
+    this[LOCAL_LIBRARY_LIST_KEY] = true
+    LocalLibraryStatus.entries.forEach { candidate ->
+        this[candidate.sectionKey] = candidate == status
+    }
+}
+
+internal fun localLibrarySections(items: List<LibraryItem>): List<LibrarySection> =
+    LocalLibraryStatus.entries.mapNotNull { status ->
+        val sectionItems = items
+            .filter { LocalLibraryStatus.fromStorage(it.localStatus) == status }
+            .sortedByDescending(LibraryItem::savedAtEpochMs)
+        sectionItems.takeIf(List<LibraryItem>::isNotEmpty)?.let {
+            LibrarySection(type = status.sectionKey, displayTitle = status.title, items = it)
+        }
     }
 
 internal fun libraryMembershipWithRemovedList(

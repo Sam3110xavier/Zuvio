@@ -152,6 +152,52 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `local status selection updates membership and groups saved titles into status sections`() {
+        val initial = libraryMembershipWithLocal(
+            inLocal = true,
+            localStatus = LocalLibraryStatus.PLANNING.storageKey,
+        )
+        val updated = selectLocalLibraryStatus(initial, LocalLibraryStatus.DROPPED)
+        assertTrue(updated["local"] == true)
+        assertTrue(updated[LocalLibraryStatus.DROPPED.sectionKey] == true)
+        assertFalse(updated[LocalLibraryStatus.PLANNING.sectionKey] == true)
+        assertEquals(LocalLibraryStatus.DROPPED, selectedLocalLibraryStatus(updated))
+
+        val sections = localLibrarySections(
+            listOf(
+                libraryItem(id = "a", savedAtEpochMs = 1L).copy(localStatus = LocalLibraryStatus.PLANNING.storageKey),
+                libraryItem(id = "b", savedAtEpochMs = 2L).copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey),
+                libraryItem(id = "c", savedAtEpochMs = 3L).copy(localStatus = LocalLibraryStatus.DROPPED.storageKey),
+            ),
+        )
+        assertEquals(
+            listOf(
+                LocalLibraryStatus.PLANNING.sectionKey,
+                LocalLibraryStatus.DROPPED.sectionKey,
+                LocalLibraryStatus.COMPLETED.sectionKey,
+            ),
+            sections.map(LibrarySection::type),
+        )
+    }
+
+    @Test
+    fun `local library vertical projection exposes status sections`() {
+        val sections = localLibrarySections(
+            listOf(libraryItem(id = "a", savedAtEpochMs = 1L).copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey)),
+        )
+        val projection = buildLibraryVerticalProjection(
+            sections = sections,
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = LocalLibraryStatus.COMPLETED.sectionKey,
+            selectedType = null,
+            sortOption = LibrarySortOption.ADDED_DESC,
+        )
+        assertEquals(listOf(LocalLibraryStatus.COMPLETED.sectionKey), projection.availableSections.map(LibrarySection::type))
+        assertEquals(LocalLibraryStatus.COMPLETED.sectionKey, projection.selectedSectionKey)
+        assertEquals(listOf("a"), projection.entries.map { entry -> entry.item.id })
+    }
+
+    @Test
     fun `library membership always includes local state before Trakt membership`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,
@@ -161,6 +207,12 @@ class LibraryRepositoryTest {
         assertEquals(
             mapOf(
                 "local" to true,
+                LocalLibraryStatus.PLANNING.sectionKey to true,
+                LocalLibraryStatus.WATCHING.sectionKey to false,
+                LocalLibraryStatus.ON_HOLD.sectionKey to false,
+                LocalLibraryStatus.DROPPED.sectionKey to false,
+                LocalLibraryStatus.COMPLETED.sectionKey to false,
+                LocalLibraryStatus.REWATCHING.sectionKey to false,
                 "trakt:watchlist" to false,
             ),
             membership,

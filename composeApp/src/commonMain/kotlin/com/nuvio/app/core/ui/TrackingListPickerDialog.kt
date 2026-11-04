@@ -20,6 +20,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import com.nuvio.app.features.library.LocalLibraryStatus
+import com.nuvio.app.features.library.selectedLocalLibraryStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.UnifiedTrackingStatus
 import com.nuvio.app.features.tracking.selectedUnifiedTrackingStatus
@@ -45,6 +47,7 @@ fun TrackingListPickerDialog(
     errorMessage: String?,
     onToggle: (String) -> Unit,
     onSelectStatus: (UnifiedTrackingStatus) -> Unit,
+    onSelectLocalStatus: (LocalLibraryStatus) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -54,6 +57,7 @@ fun TrackingListPickerDialog(
     val localTab = destinations.firstOrNull { it.providerId == null }
     val statusOptions = unifiedTrackingStatuses(destinations)
     val selectedStatus = selectedUnifiedTrackingStatus(destinations, membership)
+    val selectedLocalStatus = selectedLocalLibraryStatus(membership) ?: LocalLibraryStatus.PLANNING
     val otherLists = destinations.filter { tab ->
         tab.providerId != null && tab.unifiedTrackingStatus() == null
     }
@@ -136,6 +140,22 @@ fun TrackingListPickerDialog(
                             enabled = !isPending,
                             role = Role.Checkbox,
                             onClick = { onToggle(tab.key) },
+                        )
+                    }
+                    item(key = "local-library-status-heading") {
+                        Text(
+                            text = "Nuvio Library status",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                    items(LocalLibraryStatus.entries, key = { "local-status-${it.storageKey}" }) { status ->
+                        DialogOption(
+                            text = status.title,
+                            selected = selectedLocalStatus == status,
+                            enabled = !isPending,
+                            role = Role.RadioButton,
+                            onClick = { onSelectLocalStatus(status) },
                         )
                     }
                 }

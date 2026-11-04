@@ -118,6 +118,7 @@ import com.nuvio.app.features.details.components.TrailerPlayerPopup
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.PendingTrackingMembershipRemoval
 import com.nuvio.app.features.library.TrackingMembershipRemovalConfirmationHost
 import com.nuvio.app.features.library.executeTrackingMembershipOperation
@@ -1524,6 +1525,9 @@ fun MetaDetailsScreen(
                                     membership = pickerMembership,
                                     status = status,
                                 )
+                            },
+                            onSelectLocalStatus = { status ->
+                                pickerMembership = selectLocalLibraryStatus(pickerMembership, status)
                             },
                             onDismiss = {
                                 if (!pickerPending) {

@@ -50,7 +50,6 @@ internal val simklLibraryStatusDefinitions = listOf(
         title = "Completed",
         trackingStatus = TrackingListStatus.COMPLETED,
         supportedContentTypes = setOf("movie", "series", "anime"),
-        isMembershipDestination = false,
     ),
     SimklLibraryStatusDefinition(
         status = SimklListStatus.DROPPED,

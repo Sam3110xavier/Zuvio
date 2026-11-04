@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -114,6 +115,7 @@ class PosterZoomOverlayAction(
         PosterZoomOverlayExitAnimation.COLLAPSE
     },
     val onSelected: () -> Unit,
+    val onLongSelected: (() -> Unit)? = null,
 )
 
 private enum class PosterZoomPhase {
@@ -230,6 +232,11 @@ fun NuvioPosterZoomActionOverlay(
         } else {
             close(afterClose = action.onSelected)
         }
+    }
+
+    fun selectLong(action: PosterZoomOverlayAction) {
+        if (phase != PosterZoomPhase.Open || action.onLongSelected == null) return
+        close(afterClose = action.onLongSelected)
     }
 
     PlatformBackHandler(enabled = true) {
@@ -359,6 +366,7 @@ fun NuvioPosterZoomActionOverlay(
                         action = action,
                         enabled = phase == PosterZoomPhase.Open,
                         onSelected = { select(action) },
+                        onLongSelected = action.onLongSelected?.let { { selectLong(action) } },
                         modifier = Modifier.graphicsLayer {
                             val stagger = index * 0.07f
                             val progress = ((menu.value.coerceIn(0f, 1f) - stagger) / (1f - stagger))
@@ -498,6 +506,7 @@ private fun PosterZoomMenuRow(
     action: PosterZoomOverlayAction,
     enabled: Boolean,
     onSelected: () -> Unit,
+    onLongSelected: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -505,7 +514,11 @@ private fun PosterZoomMenuRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onSelected)
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onSelected,
+                onLongClick = onLongSelected,
+            )
             .padding(horizontal = NuvioTokens.Space.s18, vertical = NuvioTokens.Space.s16),
         horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
         verticalAlignment = Alignment.CenterVertically,
