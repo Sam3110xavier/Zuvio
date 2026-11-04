@@ -35,8 +35,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,7 +59,11 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
-internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
+internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
+    partyPanelWidth: Dp,
+    partyPanelInset: Dp,
+    dockPartyPanel: Boolean,
+) {
     val runtime = this
     val isInPip = rememberIsInPictureInPicture()
     val displayedPositionMs = scrubbingPositionMs ?: playbackSnapshot.positionMs
@@ -154,6 +160,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .padding(end = partyPanelInset)
+            .clipToBounds()
             .onSizeChanged { layoutSize = it }
             .playerSurfaceTapGestures(
                 layoutSize = layoutSize,
@@ -223,6 +231,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         val playbackKey = activePlaybackKey
         val playerSurfaceEngineKey = playbackKey.playbackEngine ?: playerSettingsUiState.androidPlaybackEngine
         val initialPositionRequestKey = currentInitialPositionRequestKey()
+
         if (playerSurfaceSourceUrl != null) {
             // Keep the player surface alive across URL/source changes so Android can replace
             // the MediaSource without tearing down a compatible audio output. The engine is
@@ -272,7 +281,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     playWhenReady = shouldPlay,
                     initialPositionMs = activeInitialPositionMs.takeIf { it > 0L },
                     initialPositionRequestKey = initialPositionRequestKey,
-                    resizeMode = resizeMode,
+                    resizeMode = if (partyPanelInset > 0.dp) PlayerResizeMode.Fit else resizeMode,
                     playbackEngine = playbackEngineOverride ?: resolvedAutoEngine,
                     onInitialPositionHandled = { key, handled ->
                         if (active.value && playbackKey == activePlaybackKey && key == currentInitialPositionRequestKey()) {
@@ -354,10 +363,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 folded = fold != null,
             )
         }
-        Box(modifier = panelModifier) {
-            RenderPlayerModals(displayedPositionMs = displayedPositionMs)
-            RenderParty(runtime = runtime)
-            if (activeProviderAddonId == "live-tv" && !playerControlsLocked && !isInPip) {
+    }
+    Box(modifier = panelModifier) {
+        RenderParty(
+            runtime = runtime,
+            panelWidth = partyPanelWidth,
+            modal = !dockPartyPanel,
+            panelVisible = showPartyPanel && !isInPip,
+        )
+        RenderPlayerModals(displayedPositionMs = displayedPositionMs)
+        if (activeProviderAddonId == "live-tv" && !playerControlsLocked && !isInPip) {
                 IconButton(
                     onClick = {
                         showLiveTvChannelsPanel = true
@@ -374,7 +389,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                         tint = Color.White,
                     )
                 }
-            }
         }
 
         val completedMedia = completionRatingMedia
@@ -814,8 +828,15 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         sourceStreamsState = sourceStreamsState,
         contentTitle = title,
         activeEpisodeTitle = activeEpisodeTitle,
-        activeSourceUrl = activeSourceUrl,
-        activeStreamTitle = activeStreamTitle,
+        currentStream = PlayerCurrentStream(
+            url = activeSourceUrl,
+            name = activeStreamTitle,
+            description = activeStreamSubtitle,
+            addonId = activeProviderAddonId,
+            infoHash = activeStream?.p2pInfoHash ?: activeTorrentInfoHash,
+            fileIdx = activeStream?.p2pFileIdx ?: activeTorrentFileIdx,
+            filename = activeSourceFilename,
+        ),
         onSourceFilterSelected = PlayerStreamsRepository::selectSourceFilter,
         onSourceStreamSelected = { stream -> switchToSource(stream) },
         onReloadSources = {
