@@ -43,7 +43,9 @@ val TraktContinueWatchingDaysOptions: List<Int> = listOf(
 enum class MoreLikeThisSourcePreference {
     TRAKT,
     TMDB,
-    SIMKL;
+    SIMKL,
+    GEMINI,
+    ALL;
 
     companion object {
         fun fromStorage(value: String?): MoreLikeThisSourcePreference =
@@ -59,6 +61,7 @@ data class TraktSettingsUiState(
     val librarySourceMode: LibrarySourceMode = DEFAULT_LIBRARY_SOURCE_MODE,
     val moreLikeThisSource: MoreLikeThisSourcePreference = DEFAULT_MORE_LIKE_THIS_SOURCE,
     val simklAnimeIdPreference: SimklAnimeIdPreference = DEFAULT_SIMKL_ANIME_ID_PREFERENCE,
+    val geminiApiKey: String = "",
 )
 
 @Serializable
@@ -68,6 +71,7 @@ private data class StoredTraktSettings(
     val librarySourceMode: String? = null,
     val moreLikeThisSource: String? = null,
     val simklAnimeIdPreference: String? = null,
+    val geminiApiKey: String = "",
 )
 
 object TraktSettingsRepository {
@@ -144,6 +148,14 @@ object TraktSettingsRepository {
         com.nuvio.app.features.simkl.SimklSyncRepository.invalidateProjections()
     }
 
+    fun setGeminiApiKey(apiKey: String) {
+        ensureLoaded()
+        val normalized = apiKey.trim()
+        if (_uiState.value.geminiApiKey == normalized) return
+        _uiState.value = _uiState.value.copy(geminiApiKey = normalized)
+        persist()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
 
@@ -164,6 +176,7 @@ object TraktSettingsRepository {
                 librarySourceMode = librarySourceModeFromStorage(stored.librarySourceMode),
                 moreLikeThisSource = MoreLikeThisSourcePreference.fromStorage(stored.moreLikeThisSource),
                 simklAnimeIdPreference = SimklAnimeIdPreference.fromStorage(stored.simklAnimeIdPreference),
+                geminiApiKey = stored.geminiApiKey,
             )
         } else {
             TraktSettingsUiState()
@@ -179,6 +192,7 @@ object TraktSettingsRepository {
                     librarySourceMode = state.librarySourceMode.name,
                     moreLikeThisSource = state.moreLikeThisSource.name,
                     simklAnimeIdPreference = state.simklAnimeIdPreference.name,
+                    geminiApiKey = state.geminiApiKey,
                 ),
             ),
         )

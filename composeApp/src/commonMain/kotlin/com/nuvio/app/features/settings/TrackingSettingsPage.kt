@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +42,7 @@ import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktConnectionMode
+import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.TraktContinueWatchingDaysOptions
 import com.nuvio.app.features.trakt.normalizeTraktContinueWatchingDaysCap
 import com.nuvio.app.features.watchprogress.WatchProgressSourceCoordinator
@@ -114,6 +116,14 @@ import nuvio.composeapp.generated.resources.trakt_more_like_this_source_title
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_tmdb
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_trakt
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_simkl
+import nuvio.composeapp.generated.resources.trakt_more_like_this_source_gemini
+import nuvio.composeapp.generated.resources.trakt_more_like_this_source_all
+import nuvio.composeapp.generated.resources.settings_tracking_all_recommendations_description
+import nuvio.composeapp.generated.resources.settings_tracking_gemini_recommendations_description
+import nuvio.composeapp.generated.resources.settings_tracking_gemini_api_key_title
+import nuvio.composeapp.generated.resources.settings_tracking_gemini_api_key_description
+import nuvio.composeapp.generated.resources.settings_tracking_gemini_api_key_label
+import nuvio.composeapp.generated.resources.settings_tracking_gemini_api_key_required
 import nuvio.composeapp.generated.resources.trakt_watch_progress_dialog_title
 import nuvio.composeapp.generated.resources.trakt_watch_progress_source_nuvio
 import nuvio.composeapp.generated.resources.trakt_watch_progress_source_trakt
@@ -291,30 +301,37 @@ private fun TrackingDataSources(
                 },
             )
         }
-        if (traktConnected || simklConnected) {
-            val effectiveRecommendationsSource = effectiveTrackingRecommendationsSource(
-                source = settingsUiState.moreLikeThisSource,
-                traktConnected = traktConnected,
+        val geminiConfigured = settingsUiState.geminiApiKey.isNotBlank()
+        val effectiveRecommendationsSource = effectiveTrackingRecommendationsSource(
+            source = settingsUiState.moreLikeThisSource,
+            traktConnected = traktConnected,
+            simklConnected = simklConnected,
+            geminiConfigured = geminiConfigured,
+        )
+        val recommendationsFallback = if (effectiveRecommendationsSource != settingsUiState.moreLikeThisSource) {
+            stringResource(
+                Res.string.settings_tracking_source_fallback,
+                moreLikeThisSourceLabel(settingsUiState.moreLikeThisSource),
+                moreLikeThisSourceLabel(effectiveRecommendationsSource),
             )
-            val recommendationsFallback = if (effectiveRecommendationsSource != settingsUiState.moreLikeThisSource) {
-                stringResource(
-                    Res.string.settings_tracking_source_fallback,
-                    moreLikeThisSourceLabel(settingsUiState.moreLikeThisSource),
-                    moreLikeThisSourceLabel(effectiveRecommendationsSource),
-                )
-            } else {
-                null
-            }
-            SettingsGroupDivider(isTablet = isTablet)
-            TrackingPreferenceActionRow(
-                title = stringResource(Res.string.trakt_more_like_this_source_title),
-                description = stringResource(Res.string.trakt_more_like_this_source_subtitle),
-                value = moreLikeThisSourceLabel(effectiveRecommendationsSource),
-                supportingMessage = recommendationsFallback,
-                isTablet = isTablet,
-                onClick = { activePickerName = TrackingDataPicker.MORE_LIKE_THIS.name },
-            )
+        } else {
+            null
         }
+        SettingsGroupDivider(isTablet = isTablet)
+        TrackingPreferenceActionRow(
+            title = stringResource(Res.string.trakt_more_like_this_source_title),
+            description = stringResource(Res.string.trakt_more_like_this_source_subtitle),
+            value = moreLikeThisSourceLabel(effectiveRecommendationsSource),
+            supportingMessage = recommendationsFallback,
+            isTablet = isTablet,
+            onClick = { activePickerName = TrackingDataPicker.MORE_LIKE_THIS.name },
+        )
+        SettingsGroupDivider(isTablet = isTablet)
+        GeminiApiKeySettingsRow(
+            isTablet = isTablet,
+            apiKey = settingsUiState.geminiApiKey,
+            onSave = TraktSettingsRepository::setGeminiApiKey,
+        )
     }
 
     when (activePicker) {
@@ -350,8 +367,13 @@ private fun TrackingDataSources(
             selectedValue = effectiveTrackingRecommendationsSource(
                 source = settingsUiState.moreLikeThisSource,
                 traktConnected = traktConnected,
+                simklConnected = simklConnected,
+                geminiConfigured = settingsUiState.geminiApiKey.isNotBlank(),
             ),
-            options = recommendationsSourceOptions(traktConnected),
+            options = recommendationsSourceOptions(
+                traktConnected = traktConnected,
+                geminiConfigured = settingsUiState.geminiApiKey.isNotBlank(),
+            ),
             onSelected = TrackingSettingsRepository::setMoreLikeThisSource,
             onDismiss = { activePickerName = null },
         )
@@ -419,6 +441,43 @@ private fun TrackingViewingAndDiscovery(
     }
 }
 
+@Composable
+private fun GeminiApiKeySettingsRow(
+    isTablet: Boolean,
+    apiKey: String,
+    onSave: (String) -> Unit,
+) {
+    var draft by rememberSaveable(apiKey) { mutableStateOf(apiKey) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = if (isTablet) 14.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(Res.string.settings_tracking_gemini_api_key_title),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = stringResource(Res.string.settings_tracking_gemini_api_key_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SettingsSecretTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(Res.string.settings_tracking_gemini_api_key_label),
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Button(onClick = { onSave(draft.trim()) }, enabled = draft.trim() != apiKey) {
+                Text(stringResource(Res.string.action_save))
+            }
+        }
+    }
+}
 @Composable
 private fun TrackingPreferenceActionRow(
     title: String,
@@ -613,6 +672,7 @@ private fun continueWatchingOptions(): List<TrackingPickerOption<Int>> =
 @Composable
 private fun recommendationsSourceOptions(
     traktConnected: Boolean,
+    geminiConfigured: Boolean,
 ): List<TrackingPickerOption<MoreLikeThisSourcePreference>> {
     val traktAvailable = isTrackingBrandAvailable(TrackingBrand.TRAKT, traktConnected, simklConnected = false)
     val simklConnected = com.nuvio.app.features.simkl.SimklAuthRepository.let {
@@ -620,6 +680,11 @@ private fun recommendationsSourceOptions(
         it.isAuthenticated.value
     }
     return listOf(
+        TrackingPickerOption(
+            value = MoreLikeThisSourcePreference.ALL,
+            title = stringResource(Res.string.trakt_more_like_this_source_all),
+            description = stringResource(Res.string.settings_tracking_all_recommendations_description),
+        ),
         TrackingPickerOption(
             value = MoreLikeThisSourcePreference.TMDB,
             title = stringResource(Res.string.trakt_more_like_this_source_tmdb),
@@ -638,6 +703,13 @@ private fun recommendationsSourceOptions(
             description = stringResource(Res.string.settings_tracking_simkl_recommendations_description),
             enabled = simklConnected,
             unavailableReason = if (!simklConnected) stringResource(Res.string.settings_tracking_connect_first, "Simkl") else null,
+        ),
+        TrackingPickerOption(
+            value = MoreLikeThisSourcePreference.GEMINI,
+            title = stringResource(Res.string.trakt_more_like_this_source_gemini),
+            description = stringResource(Res.string.settings_tracking_gemini_recommendations_description),
+            enabled = geminiConfigured,
+            unavailableReason = if (!geminiConfigured) stringResource(Res.string.settings_tracking_gemini_api_key_required) else null,
         ),
     )
 }
@@ -677,6 +749,8 @@ private fun moreLikeThisSourceLabel(source: MoreLikeThisSourcePreference): Strin
     MoreLikeThisSourcePreference.TRAKT -> stringResource(Res.string.trakt_more_like_this_source_trakt)
     MoreLikeThisSourcePreference.TMDB -> stringResource(Res.string.trakt_more_like_this_source_tmdb)
     MoreLikeThisSourcePreference.SIMKL -> stringResource(Res.string.trakt_more_like_this_source_simkl)
+    MoreLikeThisSourcePreference.GEMINI -> stringResource(Res.string.trakt_more_like_this_source_gemini)
+    MoreLikeThisSourcePreference.ALL -> stringResource(Res.string.trakt_more_like_this_source_all)
 }
 
 @Composable
@@ -692,17 +766,17 @@ private fun continueWatchingDaysCapLabel(daysCap: Int): String {
 internal fun effectiveTrackingRecommendationsSource(
     source: MoreLikeThisSourcePreference,
     traktConnected: Boolean,
-): MoreLikeThisSourcePreference {
-    if (source == MoreLikeThisSourcePreference.TRAKT && !traktConnected) {
-        return MoreLikeThisSourcePreference.TMDB
-    }
-    if (source == MoreLikeThisSourcePreference.SIMKL) {
-        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
-        if (!com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value) {
-            return MoreLikeThisSourcePreference.TMDB
-        }
-    }
-    return source
+    simklConnected: Boolean,
+    geminiConfigured: Boolean,
+): MoreLikeThisSourcePreference = when (source) {
+    MoreLikeThisSourcePreference.TRAKT ->
+        if (traktConnected) source else MoreLikeThisSourcePreference.TMDB
+    MoreLikeThisSourcePreference.SIMKL ->
+        if (simklConnected) source else MoreLikeThisSourcePreference.TMDB
+    MoreLikeThisSourcePreference.GEMINI ->
+        if (geminiConfigured) source else MoreLikeThisSourcePreference.TMDB
+    MoreLikeThisSourcePreference.TMDB,
+    MoreLikeThisSourcePreference.ALL -> source
 }
 
 @Composable
