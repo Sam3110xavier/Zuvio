@@ -9,23 +9,30 @@ internal object ReleaseSelector {
     fun eligibleReleases(
         releases: List<GitHubReleaseDto>,
         channel: UpdateChannel
-    ): List<GitHubReleaseDto> = releases
-        .asSequence()
-        .filterNot(GitHubReleaseDto::draft)
-        .mapNotNull { release ->
+    ): List<GitHubReleaseDto> {
+        val candidates = releases.mapNotNull { release ->
+            if (release.draft) return@mapNotNull null
             val version = releaseVersion(release) ?: return@mapNotNull null
             ReleaseCandidate(
                 release = release,
                 version = version,
                 prerelease = isPrerelease(release, version)
-            )
+            ).takeIf { channel == UpdateChannel.BETA || !it.prerelease }
         }
-        .filter { candidate -> channel == UpdateChannel.BETA || !candidate.prerelease }
-        // GitHub's releases endpoint is already ordered newest-created first. Preserve that
-        // order: legacy build-like patch numbers (for example 0.6.603) must not outrank
-        // a newer correctly versioned release (for example 0.6.7).
-        .map(ReleaseCandidate::release)
-        .toList()
+
+        // Keep GitHub's chronology between distinct release versions. Within one
+        // version family, however, prefer its final promotion and then the newest
+        // prerelease (beta.10 must precede beta.9).
+        return candidates
+            .groupBy { Triple(it.version.major, it.version.minor, it.version.patch) }
+            .values
+            .flatMap { sameVersion ->
+                sameVersion.sortedWith { left, right ->
+                    right.version.compareTo(left.version)
+                }
+            }
+            .map(ReleaseCandidate::release)
+    }
 
     private fun releaseVersion(release: GitHubReleaseDto): SemanticVersion? =
         VersionUtils.parse(release.tagName) ?: VersionUtils.parse(release.name)

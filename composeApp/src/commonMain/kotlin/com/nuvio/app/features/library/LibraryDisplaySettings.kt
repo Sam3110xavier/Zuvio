@@ -165,9 +165,15 @@ internal fun buildLibraryVerticalProjection(
     providerOrders: Map<String, Map<String, Int>> = emptyMap(),
     selectSection: Boolean = true,
 ): LibraryVerticalProjection {
-    val availableSections = sections
+    // Local status sections are a navigation projection: hide statuses with no
+    // saved items, while remote providers may intentionally expose empty destinations.
+    val availableSections = if (sourceMode == LibrarySourceMode.LOCAL) {
+        sections.filter { it.items.isNotEmpty() }
+    } else {
+        sections
+    }
     val selectedSection = if (selectSection) {
-        sections.firstOrNull { it.type == selectedSectionKey } ?: sections.firstOrNull()
+        availableSections.firstOrNull { it.type == selectedSectionKey } ?: availableSections.firstOrNull()
     } else {
         null
     }
