@@ -24,7 +24,7 @@ object AniListTracker : TrackingAuthProvider {
     private val activeProfile = MutableStateFlow(ProfileRepository.activeProfileId)
     internal val store = AniListAuthStore(PlatformAniListAuthPersistence, activeProfile.value)
     internal val api = AniListApiClient(store)
-    private val resolver = AniListIdResolver(api)
+    internal val resolver = AniListIdResolver(api)
     val sync = AniListSyncRepository(PlatformAniListSyncStorage, store, api, resolver, activeProfile, coroutineScope)
     val writes = AniListTrackingWrites(sync, api, resolver)
     val progressProvider = AniListTrackingProgressProvider(sync, store, activeProfile, coroutineScope, ::ensureLoaded)

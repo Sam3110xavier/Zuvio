@@ -20,34 +20,35 @@ object TmdbService {
 
     suspend fun ensureTmdbId(videoId: String, mediaType: String, fallbackImdbId: String? = null): String? {
         val apiKey = TmdbSettingsRepository.effectiveApiKey()
-
-        val normalized = videoId
-            .removePrefix("tmdb:")
-            .removePrefix("movie:")
-            .removePrefix("series:")
-            .substringBefore(':')
-            .substringBefore('/')
-            .trim()
-
-        if (normalized.isBlank()) return null
-        if (normalized.all { it in '0'..'9' }) {
-            return normalized.takeIf { it.toLongOrNull()?.let { id -> id > 0 } == true }
-        }
-        if (normalized.isValidImdbId()) {
-            return imdbToTmdb(imdbId = normalized.lowercase(), mediaType = mediaType, apiKey = apiKey)
+        val idParts = videoId.trim().substringBefore('/').split(':')
+        val prefix = idParts.firstOrNull()?.lowercase()
+        val normalized = when (prefix) {
+            "tmdb", "movie", "series", "tv" -> idParts.drop(1).firstOrNull { part ->
+                part.isValidImdbId() || part.toLongOrNull()?.let { it > 0L } == true
+            }
+            "imdb" -> idParts.drop(1).firstOrNull(String::isValidImdbId)
+            // Do not mistake IDs from other catalogs for numeric TMDB IDs.
+            "mal", "anilist", "kitsu", "anidb", "tvdb", "simkl" -> null
+            else -> idParts.firstOrNull(String::isValidImdbId)
+                ?: idParts.firstOrNull()?.takeIf { it.toLongOrNull()?.let { id -> id > 0L } == true }
         }
 
-        // Fallback: use the IMDB ID supplied by the addon's meta response
+        if (normalized != null) {
+            if (normalized.all { it in '0'..'9' }) return normalized
+            if (normalized.isValidImdbId()) {
+                return imdbToTmdb(imdbId = normalized.lowercase(), mediaType = mediaType, apiKey = apiKey)
+            }
+        }
+
+        // A metadata provider may supply a resolvable IMDb ID separately from its catalog ID.
         val normalizedFallback = fallbackImdbId
             ?.trim()
-            ?.substringBefore(':')
-            ?.takeIf(String::isValidImdbId)
+            ?.split(':', '/')
+            ?.firstOrNull(String::isValidImdbId)
             ?.lowercase()
-        if (normalizedFallback != null) {
-            return imdbToTmdb(imdbId = normalizedFallback, mediaType = mediaType, apiKey = apiKey)
+        return normalizedFallback?.let {
+            imdbToTmdb(imdbId = it, mediaType = mediaType, apiKey = apiKey)
         }
-
-        return null
     }
 
     suspend fun tmdbToImdb(tmdbId: Int, mediaType: String): String? {

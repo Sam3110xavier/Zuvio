@@ -2429,8 +2429,7 @@ private fun ConfiguredMetaSections(
                         MoreLikeThisSource.TMDB -> stringResource(Res.string.detail_more_like_this_powered_by_tmdb)
                         MoreLikeThisSource.TRAKT -> stringResource(Res.string.detail_more_like_this_powered_by_trakt)
                         MoreLikeThisSource.SIMKL -> stringResource(Res.string.detail_more_like_this_powered_by_simkl)
-                        MoreLikeThisSource.GEMINI -> stringResource(Res.string.detail_more_like_this_powered_by_gemini)
-                        MoreLikeThisSource.MIXED -> stringResource(Res.string.detail_more_like_this_powered_by_mixed)
+                        MoreLikeThisSource.ANILIST -> stringResource(Res.string.detail_more_like_this_powered_by_anilist)
                         null -> null
                     }
                     DetailPosterRailSection(

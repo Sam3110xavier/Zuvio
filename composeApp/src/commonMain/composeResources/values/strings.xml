@@ -1418,6 +1418,9 @@
     <string name="trakt_more_like_this_source_trakt">Trakt</string>
     <string name="trakt_more_like_this_source_tmdb">TMDB</string>
     <string name="trakt_more_like_this_source_simkl">Simkl</string>
+    <string name="trakt_more_like_this_source_anilist">AniList</string>
+    <string name="settings_tracking_anilist_recommendations_description">Use AniList community recommendations for anime.</string>
+    <string name="detail_more_like_this_powered_by_anilist">Powered by AniList</string>
     <string name="trakt_continue_watching_window">Continue Watching Window</string>
     <string name="trakt_continue_watching_subtitle">Trakt history considered for continue watching</string>
     <string name="trakt_cw_window_title">Continue Watching Window</string>
@@ -2671,14 +2674,4 @@
     <string name="compose_player_resize_best_fit">Best Fit</string>
     <string name="compose_player_resize_16_9">16:9</string>
 
-    <string name="trakt_more_like_this_source_all">All available sources</string>
-    <string name="trakt_more_like_this_source_gemini">Google Gemini</string>
-    <string name="settings_tracking_all_recommendations_description">Merge recommendations from available providers, remove duplicates and rank the combined list.</string>
-    <string name="settings_tracking_gemini_recommendations_description">Use Gemini to find titles with similar themes, tone, story and genres. Posters are matched through TMDB.</string>
-    <string name="settings_tracking_gemini_api_key_title">Gemini API key</string>
-    <string name="settings_tracking_gemini_api_key_description">Add a Google AI Studio key to enable Gemini recommendations. The key is saved in this local profile and sent only to Google's Gemini API.</string>
-    <string name="settings_tracking_gemini_api_key_label">Google Gemini API key</string>
-    <string name="settings_tracking_gemini_api_key_required">Add a Gemini API key to enable this provider.</string>
-    <string name="detail_more_like_this_powered_by_gemini">Powered by Gemini</string>
-    <string name="detail_more_like_this_powered_by_mixed">Powered by multiple sources</string>
 </resources>

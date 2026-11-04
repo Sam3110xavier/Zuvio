@@ -75,6 +75,22 @@ internal class AniListApiClient(
         }
     }
 
+    suspend fun recommendations(mediaId: Long): List<AniListMedia> {
+        val data = execute(
+            MEDIA_RECOMMENDATIONS_QUERY,
+            buildJsonObject { put("id", mediaId) },
+            scope = null,
+            allowNotFound = true,
+        )
+        val nodes = (((data["Media"] as? JsonObject)?.get("recommendations") as? JsonObject)
+            ?.get("nodes") as? JsonArray) ?: return emptyList()
+        return nodes.mapNotNull { node ->
+            val recommendation = (node as? JsonObject)?.get("mediaRecommendation") as? JsonObject
+                ?: return@mapNotNull null
+            runCatching { aniListJson.decodeFromJsonElement(AniListMedia.serializer(), recommendation) }.getOrNull()
+        }.filterNot { it.isAdult }
+    }
+
     suspend fun saveEntry(
         scope: AniListAuthScope,
         mediaId: Long,
@@ -226,6 +242,8 @@ internal class AniListApiClient(
 
         private val MEDIA_PAGE_QUERY = "query (\$ids: [Int]) { Page(perPage: 50) { media(id_in: \$ids, type: ANIME) " +
             "{ $MEDIA_FIELDS } } }"
+
+        private val MEDIA_RECOMMENDATIONS_QUERY = "query (\$id: Int) { Media(id: \$id, type: ANIME) { recommendations(sort: RATING_DESC, page: 1, perPage: 20) { nodes { mediaRecommendation { $MEDIA_FIELDS } } } } }"
 
         private val SAVE_ENTRY_MUTATION = "mutation (\$mediaId: Int, \$status: MediaListStatus, \$progress: Int, " +
             "\$scoreRaw: Int) { SaveMediaListEntry(mediaId: \$mediaId, status: \$status, progress: \$progress, " +

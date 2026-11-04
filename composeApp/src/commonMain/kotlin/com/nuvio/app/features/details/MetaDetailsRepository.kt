@@ -12,7 +12,6 @@ import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.cloudstream.parseCloudStreamRouteId
 import com.nuvio.app.features.cloudstream.toMetaDetails
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
-import com.nuvio.app.features.gemini.GeminiRelatedRepository
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
@@ -31,9 +30,6 @@ import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.tracking.TrackingSettingsRepository
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -553,112 +549,39 @@ object MetaDetailsRepository {
         TraktAuthRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
         com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
-
         if (!supportsMoreLikeThis(meta, fallbackItemType)) {
             return meta.copy(moreLikeThis = emptyList(), moreLikeThisSource = null)
         }
-
-        val preference = TrackingSettingsRepository.uiState.value.moreLikeThisSource
-        val traktConnected = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
-        val simklConnected = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
-        val geminiApiKey = TrackingSettingsRepository.uiState.value.geminiApiKey
-        val tmdbSettings = TmdbSettingsRepository.snapshot()
-        val tmdbAvailable = tmdbSettings.useMoreLikeThis
-
-        suspend fun loadTmdb(): List<com.nuvio.app.features.home.MetaPreview> =
-            if (tmdbAvailable) {
-                TmdbMetadataService.getMoreLikeThisForMeta(
-                    meta = meta,
-                    fallbackItemId = fallbackItemId,
-                    fallbackItemType = fallbackItemType,
-                )
-            } else {
-                emptyList()
-            }
-
-        suspend fun loadTrakt(): List<com.nuvio.app.features.home.MetaPreview> =
-            if (traktConnected) TraktRelatedRepository.getRelated(
-                meta = meta,
-                fallbackItemId = fallbackItemId,
-                fallbackItemType = fallbackItemType,
-            ) else emptyList()
-
-        suspend fun loadSimkl(): List<com.nuvio.app.features.home.MetaPreview> =
-            if (simklConnected) com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(
-                meta = meta,
-                fallbackItemId = fallbackItemId,
-                fallbackItemType = fallbackItemType,
-            ) else emptyList()
-
-        suspend fun loadGemini(): List<com.nuvio.app.features.home.MetaPreview> =
-            if (geminiApiKey.isNotBlank()) GeminiRelatedRepository.getRelated(meta, geminiApiKey) else emptyList()
-
-        suspend fun <T> safeProvider(
-            provider: String,
-            block: suspend () -> T,
-        ): T? = try {
-            withTimeoutOrNull(if (provider == "Gemini") 18_000L else 8_000L) { block() }
+        val source = effectiveMoreLikeThisSource()
+        val items = try {
+            withTimeoutOrNull(8_000L) {
+                when (source) {
+                MoreLikeThisSourcePreference.TMDB -> TmdbMetadataService.getMoreLikeThisForMeta(meta, fallbackItemId, fallbackItemType)
+                MoreLikeThisSourcePreference.TRAKT ->
+                    if (TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED) {
+                        TraktRelatedRepository.getRelated(meta, fallbackItemId, fallbackItemType)
+                    } else emptyList()
+                MoreLikeThisSourcePreference.SIMKL ->
+                    if (com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value) {
+                        com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(meta, fallbackItemId, fallbackItemType)
+                    } else emptyList()
+                MoreLikeThisSourcePreference.ANILIST ->
+                    com.nuvio.app.features.anilist.AniListRelatedRepository.getRelated(meta)
+                }
+            } ?: emptyList()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            log.w { "Failed to load $provider related titles for ${meta.id}: ${error.message}" }
-            null
+            log.w { "Failed to load $source related titles for ${meta.id}: ${error.message}" }
+            emptyList()
         }
-
-        val providerResults: List<Pair<MoreLikeThisSource, List<com.nuvio.app.features.home.MetaPreview>>> =
-            when (preference) {
-                MoreLikeThisSourcePreference.ALL -> supervisorScope {
-                    listOf(
-                        async { MoreLikeThisSource.TMDB to safeProvider("TMDB", ::loadTmdb).orEmpty() },
-                        async { MoreLikeThisSource.TRAKT to safeProvider("Trakt", ::loadTrakt).orEmpty() },
-                        async { MoreLikeThisSource.SIMKL to safeProvider("Simkl", ::loadSimkl).orEmpty() },
-                        async { MoreLikeThisSource.GEMINI to safeProvider("Gemini", ::loadGemini).orEmpty() },
-                    ).awaitAll()
-                }
-                MoreLikeThisSourcePreference.TMDB ->
-                    listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB", ::loadTmdb).orEmpty())
-                MoreLikeThisSourcePreference.TRAKT -> if (traktConnected) {
-                    listOf(MoreLikeThisSource.TRAKT to safeProvider("Trakt", ::loadTrakt).orEmpty())
-                } else {
-                    listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB fallback", ::loadTmdb).orEmpty())
-                }
-                MoreLikeThisSourcePreference.SIMKL -> if (simklConnected) {
-                    listOf(MoreLikeThisSource.SIMKL to safeProvider("Simkl", ::loadSimkl).orEmpty())
-                } else {
-                    listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB fallback", ::loadTmdb).orEmpty())
-                }
-                MoreLikeThisSourcePreference.GEMINI -> if (geminiApiKey.isNotBlank()) {
-                    listOf(MoreLikeThisSource.GEMINI to safeProvider("Gemini", ::loadGemini).orEmpty())
-                } else {
-                    listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB fallback", ::loadTmdb).orEmpty())
-                }
-            }
-
-        val resolvedProviderResults = if (
-            preference != MoreLikeThisSourcePreference.ALL &&
-            preference != MoreLikeThisSourcePreference.TMDB &&
-            providerResults.none { it.second.isNotEmpty() } &&
-            tmdbAvailable
-        ) {
-            listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB fallback", ::loadTmdb).orEmpty())
-        } else {
-            providerResults
+        val displayedSource = if (items.isEmpty()) null else when (source) {
+            MoreLikeThisSourcePreference.TMDB -> MoreLikeThisSource.TMDB
+            MoreLikeThisSourcePreference.TRAKT -> MoreLikeThisSource.TRAKT
+            MoreLikeThisSourcePreference.SIMKL -> MoreLikeThisSource.SIMKL
+            MoreLikeThisSourcePreference.ANILIST -> MoreLikeThisSource.ANILIST
         }
-        val activeResults = resolvedProviderResults.filter { it.second.isNotEmpty() }
-        val mergedItems = activeResults
-            .flatMap { it.second }
-            .distinctBy { item ->
-                item.type.lowercase() + ":" +
-                    item.name.lowercase().filter(Char::isLetterOrDigit) + ":" +
-                    item.releaseInfo.orEmpty().take(4)
-            }
-        val activeSources = activeResults.map { it.first }.distinct()
-        val displayedSource = when {
-            activeSources.isEmpty() -> null
-            activeSources.size > 1 -> MoreLikeThisSource.MIXED
-            else -> activeSources.first()
-        }
-        return meta.copy(moreLikeThis = mergedItems, moreLikeThisSource = displayedSource)
+        return meta.copy(moreLikeThis = items, moreLikeThisSource = displayedSource)
     }
 
     private fun shouldFetchMdbListOnMetaScreen(
@@ -680,24 +603,28 @@ object MetaDetailsRepository {
         return shouldApplyMoreLikeThisSource(meta)
     }
 
+    private fun effectiveMoreLikeThisSource(): MoreLikeThisSourcePreference {
+        val preferred = TrackingSettingsRepository.uiState.value.moreLikeThisSource
+        val traktConnected = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
+        val simklConnected = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
+        return when (preferred) {
+            MoreLikeThisSourcePreference.TRAKT -> if (traktConnected) preferred else MoreLikeThisSourcePreference.TMDB
+            MoreLikeThisSourcePreference.SIMKL -> if (simklConnected) preferred else MoreLikeThisSourcePreference.TMDB
+            MoreLikeThisSourcePreference.TMDB,
+            MoreLikeThisSourcePreference.ANILIST -> preferred
+        }
+    }
+
     private fun shouldApplyMoreLikeThisSource(meta: MetaDetails): Boolean {
         TrackingSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
-
-        val trackingSettings = TrackingSettingsRepository.uiState.value
-        val source = trackingSettings.moreLikeThisSource
-        val tmdbSettings = TmdbSettingsRepository.snapshot()
-        val tmdbAvailable = tmdbSettings.useMoreLikeThis
-        val traktAvailable = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
         com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
-        val simklAvailable = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
-        return when (source) {
-            MoreLikeThisSourcePreference.ALL -> true
-            MoreLikeThisSourcePreference.TMDB -> tmdbAvailable
-            MoreLikeThisSourcePreference.TRAKT -> traktAvailable || tmdbAvailable
-            MoreLikeThisSourcePreference.SIMKL -> simklAvailable || tmdbAvailable
-            MoreLikeThisSourcePreference.GEMINI -> trackingSettings.geminiApiKey.isNotBlank() || tmdbAvailable
+        return when (effectiveMoreLikeThisSource()) {
+            MoreLikeThisSourcePreference.TMDB -> TmdbSettingsRepository.snapshot().useMoreLikeThis
+            MoreLikeThisSourcePreference.TRAKT,
+            MoreLikeThisSourcePreference.SIMKL -> true
+            MoreLikeThisSourcePreference.ANILIST -> true
         }
     }
 
@@ -716,19 +643,13 @@ object MetaDetailsRepository {
         return buildString {
             append("${settings.enabled}:${settings.apiKey.trim()}:$providers")
             append("|mdblist_account=${settings.accountScope.takeUnless { settings.hasApiKey }}")
-            append("|more_like=${trackingSettings.moreLikeThisSource}:$traktAuthMode:$simklAuthenticated:${trackingSettings.geminiApiKey.hashCode()}")
+            append("|more_like=${trackingSettings.moreLikeThisSource}:$traktAuthMode:$simklAuthenticated")
             append("|tmdb=${tmdbSettings.enabled}:${tmdbSettings.useMoreLikeThis}:${tmdbSettings.language}")
         }
     }
 
     private fun supportsMoreLikeThis(meta: MetaDetails, fallbackItemType: String): Boolean =
         normalizeMoreLikeThisType(meta.type) != null || normalizeMoreLikeThisType(fallbackItemType) != null
-
-    private fun shouldUseSimklMoreLikeThis(source: MoreLikeThisSourcePreference): Boolean {
-        if (source != MoreLikeThisSourcePreference.SIMKL) return false
-        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
-        return com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
-    }
 
     private fun normalizeMoreLikeThisType(value: String?): String? =
         when (value?.trim()?.lowercase()) {

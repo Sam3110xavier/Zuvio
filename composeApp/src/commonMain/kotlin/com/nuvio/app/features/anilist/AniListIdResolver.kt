@@ -233,6 +233,22 @@ internal class AniListIdResolver(
             ),
         )
 
+    internal suspend fun resolveMediaId(contentId: String, contentType: String? = null): Long? {
+        parseAniListAnimeVideoId(contentId)?.let { parts ->
+            return animeIdToAniList(parts.prefix, parts.id, snapshot = null)
+        }
+        val rawId = contentId.trim().removePrefix("imdb:").substringBefore(':')
+        val imdbId = rawId.takeIf {
+            it.startsWith("tt", ignoreCase = true) && it.drop(2).length >= 5 && it.drop(2).all(Char::isDigit)
+        } ?: return null
+        val candidates = imdbCandidates(imdbId)
+        if (candidates.isEmpty()) return null
+        val media = api.mediaPage(null, candidates)
+        val wantsMovie = contentType.equals("movie", ignoreCase = true) ||
+            contentType.equals("film", ignoreCase = true)
+        return media.firstOrNull { it.isMovie == wantsMovie }?.id ?: candidates.firstOrNull()
+    }
+
     private suspend fun animeIdToAniList(prefix: String, id: Long, snapshot: AniListSyncSnapshot?): Long? {
         if (prefix == "anilist") return id
         snapshot?.let { snap ->

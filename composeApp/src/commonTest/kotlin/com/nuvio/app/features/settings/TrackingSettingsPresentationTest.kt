@@ -53,46 +53,24 @@ class TrackingSettingsPresentationTest {
 
         assertEquals(
             MoreLikeThisSourcePreference.TMDB,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = false, simklConnected = false, geminiConfigured = false),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = false, simklConnected = false),
         )
         assertEquals(
             MoreLikeThisSourcePreference.TRAKT,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = true, simklConnected = false, geminiConfigured = false),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = true, simklConnected = false),
         )
         assertEquals(MoreLikeThisSourcePreference.TRAKT, stored)
     }
 
+    
     @Test
-    fun `Gemini recommendations fall back to TMDB until a key is configured`() {
+    fun `AniList remains selectable independently of account connection`() {
         assertEquals(
-            MoreLikeThisSourcePreference.TMDB,
+            MoreLikeThisSourcePreference.ANILIST,
             effectiveTrackingRecommendationsSource(
-                MoreLikeThisSourcePreference.GEMINI,
+                MoreLikeThisSourcePreference.ANILIST,
                 traktConnected = false,
                 simklConnected = false,
-                geminiConfigured = false,
-            ),
-        )
-        assertEquals(
-            MoreLikeThisSourcePreference.GEMINI,
-            effectiveTrackingRecommendationsSource(
-                MoreLikeThisSourcePreference.GEMINI,
-                traktConnected = false,
-                simklConnected = false,
-                geminiConfigured = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `all recommendation providers preference remains selected`() {
-        assertEquals(
-            MoreLikeThisSourcePreference.ALL,
-            effectiveTrackingRecommendationsSource(
-                MoreLikeThisSourcePreference.ALL,
-                traktConnected = false,
-                simklConnected = false,
-                geminiConfigured = false,
             ),
         )
     }
