@@ -275,7 +275,7 @@ private fun BoxScope.MoreLikeThisOverlay(
                         AsyncImage(
                             model = item.banner ?: item.background ?: item.poster,
                             contentDescription = item.name,
-                            contentScale = ContentScale.Crop,
+                            contentScale = if (item.banner != null || item.background != null) ContentScale.Crop else ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(83.dp)

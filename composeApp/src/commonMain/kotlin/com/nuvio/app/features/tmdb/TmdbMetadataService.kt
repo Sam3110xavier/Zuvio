@@ -118,7 +118,7 @@ object TmdbMetadataService {
                     type = if (normalizedType == "tv") "series" else "movie",
                     name = itemTitle,
                     poster = posterUrl,
-                    banner = backdropUrl ?: buildImageUrl(item.posterPath, "w780"),
+                    banner = backdropUrl,
                     posterShape = PosterShape.Landscape,
                     description = item.overview?.trim()?.takeIf(String::isNotBlank),
                     releaseInfo = (item.releaseDate ?: item.firstAirDate)?.take(4),

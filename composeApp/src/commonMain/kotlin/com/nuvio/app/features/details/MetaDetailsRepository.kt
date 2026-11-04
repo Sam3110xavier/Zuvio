@@ -596,7 +596,7 @@ object MetaDetailsRepository {
             provider: String,
             block: suspend () -> T,
         ): T? = try {
-            withTimeoutOrNull(8_000L) { block() }
+            withTimeoutOrNull(if (provider == "Gemini") 18_000L else 8_000L) { block() }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
