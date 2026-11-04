@@ -653,7 +653,6 @@ private fun ExoPlayerSurface(
         dataSourceFactory,
         extractorsFactory,
         sourceAudioUrl,
-        attachedAddonSubtitleConfig,
     ) {
         val mediaItem = attachedAddonSubtitleConfig?.let { config ->
             resolvedMediaItem.buildUpon().setSubtitleConfigurations(listOf(config)).build()
