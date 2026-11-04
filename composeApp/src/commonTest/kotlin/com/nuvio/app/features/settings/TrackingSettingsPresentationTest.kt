@@ -62,15 +62,30 @@ class TrackingSettingsPresentationTest {
         assertEquals(MoreLikeThisSourcePreference.TRAKT, stored)
     }
 
-    
     @Test
-    fun `AniList remains selectable independently of account connection`() {
+    fun `TMDB remains selectable and Simkl falls back when disconnected`() {
         assertEquals(
-            MoreLikeThisSourcePreference.ANILIST,
+            MoreLikeThisSourcePreference.TMDB,
             effectiveTrackingRecommendationsSource(
-                MoreLikeThisSourcePreference.ANILIST,
+                MoreLikeThisSourcePreference.TMDB,
                 traktConnected = false,
                 simklConnected = false,
+            ),
+        )
+        assertEquals(
+            MoreLikeThisSourcePreference.TMDB,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.SIMKL,
+                traktConnected = false,
+                simklConnected = false,
+            ),
+        )
+        assertEquals(
+            MoreLikeThisSourcePreference.SIMKL,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.SIMKL,
+                traktConnected = false,
+                simklConnected = true,
             ),
         )
     }
