@@ -2029,11 +2029,7 @@ internal fun MainAppContent(
                                             LibraryRepository.remove(libraryItem.id)
                                         }
                                     } else {
-                                        if (!isRemoteLibrarySource) {
-                                            LibraryRepository.toggleLocalSaved(libraryItem)
-                                        } else {
-                                            openLibraryMembershipPicker(libraryItem, preview.name)
-                                        }
+                                        openLibraryMembershipPicker(libraryItem, preview.name)
                                     }
                                 },
                             ),

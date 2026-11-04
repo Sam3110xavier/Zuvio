@@ -347,7 +347,9 @@ object LibraryRepository {
 
     fun save(item: LibraryItem) {
         ensureLoaded()
-        val snapshot = localState.upsert(item.copy(savedAtEpochMs = LibraryClock.nowEpochMs()))
+        val existing = localState.find(item.id, item.type)
+        val savedItem = item.copy(savedAtEpochMs = existing?.savedAtEpochMs ?: LibraryClock.nowEpochMs())
+        val snapshot = localState.upsert(savedItem)
         log.i {
             "Saving local library item item=${item.id} type=${item.type} profile=${snapshot.token.profileId}"
         }
@@ -543,21 +545,26 @@ object LibraryRepository {
         ensureLoaded()
         val targetProvider = TrackingProviderRegistry.connectedLibraryProviders()
             .firstOrNull { provider -> provider.snapshot().tabs.any { tab -> tab.key == listKey } }
-        val currentMembership = if (listKey == LOCAL_LIBRARY_LIST_KEY) {
+        val isLocalLibrarySection = listKey == LOCAL_LIBRARY_LIST_KEY || listKey.startsWith("local:status:")
+        val currentMembership = if (isLocalLibrarySection) {
             mapOf(LOCAL_LIBRARY_LIST_KEY to localState.contains(item.id, item.type))
         } else {
             targetProvider?.membership(item).orEmpty()
         }
-        val desiredMembership = libraryMembershipWithRemovedList(
-            currentMembership = currentMembership,
-            listKey = listKey,
-        )
+        val desiredMembership = if (isLocalLibrarySection) {
+            currentMembership + (LOCAL_LIBRARY_LIST_KEY to false)
+        } else {
+            libraryMembershipWithRemovedList(
+                currentMembership = currentMembership,
+                listKey = listKey,
+            )
+        }
         return applyMembershipChanges(
             item = item,
             desiredMembership = desiredMembership,
             confirmedRemovalProviders = confirmedRemovalProviders,
             targetProviderIds = targetProvider?.let { provider -> setOf(provider.providerId) }.orEmpty(),
-            updateLocal = listKey == LOCAL_LIBRARY_LIST_KEY,
+            updateLocal = isLocalLibrarySection,
         )
     }
 

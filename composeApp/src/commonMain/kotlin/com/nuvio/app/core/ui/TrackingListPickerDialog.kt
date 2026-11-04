@@ -57,7 +57,7 @@ fun TrackingListPickerDialog(
     val localTab = destinations.firstOrNull { it.providerId == null }
     val statusOptions = unifiedTrackingStatuses(destinations)
     val selectedStatus = selectedUnifiedTrackingStatus(destinations, membership)
-    val selectedLocalStatus = selectedLocalLibraryStatus(membership) ?: LocalLibraryStatus.PLANNING
+    val selectedLocalStatus = selectedLocalLibraryStatus(membership)
     val otherLists = destinations.filter { tab ->
         tab.providerId != null && tab.unifiedTrackingStatus() == null
     }
