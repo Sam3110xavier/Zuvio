@@ -43,7 +43,7 @@ object GeminiRelatedRepository {
             ?.let { return@withContext it.items }
         val recommendations = withTimeoutOrNull(GEMINI_TIMEOUT_MS) { generateRecommendations(meta, normalizedKey) }.orEmpty()
         if (recommendations.isEmpty()) {
-            cache[cacheKey] = CachedRecommendations(emptyList(), TraktPlatformClock.nowEpochMs())
+            // Do not cache transient API failures or empty generations for six hours.
             return@withContext emptyList()
         }
         val semaphore = Semaphore(4)
@@ -56,7 +56,9 @@ object GeminiRelatedRepository {
                 }
             }.awaitAll()
         }.filterNotNull().distinctBy { stableRecommendationKey(it) }
-        cache[cacheKey] = CachedRecommendations(resolved, TraktPlatformClock.nowEpochMs())
+        if (resolved.isNotEmpty()) {
+            cache[cacheKey] = CachedRecommendations(resolved, TraktPlatformClock.nowEpochMs())
+        }
         resolved
     }
 
@@ -64,7 +66,7 @@ object GeminiRelatedRepository {
 
     internal fun buildRecommendationPrompt(meta: MetaDetails): String = buildString {
         appendLine("You are a careful film and television recommendation editor.")
-        appendLine("Recommend up to 15 real, released titles genuinely similar to the source.")
+        appendLine("Recommend up to 30 real, released titles genuinely similar to the source.")
         appendLine("Compare story themes, genre blend, tone, pacing, setting, character dynamics and audience appeal.")
         appendLine("Do not recommend another season or episode of the same series.")
         appendLine("Do not repeat the source title or invent titles, years or media types.")
@@ -93,7 +95,7 @@ object GeminiRelatedRepository {
             putJsonObject("generationConfig") {
                 put("temperature", 0.35)
                 put("responseMimeType", "application/json")
-                put("maxOutputTokens", 1800)
+                put("maxOutputTokens", 2600)
             }
         }
         return try {
@@ -111,7 +113,13 @@ object GeminiRelatedRepository {
             val text = payload.candidates.firstNotNullOfOrNull { candidate ->
                 candidate.content?.parts.orEmpty().firstNotNullOfOrNull { it.text?.takeIf(String::isNotBlank) }
             } ?: return emptyList()
-            val parsed = json.decodeFromString<GeminiRecommendationPayload>(text.trim())
+            val fence = "`".repeat(3)
+            val jsonText = text.trim()
+                .removePrefix(fence + "json")
+                .removePrefix(fence)
+                .removeSuffix(fence)
+                .trim()
+            val parsed = json.decodeFromString<GeminiRecommendationPayload>(jsonText)
             val originalTitle = normalizeTitle(meta.name)
             parsed.recommendations.asSequence().mapNotNull { item ->
                 val title = item.title.trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
