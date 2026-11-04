@@ -68,29 +68,17 @@ object TmdbMetadataService {
             .takeIf { it == "movie" || it == "tv" }
             ?: TmdbService.normalizeMediaType(fallbackItemType.orEmpty()).takeIf { it == "movie" || it == "tv" }
             ?: return emptyList()
-        val normalizedLanguage = normalizeTmdbLanguage(settings.language)
-        val resolvedId = TmdbService.ensureTmdbId(meta.id, mediaType, meta.imdbId)
+        val tmdbId = TmdbService.ensureTmdbId(meta.id, mediaType, meta.imdbId)
             ?: fallbackItemId?.let { TmdbService.ensureTmdbId(it, mediaType, meta.imdbId) }
-        // Addon catalog IDs are not always IMDb/TMDB IDs (e.g. provider-specific IDs).
-        // In that case resolve the title through TMDB search before giving up; otherwise
-        // recommendations silently disappear for every title from that provider.
-        val tmdbId = resolvedId?.toIntOrNull()
-            ?: searchRecommendation(
-                title = meta.name,
-                year = (meta.releaseInfo ?: meta.rawReleaseDate)?.take(4)?.toIntOrNull(),
-                mediaType = mediaType,
-            )?.id
-                ?.substringAfter(':')
-                ?.toIntOrNull()
         if (tmdbId == null) {
-            log.w { "Cannot load TMDB recommendations: ID and title lookup failed for ${meta.name} (id=${meta.id}, type=$mediaType, fallback=$fallbackItemId)" }
+            log.w { "Cannot load TMDB recommendations: no TMDB ID resolved for ${meta.id} (type=$mediaType, fallback=$fallbackItemId)" }
             return emptyList()
         }
-        log.d { "Loading TMDB recommendations for id=$tmdbId type=$mediaType language=$normalizedLanguage" }
+        log.d { "Loading TMDB recommendations for id=$tmdbId type=$mediaType language=${settings.language}" }
         return fetchMoreLikeThis(
-            tmdbId = tmdbId,
+            tmdbId = tmdbId.toIntOrNull() ?: return emptyList(),
             mediaType = mediaType,
-            language = normalizedLanguage,
+            language = normalizeTmdbLanguage(settings.language),
         )
     }
 

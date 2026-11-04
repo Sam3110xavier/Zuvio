@@ -73,15 +73,23 @@ object MetaDetailsRepository {
         val metaScreenSettingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
 
         cachedMetaByRequestKey[requestKey]?.let { cachedEntry ->
-            cachedEntry.metaScreenMeta
+            val cachedScreenMeta = cachedEntry.metaScreenMeta
                 ?.takeIf { cachedEntry.metaScreenSettingsFingerprint == metaScreenSettingsFingerprint }
-                ?.let { cachedMeta ->
-                    _uiState.value = MetaDetailsUiState(meta = cachedMeta.withUnreleasedFilter())
-                    activeRequestKey = requestKey
-                    return
-                }
+            val retryMissingTmdbRecommendations = cachedScreenMeta != null &&
+                shouldRetryMissingTmdbRecommendations(cachedScreenMeta)
+            if (cachedScreenMeta != null && !retryMissingTmdbRecommendations) {
+                _uiState.value = MetaDetailsUiState(meta = cachedScreenMeta.withUnreleasedFilter())
+                activeRequestKey = requestKey
+                return
+            }
 
-            val cachedBaseMeta = cachedEntry.baseMeta
+            // Keep any already-applied detail enrichment, but retry a previous empty TMDB
+            // recommendation result instead of treating that transient failure as a cache hit.
+            val cachedBaseMeta = if (retryMissingTmdbRecommendations) {
+                cachedScreenMeta!!
+            } else {
+                cachedEntry.baseMeta
+            }
             if (!shouldEnrichForMetaScreen(cachedBaseMeta, id, mdbListSettings)) {
                 _uiState.value = MetaDetailsUiState(meta = cachedBaseMeta.withUnreleasedFilter())
                 activeRequestKey = requestKey
@@ -225,13 +233,15 @@ object MetaDetailsRepository {
         val mdbListSettings = MdbListSettingsRepository.snapshot()
         val settingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
 
-        cachedMetaByRequestKey[requestKey]?.let { cached ->
+        val cachedScreenMeta = cachedMetaByRequestKey[requestKey]?.let { cached ->
             cached.metaScreenMeta
                 ?.takeIf { cached.metaScreenSettingsFingerprint == settingsFingerprint }
-                ?.let { return it.withUnreleasedFilter() }
+        }
+        if (cachedScreenMeta != null && !shouldRetryMissingTmdbRecommendations(cachedScreenMeta)) {
+            return cachedScreenMeta.withUnreleasedFilter()
         }
 
-        val baseMeta = fetch(type, id) ?: return null
+        val baseMeta = cachedScreenMeta ?: fetch(type, id) ?: return null
         val tmdbEnriched = withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
             TmdbMetadataService.enrichMeta(
                 meta = baseMeta,
@@ -623,6 +633,13 @@ object MetaDetailsRepository {
             MoreLikeThisSourcePreference.TRAKT,
             MoreLikeThisSourcePreference.SIMKL -> true
         }
+    }
+
+    private fun shouldRetryMissingTmdbRecommendations(meta: MetaDetails): Boolean {
+        if (meta.moreLikeThis.isNotEmpty()) return false
+        TmdbSettingsRepository.ensureLoaded()
+        return effectiveMoreLikeThisSource() == MoreLikeThisSourcePreference.TMDB &&
+            TmdbSettingsRepository.snapshot().useMoreLikeThis
     }
 
     private fun buildMetaScreenSettingsFingerprint(
