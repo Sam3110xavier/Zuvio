@@ -565,8 +565,6 @@ object MetaDetailsRepository {
                     if (com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value) {
                         com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(meta, fallbackItemId, fallbackItemType)
                     } else emptyList()
-                MoreLikeThisSourcePreference.ANILIST ->
-                    com.nuvio.app.features.anilist.AniListRelatedRepository.getRelated(meta)
                 }
             } ?: emptyList()
         } catch (cancelled: CancellationException) {
@@ -579,7 +577,6 @@ object MetaDetailsRepository {
             MoreLikeThisSourcePreference.TMDB -> MoreLikeThisSource.TMDB
             MoreLikeThisSourcePreference.TRAKT -> MoreLikeThisSource.TRAKT
             MoreLikeThisSourcePreference.SIMKL -> MoreLikeThisSource.SIMKL
-            MoreLikeThisSourcePreference.ANILIST -> MoreLikeThisSource.ANILIST
         }
         return meta.copy(moreLikeThis = items, moreLikeThisSource = displayedSource)
     }
@@ -610,8 +607,7 @@ object MetaDetailsRepository {
         return when (preferred) {
             MoreLikeThisSourcePreference.TRAKT -> if (traktConnected) preferred else MoreLikeThisSourcePreference.TMDB
             MoreLikeThisSourcePreference.SIMKL -> if (simklConnected) preferred else MoreLikeThisSourcePreference.TMDB
-            MoreLikeThisSourcePreference.TMDB,
-            MoreLikeThisSourcePreference.ANILIST -> preferred
+            MoreLikeThisSourcePreference.TMDB -> preferred
         }
     }
 
@@ -624,7 +620,6 @@ object MetaDetailsRepository {
             MoreLikeThisSourcePreference.TMDB -> TmdbSettingsRepository.snapshot().useMoreLikeThis
             MoreLikeThisSourcePreference.TRAKT,
             MoreLikeThisSourcePreference.SIMKL -> true
-            MoreLikeThisSourcePreference.ANILIST -> true
         }
     }
 

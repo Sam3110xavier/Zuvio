@@ -116,8 +116,6 @@ import nuvio.composeapp.generated.resources.trakt_more_like_this_source_title
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_tmdb
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_trakt
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_simkl
-import nuvio.composeapp.generated.resources.trakt_more_like_this_source_anilist
-import nuvio.composeapp.generated.resources.settings_tracking_anilist_recommendations_description
 import nuvio.composeapp.generated.resources.trakt_watch_progress_dialog_title
 import nuvio.composeapp.generated.resources.trakt_watch_progress_source_nuvio
 import nuvio.composeapp.generated.resources.trakt_watch_progress_source_trakt
@@ -644,11 +642,6 @@ private fun recommendationsSourceOptions(
             enabled = simklConnected,
             unavailableReason = if (!simklConnected) stringResource(Res.string.settings_tracking_connect_first, "Simkl") else null,
         ),
-        TrackingPickerOption(
-            value = MoreLikeThisSourcePreference.ANILIST,
-            title = stringResource(Res.string.trakt_more_like_this_source_anilist),
-            description = stringResource(Res.string.settings_tracking_anilist_recommendations_description),
-        ),
     )
 }
 
@@ -687,7 +680,6 @@ private fun moreLikeThisSourceLabel(source: MoreLikeThisSourcePreference): Strin
     MoreLikeThisSourcePreference.TRAKT -> stringResource(Res.string.trakt_more_like_this_source_trakt)
     MoreLikeThisSourcePreference.TMDB -> stringResource(Res.string.trakt_more_like_this_source_tmdb)
     MoreLikeThisSourcePreference.SIMKL -> stringResource(Res.string.trakt_more_like_this_source_simkl)
-    MoreLikeThisSourcePreference.ANILIST -> stringResource(Res.string.trakt_more_like_this_source_anilist)
 }
 
 @Composable
@@ -709,8 +701,7 @@ internal fun effectiveTrackingRecommendationsSource(
         if (traktConnected) source else MoreLikeThisSourcePreference.TMDB
     MoreLikeThisSourcePreference.SIMKL ->
         if (simklConnected) source else MoreLikeThisSourcePreference.TMDB
-    MoreLikeThisSourcePreference.TMDB,
-    MoreLikeThisSourcePreference.ANILIST -> source
+    MoreLikeThisSourcePreference.TMDB -> source
 }
 
 @Composable
