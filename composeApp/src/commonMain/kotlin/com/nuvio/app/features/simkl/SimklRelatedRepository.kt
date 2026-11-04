@@ -11,7 +11,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-private const val RELATED_LIMIT = 20
 private const val RELATED_CACHE_TTL_MS = 10 * 60_000L
 
 private val SIMKL_REDIRECT_SOURCES = setOf(
@@ -84,7 +83,7 @@ object SimklRelatedRepository {
             detail.similar.orEmpty().forEach { item ->
                 if (none { existing -> existing.ids?.simkl == item.ids?.simkl }) add(item)
             }
-        }.take(RELATED_LIMIT)
+        }.toList()
 
         if (rawItems.isEmpty()) {
             cache[cacheKey] = TimedCache(emptyList(), currentTimeMs())

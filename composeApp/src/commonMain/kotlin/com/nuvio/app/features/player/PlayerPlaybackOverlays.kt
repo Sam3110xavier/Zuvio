@@ -88,10 +88,10 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     onPlayNextEpisode: () -> Unit,
     onDismissNextEpisode: () -> Unit,
     errorMessage: String?,
-    moreLikeThisItems: List<MetaPreview>,
-    showMoreLikeThis: Boolean,
-    onOpenMoreLikeThis: (MetaPreview) -> Unit,
-    onDismissMoreLikeThis: () -> Unit,
+    moreLikeThisItems: List<MetaPreview> = emptyList(),
+    showMoreLikeThis: Boolean = false,
+    onOpenMoreLikeThis: (MetaPreview) -> Unit = {},
+    onDismissMoreLikeThis: () -> Unit = {},
     onDismissError: () -> Unit,
 ) {
     AnimatedVisibility(

@@ -29,7 +29,6 @@ import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktRelatedRepository
 import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.tracking.TrackingSettingsRepository
-import com.nuvio.app.features.trakt.shouldUseTraktMoreLikeThis
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -562,7 +561,7 @@ object MetaDetailsRepository {
         val simklConnected = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
         val geminiApiKey = TrackingSettingsRepository.uiState.value.geminiApiKey
         val tmdbSettings = TmdbSettingsRepository.snapshot()
-        val tmdbAvailable = tmdbSettings.enabled && tmdbSettings.useMoreLikeThis
+        val tmdbAvailable = tmdbSettings.useMoreLikeThis
 
         suspend fun loadTmdb(): List<com.nuvio.app.features.home.MetaPreview> =
             if (tmdbAvailable) {
@@ -633,7 +632,17 @@ object MetaDetailsRepository {
                 }
             }
 
-        val activeResults = providerResults.filter { it.second.isNotEmpty() }
+        val resolvedProviderResults = if (
+            preference != MoreLikeThisSourcePreference.ALL &&
+            preference != MoreLikeThisSourcePreference.TMDB &&
+            providerResults.none { it.second.isNotEmpty() } &&
+            tmdbAvailable
+        ) {
+            listOf(MoreLikeThisSource.TMDB to safeProvider("TMDB fallback", ::loadTmdb).orEmpty())
+        } else {
+            providerResults
+        }
+        val activeResults = resolvedProviderResults.filter { it.second.isNotEmpty() }
         val mergedItems = activeResults
             .flatMap { it.second }
             .distinctBy { item ->
@@ -677,7 +686,7 @@ object MetaDetailsRepository {
         val trackingSettings = TrackingSettingsRepository.uiState.value
         val source = trackingSettings.moreLikeThisSource
         val tmdbSettings = TmdbSettingsRepository.snapshot()
-        val tmdbAvailable = tmdbSettings.enabled && tmdbSettings.useMoreLikeThis
+        val tmdbAvailable = tmdbSettings.useMoreLikeThis
         val traktAvailable = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
         com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
         val simklAvailable = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
