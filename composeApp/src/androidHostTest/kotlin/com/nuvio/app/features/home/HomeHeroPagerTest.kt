@@ -28,8 +28,20 @@ class HomeHeroPagerTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val items = List(8) { index ->
-        MetaPreview(id = "hero-$index", type = "movie", name = "Hero $index")
+    private val items = listOf(
+        MetaPreview(
+            id = "banner-only",
+            type = "movie",
+            name = "Banner only",
+            banner = "https://example.test/banner.jpg",
+        ),
+    ) + List(8) { index ->
+        MetaPreview(
+            id = "hero-$index",
+            type = "movie",
+            name = "Hero $index",
+            poster = "https://example.test/hero-$index.jpg",
+        )
     }
 
     @Test
@@ -65,6 +77,7 @@ class HomeHeroPagerTest {
             }
         }
         compose.onNodeWithText("Hero 0").assertIsDisplayed()
+        compose.onAllNodes(hasText("Banner only")).assertCountEquals(0)
         compose.mainClock.autoAdvance = false
     }
 

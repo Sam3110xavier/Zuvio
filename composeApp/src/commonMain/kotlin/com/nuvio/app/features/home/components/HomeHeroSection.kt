@@ -49,6 +49,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +84,7 @@ private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
 private const val MOBILE_HERO_VIEWPORT_RATIO = 0.82f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
+private const val HOME_HERO_LOGO_MIN_ASPECT_RATIO = 1.9f
 
 internal data class HomeHeroLayout(
     val isTablet: Boolean,
@@ -94,6 +96,62 @@ internal data class HomeHeroLayout(
     val bottomFadeHeight: Dp,
     val logoWidthFraction: Float,
 )
+
+internal enum class HomeHeroOrientation {
+    Portrait,
+    Landscape,
+}
+
+internal enum class HomeHeroArtworkAnchor {
+    Center,
+    Start,
+    Bottom,
+}
+
+internal data class HomeHeroArtworkSelection(
+    val imageUrl: String,
+    val anchor: HomeHeroArtworkAnchor,
+)
+
+internal fun homeHeroOrientation(windowWidthPx: Int, windowHeightPx: Int): HomeHeroOrientation =
+    if (windowWidthPx > windowHeightPx) HomeHeroOrientation.Landscape else HomeHeroOrientation.Portrait
+
+internal fun isHomeHeroEligible(item: MetaPreview): Boolean =
+    !item.poster.isNullOrBlank() || !item.landscapePoster.isNullOrBlank()
+
+internal fun selectHomeHeroArtwork(
+    item: MetaPreview,
+    orientation: HomeHeroOrientation,
+): HomeHeroArtworkSelection? {
+    val candidates: List<Pair<String?, HomeHeroArtworkAnchor>> = when (orientation) {
+        HomeHeroOrientation.Portrait -> listOf(
+            item.poster to HomeHeroArtworkAnchor.Center,
+            item.landscapePoster to HomeHeroArtworkAnchor.Start,
+            item.banner to HomeHeroArtworkAnchor.Center,
+        )
+        HomeHeroOrientation.Landscape -> listOf(
+            item.landscapePoster to HomeHeroArtworkAnchor.Center,
+            item.banner to HomeHeroArtworkAnchor.Center,
+            item.poster to HomeHeroArtworkAnchor.Bottom,
+        )
+    }
+    val selected = candidates.firstOrNull { !it.first.isNullOrBlank() } ?: return null
+    return HomeHeroArtworkSelection(
+        imageUrl = requireNotNull(selected.first),
+        anchor = selected.second,
+    )
+}
+
+internal fun homeHeroItemIndexForKey(items: List<MetaPreview>, selectedStableKey: String?): Int =
+    selectedStableKey
+        ?.let { key -> items.indexOfFirst { it.stableKey() == key } }
+        ?.takeIf { it >= 0 }
+        ?: 0
+
+internal fun isValidHomeHeroLogo(widthPx: Int, heightPx: Int): Boolean =
+    widthPx > 0 &&
+        heightPx > 0 &&
+        widthPx.toFloat() / heightPx.toFloat() >= HOME_HERO_LOGO_MIN_ASPECT_RATIO
 
 @Composable
 fun HomeHeroSection(
@@ -107,20 +165,31 @@ fun HomeHeroSection(
     showMdbListRatings: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    if (items.isEmpty()) return
+    val heroItems = remember(items) { items.filter(::isHomeHeroEligible) }
+    if (heroItems.isEmpty()) return
 
-    val pagerState = key(items.size) {
+    val windowSize = LocalWindowInfo.current.containerSize
+    val orientation = homeHeroOrientation(windowSize.width, windowSize.height)
+    var selectedItemKey by remember { mutableStateOf<String?>(null) }
+    val selectedItemIndex = homeHeroItemIndexForKey(heroItems, selectedItemKey)
+    val pagerKeys = remember(heroItems) { heroItems.map { it.stableKey() } }
+    val pagerState = key(pagerKeys) {
         rememberPagerState(
-            initialPage = if (items.size > 1) {
-                Int.MAX_VALUE / 2 - (Int.MAX_VALUE / 2) % items.size
+            initialPage = if (heroItems.size > 1) {
+                val basePage = Int.MAX_VALUE / 2 - (Int.MAX_VALUE / 2) % heroItems.size
+                basePage + selectedItemIndex
             } else {
                 0
             },
-            pageCount = { if (items.size > 1) Int.MAX_VALUE else 1 },
+            pageCount = { if (heroItems.size > 1) Int.MAX_VALUE else 1 },
         )
     }
     val coroutineScope = rememberCoroutineScope()
     val autoScrollPage = pagerState.settledPage
+
+    LaunchedEffect(pagerState.settledPage, heroItems) {
+        selectedItemKey = heroItems[pagerState.settledPage % heroItems.size].stableKey()
+    }
 
     LaunchedEffect(pagerState) {
         pagerState.scrollToPage(pagerState.currentPage)
@@ -133,8 +202,8 @@ fun HomeHeroSection(
         }
     }
 
-    ScreenActivityEffect(autoScrollPage, items.size) { active ->
-        if (!active || items.size <= 1) return@ScreenActivityEffect
+    ScreenActivityEffect(autoScrollPage, heroItems.size) { active ->
+        if (!active || heroItems.size <= 1) return@ScreenActivityEffect
         delay(HERO_AUTO_SCROLL_INTERVAL_MS)
         while (pagerState.isScrollInProgress) {
             delay(100L)
@@ -149,7 +218,7 @@ fun HomeHeroSection(
             .fillMaxWidth()
             .homeHeroPagerGesture(
                 pagerState = pagerState,
-                itemCount = items.size,
+                itemCount = heroItems.size,
                 coroutineScope = coroutineScope,
             )
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
@@ -183,7 +252,7 @@ fun HomeHeroSection(
                     null
                 } else {
                     HeroPageLayer(
-                        itemIndex = index % items.size,
+                        itemIndex = index % heroItems.size,
                         visibility = visibility,
                         offset = pageOffset,
                     )
@@ -193,8 +262,8 @@ fun HomeHeroSection(
         val currentItem = visiblePages
             .lastOrNull()
             ?.itemIndex
-            ?.let(items::get)
-            ?: items[currentPage % items.size]
+            ?.let(heroItems::get)
+            ?: heroItems[currentPage % heroItems.size]
 
         Box(
             modifier = Modifier
@@ -221,23 +290,32 @@ fun HomeHeroSection(
                         .heroStretchZoom(stretchPx),
                 ) {
                     visiblePages.forEach { layer ->
-                        AsyncImage(
-                            model = items[layer.itemIndex].banner ?: items[layer.itemIndex].poster,
-                            contentDescription = items[layer.itemIndex].name,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    val offset = scrollOffsetPx
-                                    val scrollScale = heroBackgroundScrollScale(offset)
-                                    alpha = layer.visibility
-                                    translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
-                                    translationY = heroBackgroundScrollTranslationY(offset)
-                                    scaleX = HERO_BACKGROUND_SCALE * scrollScale
-                                    scaleY = HERO_BACKGROUND_SCALE * scrollScale
+                        val item = heroItems[layer.itemIndex]
+                        val artwork = selectHomeHeroArtwork(item, orientation)
+                        if (artwork != null) {
+                            AsyncImage(
+                                model = artwork.imageUrl,
+                                contentDescription = item.name,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        val offset = scrollOffsetPx
+                                        val scrollScale = heroBackgroundScrollScale(offset)
+                                        alpha = layer.visibility
+                                        translationX = -layer.offset * heroWidthPx * HERO_BACKGROUND_PARALLAX
+                                        translationY = heroBackgroundScrollTranslationY(offset)
+                                        scaleX = HERO_BACKGROUND_SCALE * scrollScale
+                                        scaleY = HERO_BACKGROUND_SCALE * scrollScale
+                                    },
+                                alignment = when (artwork.anchor) {
+                                    HomeHeroArtworkAnchor.Center ->
+                                        if (layout.isTablet) Alignment.TopCenter else Alignment.Center
+                                    HomeHeroArtworkAnchor.Start -> Alignment.CenterStart
+                                    HomeHeroArtworkAnchor.Bottom -> Alignment.BottomCenter
                                 },
-                            alignment = if (layout.isTablet) Alignment.TopCenter else Alignment.Center,
-                            contentScale = ContentScale.Crop,
-                        )
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
                     }
                 }
 
@@ -292,7 +370,7 @@ fun HomeHeroSection(
                         contentAlignment = Alignment.BottomStart,
                     ) {
                         visiblePages.forEach { layer ->
-                            val item = items[layer.itemIndex]
+                            val item = heroItems[layer.itemIndex]
                             key(item.stableKey()) {
                                 Box(
                                     modifier = Modifier.graphicsLayer {
@@ -332,13 +410,13 @@ fun HomeHeroSection(
                         }
                     }
 
-                    if (items.size > 1) {
+                    if (heroItems.size > 1) {
                         Spacer(modifier = Modifier.height(if (layout.isTablet) 14.dp else 12.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            items.forEachIndexed { index, _ ->
+                            heroItems.forEachIndexed { index, _ ->
                                 val activeFraction = visiblePages
                                     .firstOrNull { it.itemIndex == index }
                                     ?.visibility ?: 0f
@@ -347,7 +425,7 @@ fun HomeHeroSection(
                                         .clickable {
                                             coroutineScope.launch {
                                                 pagerState.animateScrollToPage(
-                                                    heroPageForItem(pagerState.currentPage, index, items.size),
+                                                    heroPageForItem(pagerState.currentPage, index, heroItems.size),
                                                 )
                                             }
                                         }
@@ -413,6 +491,28 @@ fun HomeHeroReservedSpace(
 }
 
 @Composable
+private fun HeroTitleText(
+    item: MetaPreview,
+    layout: HomeHeroLayout,
+    onItemClick: ((MetaPreview) -> Unit)?,
+) {
+    Text(
+        text = item.name,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onItemClick != null) {
+                onItemClick?.invoke(item)
+            },
+        style = MaterialTheme.typography.displaySmall,
+        color = MaterialTheme.colorScheme.onBackground,
+        fontWeight = FontWeight.Black,
+        textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun HeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
@@ -420,7 +520,7 @@ private fun HeroContentBlock(
     showMdbListRatings: Boolean,
     onItemClick: ((MetaPreview) -> Unit)?,
 ) {
-    var logoLoadError by remember(item.type, item.id, item.logo) {
+    var logoIsValid by remember(item.type, item.id, item.logo) {
         mutableStateOf(false)
     }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
@@ -431,39 +531,38 @@ private fun HeroContentBlock(
             .animateContentSize(),
         horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
     ) {
-        if (logoUrl != null && !logoLoadError) {
-            AsyncImage(
-                model = logoUrl,
-                contentDescription = item.name,
+        if (logoUrl != null) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
-                    .aspectRatio(2.6f)
-                    .clickable(enabled = onItemClick != null) {
-                        onItemClick?.invoke(item)
+                    .aspectRatio(2.6f),
+                contentAlignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = if (logoIsValid) 1f else 0f }
+                        .clickable(enabled = onItemClick != null) {
+                            onItemClick?.invoke(item)
+                        },
+                    alignment = Alignment.Center,
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { state ->
+                        logoIsValid = isValidHomeHeroLogo(
+                            widthPx = state.result.image.width,
+                            heightPx = state.result.image.height,
+                        )
                     },
-                alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
-                contentScale = ContentScale.Fit,
-                onError = { logoLoadError = true },
-            )
+                    onError = { logoIsValid = false },
+                )
+                if (!logoIsValid) {
+                    HeroTitleText(item = item, layout = layout, onItemClick = onItemClick)
+                }
+            }
         } else {
-            Text(
-                text = item.name,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = onItemClick != null) {
-                        onItemClick?.invoke(item)
-                    },
-                style = if (layout.isTablet) {
-                    MaterialTheme.typography.displaySmall
-                } else {
-                    MaterialTheme.typography.displaySmall
-                },
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Black,
-                textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            HeroTitleText(item = item, layout = layout, onItemClick = onItemClick)
         }
 
         Spacer(modifier = Modifier.height(12.dp))

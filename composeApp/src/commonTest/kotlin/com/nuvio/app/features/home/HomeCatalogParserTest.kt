@@ -73,7 +73,7 @@ class HomeCatalogParserTest {
     }
 
     @Test
-    fun `parse catalog response reads addon landscape poster`() {
+    fun `parse catalog response keeps addon landscape poster separate from background`() {
         val result = HomeCatalogParser.parseCatalogResponse(
             payload = """
                 {
@@ -100,7 +100,35 @@ class HomeCatalogParserTest {
         assertEquals("https://img/landscape-1.jpg", withBackground.landscapePoster)
         assertEquals("https://img/background.jpg", withBackground.banner)
         assertEquals("https://img/landscape-2.jpg", withoutBackground.landscapePoster)
-        assertEquals("https://img/landscape-2.jpg", withoutBackground.banner)
+        assertEquals(null, withoutBackground.banner)
+    }
+
+    @Test
+    fun `parse catalog response keeps poster banner background and logo separate`() {
+        val result = HomeCatalogParser.parseCatalogResponse(
+            payload = """
+                {
+                  "metas": [
+                    {
+                      "id": "tt1",
+                      "type": "movie",
+                      "name": "One",
+                      "poster": "https://img/poster.jpg",
+                      "landscapePoster": "https://img/landscape.jpg",
+                      "banner": "https://img/banner.jpg",
+                      "background": "https://img/background.jpg",
+                      "logo": "https://img/logo.png"
+                    }
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        val item = result.items.single()
+        assertEquals("https://img/poster.jpg", item.poster)
+        assertEquals("https://img/landscape.jpg", item.landscapePoster)
+        assertEquals("https://img/banner.jpg", item.banner)
+        assertEquals("https://img/logo.png", item.logo)
     }
 
     @Test
