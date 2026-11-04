@@ -462,10 +462,18 @@ object LibraryRepository {
         val requestedChanges = TrackingProviderRegistry.connectedLibraryProviders()
             .filter { provider -> targetProviderIds == null || provider.providerId in targetProviderIds }
             .mapNotNull { provider ->
-                val providerListKeys = provider.snapshot().tabs.mapTo(mutableSetOf(), TrackingLibraryTab::key)
-                val providerMembership = desiredMembership.filterKeys(providerListKeys::contains)
-                providerMembership.takeIf { membership -> membership.isNotEmpty() }?.let { membership ->
-                    provider to membership
+                val providerTabs = provider.snapshot().tabs
+                val providerListKeys = providerTabs.mapTo(mutableSetOf(), TrackingLibraryTab::key)
+                val requestedMembership = desiredMembership.filterKeys(providerListKeys::contains)
+                requestedMembership.takeIf { membership -> membership.isNotEmpty() }?.let { membership ->
+                    // Tabs hidden from this title's picker (unsupported media type or
+                    // non-membership destination) must retain their current native state.
+                    val currentMembership = provider.membership(item)
+                    provider to mergeHiddenProviderMembership(
+                        desiredMembership = membership,
+                        providerTabs = providerTabs,
+                        currentMembership = currentMembership,
+                    )
                 }
             }
         if (item.isServerItem && requestedChanges.any { (_, membership) -> membership.values.any { it } }) {
@@ -754,6 +762,16 @@ internal fun libraryTabsWithLocal(providerTabs: List<TrackingLibraryTab>): List<
 
 internal fun libraryTabsForActiveSource(providerTabs: List<TrackingLibraryTab>): List<TrackingLibraryTab> =
     libraryTabsWithLocal(providerTabs.filter(TrackingLibraryTab::isMembershipDestination))
+
+internal fun mergeHiddenProviderMembership(
+    desiredMembership: Map<String, Boolean>,
+    providerTabs: List<TrackingLibraryTab>,
+    currentMembership: Map<String, Boolean>,
+): Map<String, Boolean> = desiredMembership.toMutableMap().apply {
+    providerTabs.forEach { tab ->
+        if (tab.key !in this) this[tab.key] = currentMembership[tab.key] == true
+    }
+}
 
 internal fun libraryMembershipWithLocal(
     inLocal: Boolean,

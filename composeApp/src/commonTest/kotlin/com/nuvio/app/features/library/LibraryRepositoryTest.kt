@@ -109,6 +109,49 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `hidden provider destinations preserve existing membership on save`() {
+        val tabs = listOf(
+            TrackingLibraryTab(
+                key = "wetrakr:planning",
+                title = "Planning",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.WATCHLIST,
+            ),
+            TrackingLibraryTab(
+                key = "wetrakr:waiting",
+                title = "Waiting",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.STATUS,
+                isMembershipDestination = false,
+            ),
+            TrackingLibraryTab(
+                key = "wetrakr:watching",
+                title = "Watching",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.STATUS,
+                supportedContentTypes = setOf("series"),
+            ),
+        )
+        val merged = mergeHiddenProviderMembership(
+            desiredMembership = mapOf("wetrakr:planning" to false),
+            providerTabs = tabs,
+            currentMembership = mapOf(
+                "wetrakr:planning" to true,
+                "wetrakr:waiting" to true,
+                "wetrakr:watching" to true,
+            ),
+        )
+        assertEquals(
+            mapOf(
+                "wetrakr:planning" to false,
+                "wetrakr:waiting" to true,
+                "wetrakr:watching" to true,
+            ),
+            merged,
+        )
+    }
+
+    @Test
     fun `library membership always includes local state before Trakt membership`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,
