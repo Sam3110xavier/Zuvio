@@ -53,12 +53,47 @@ class TrackingSettingsPresentationTest {
 
         assertEquals(
             MoreLikeThisSourcePreference.TMDB,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = false),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = false, simklConnected = false, geminiConfigured = false),
         )
         assertEquals(
             MoreLikeThisSourcePreference.TRAKT,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = true),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = true, simklConnected = false, geminiConfigured = false),
         )
         assertEquals(MoreLikeThisSourcePreference.TRAKT, stored)
+    }
+
+    @Test
+    fun `Gemini recommendations fall back to TMDB until a key is configured`() {
+        assertEquals(
+            MoreLikeThisSourcePreference.TMDB,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.GEMINI,
+                traktConnected = false,
+                simklConnected = false,
+                geminiConfigured = false,
+            ),
+        )
+        assertEquals(
+            MoreLikeThisSourcePreference.GEMINI,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.GEMINI,
+                traktConnected = false,
+                simklConnected = false,
+                geminiConfigured = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `all recommendation providers preference remains selected`() {
+        assertEquals(
+            MoreLikeThisSourcePreference.ALL,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.ALL,
+                traktConnected = false,
+                simklConnected = false,
+                geminiConfigured = false,
+            ),
+        )
     }
 }
