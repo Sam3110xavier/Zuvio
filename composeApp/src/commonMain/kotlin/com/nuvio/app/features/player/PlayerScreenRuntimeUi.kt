@@ -711,7 +711,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             showNextEpisodeCard = false
         },
         errorMessage = errorMessage,
-        moreLikeThisItems = relatedItems.take(4),
+        moreLikeThisItems = relatedItems,
         showMoreLikeThis = showRelatedTitles,
         onOpenMoreLikeThis = { item ->
             moreLikeThisDismissed = true

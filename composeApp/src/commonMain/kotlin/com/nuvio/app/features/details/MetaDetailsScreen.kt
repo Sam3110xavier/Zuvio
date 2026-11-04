@@ -2440,7 +2440,7 @@ private fun ConfiguredMetaSections(
                         showHeader = showHeader,
                         horizontalScrollPadding = horizontalScrollPadding,
                         sourceLabel = sourceLabel,
-                        forceLandscape = true,
+                        forcePortrait = true,
                         onPosterClick = onOpenMeta,
                     )
                 }

@@ -3,7 +3,6 @@ package com.nuvio.app.features.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -180,7 +179,6 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     if (showMoreLikeThis && moreLikeThisItems.isNotEmpty()) {
         MoreLikeThisOverlay(
             items = moreLikeThisItems,
-            bottomPadding = overlayBottomPadding,
             onItemClick = onOpenMoreLikeThis,
             onDismiss = onDismissMoreLikeThis,
         )
@@ -217,20 +215,19 @@ internal fun shouldShowMoreLikeThisOverlay(
 @Composable
 private fun BoxScope.MoreLikeThisOverlay(
     items: List<MetaPreview>,
-    bottomPadding: Dp,
     onItemClick: (MetaPreview) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = 16.dp, bottom = bottomPadding + 12.dp)
-            .widthIn(max = 560.dp)
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 16.dp, bottom = 16.dp)
+            .widthIn(max = 980.dp)
             .fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         color = Color(0xE91B1B24),
         contentColor = Color.White,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+        border = null,
         tonalElevation = 0.dp,
         shadowElevation = 12.dp,
     ) {
@@ -268,19 +265,35 @@ private fun BoxScope.MoreLikeThisOverlay(
                 items.forEach { item ->
                     Column(
                         modifier = Modifier
-                            .width(148.dp)
+                            .width(184.dp)
                             .clickable { onItemClick(item) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        AsyncImage(
-                            model = item.banner ?: item.background ?: item.poster,
-                            contentDescription = item.name,
-                            contentScale = if (item.banner != null || item.background != null) ContentScale.Crop else ContentScale.Fit,
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(83.dp)
-                                .clip(RoundedCornerShape(9.dp)),
-                        )
+                                .height(104.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                        ) {
+                            AsyncImage(
+                                model = item.banner ?: item.background ?: item.landscapePoster ?: item.poster,
+                                contentDescription = item.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            item.logo?.takeIf(String::isNotBlank)?.let { logo ->
+                                AsyncImage(
+                                    model = logo,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(7.dp)
+                                        .widthIn(max = 112.dp)
+                                        .height(28.dp),
+                                )
+                            }
+                        }
                         Text(
                             text = item.name,
                             modifier = Modifier

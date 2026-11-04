@@ -45,6 +45,7 @@ fun DetailPosterRailSection(
     horizontalScrollPadding: Dp = 0.dp,
     sourceLabel: String? = null,
     forceLandscape: Boolean = false,
+    forcePortrait: Boolean = false,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
@@ -66,7 +67,8 @@ fun DetailPosterRailSection(
             rowModifier = Modifier.nuvioHorizontalScrollBleed(horizontalScrollPadding),
             key = { item -> item.stableKey() },
         ) { item ->
-            val landscape = forceLandscape || posterCardStyle.catalogLandscapeModeEnabled || item.posterShape == PosterShape.Landscape
+            val landscape = !forcePortrait &&
+                (forceLandscape || posterCardStyle.catalogLandscapeModeEnabled || item.posterShape == PosterShape.Landscape)
             val localizedBackdrop = rememberDetailBackdrop(
                 item = item,
                 language = tmdbSettings.language,
