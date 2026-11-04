@@ -46,6 +46,8 @@ enum class MoreLikeThisSource {
     TMDB,
     TRAKT,
     SIMKL,
+    GEMINI,
+    MIXED,
 }
 
 data class MetaExternalRating(

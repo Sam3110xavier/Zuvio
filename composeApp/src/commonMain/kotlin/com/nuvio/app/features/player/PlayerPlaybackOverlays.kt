@@ -225,7 +225,7 @@ private fun BoxScope.MoreLikeThisOverlay(
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(end = 16.dp, bottom = bottomPadding + 12.dp)
-            .widthIn(max = 340.dp)
+            .widthIn(max = 560.dp)
             .fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         color = Color(0xE91B1B24),
@@ -265,20 +265,20 @@ private fun BoxScope.MoreLikeThisOverlay(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                items.take(4).forEach { item ->
+                items.forEach { item ->
                     Column(
                         modifier = Modifier
-                            .width(68.dp)
+                            .width(148.dp)
                             .clickable { onItemClick(item) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         AsyncImage(
-                            model = item.poster ?: item.banner ?: item.background,
+                            model = item.banner ?: item.background ?: item.poster,
                             contentDescription = item.name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(96.dp)
+                                .height(83.dp)
                                 .clip(RoundedCornerShape(9.dp)),
                         )
                         Text(

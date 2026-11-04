@@ -2679,4 +2679,6 @@
     <string name="settings_tracking_gemini_api_key_description">Add a Google AI Studio key to enable Gemini recommendations. The key is saved in this local profile and sent only to Google's Gemini API.</string>
     <string name="settings_tracking_gemini_api_key_label">Google Gemini API key</string>
     <string name="settings_tracking_gemini_api_key_required">Add a Gemini API key to enable this provider.</string>
+    <string name="detail_more_like_this_powered_by_gemini">Powered by Gemini</string>
+    <string name="detail_more_like_this_powered_by_mixed">Powered by multiple sources</string>
 </resources>
