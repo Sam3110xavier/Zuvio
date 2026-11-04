@@ -49,7 +49,7 @@ data class LibrarySection(
 )
 
 enum class LocalLibraryStatus(val storageKey: String, val title: String) {
-    PLANNING("planning", "Planning"),
+    PLANNING("planning", "Plan to Watch"),
     WATCHING("watching", "Watching"),
     ON_HOLD("on_hold", "On Hold"),
     DROPPED("dropped", "Dropped"),

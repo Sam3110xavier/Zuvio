@@ -86,7 +86,7 @@ class LibraryRepositoryTest {
     }
 
     @Test
-    fun `active source exposes only its own membership destinations plus local library`() {
+    fun `active source exposes only its own membership destinations`() {
         val tabs = libraryTabsForActiveSource(
             listOf(
                 TrackingLibraryTab(
@@ -104,7 +104,7 @@ class LibraryRepositoryTest {
                 ),
             ),
         )
-        assertEquals(listOf("local", "wetrakr:planning"), tabs.map { it.key })
+        assertEquals(listOf("wetrakr:planning"), tabs.map { it.key })
         assertFalse(tabs.any { it.key.startsWith("trakt:") })
     }
 
@@ -195,13 +195,11 @@ class LibraryRepositoryTest {
             ),
         )
         assertEquals(
-            listOf(
-                LocalLibraryStatus.PLANNING.sectionKey,
-                LocalLibraryStatus.DROPPED.sectionKey,
-                LocalLibraryStatus.COMPLETED.sectionKey,
-            ),
+            LocalLibraryStatus.entries.map(LocalLibraryStatus::sectionKey),
             sections.map(LibrarySection::type),
         )
+        assertEquals("Plan to Watch", sections.first().displayTitle)
+        assertTrue(sections.any { it.type == LocalLibraryStatus.WATCHING.sectionKey && it.items.isEmpty() })
     }
 
     @Test
@@ -249,7 +247,7 @@ class LibraryRepositoryTest {
     }
 
     @Test
-    fun `library membership always includes local state before Trakt membership`() {
+    fun `local membership helper preserves its optional provider payload`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,
             providerMembership = mapOf("trakt:watchlist" to false),
