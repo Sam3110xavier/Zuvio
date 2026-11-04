@@ -2026,7 +2026,7 @@ internal fun MainAppContent(
                                             if (removesFromLibrary) {
                                                 animationKey?.let(libraryDisintegrationRequests::arm)
                                             }
-                                            LibraryRepository.remove(libraryItem.id)
+                                            LibraryRepository.remove(libraryItem.id, libraryItem.type)
                                         }
                                     } else {
                                         openLibraryMembershipPicker(libraryItem, preview.name)

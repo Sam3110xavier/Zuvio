@@ -372,7 +372,7 @@ object LibraryRepository {
         }
     }
 
-    private fun remove(id: String, type: String) {
+    fun remove(id: String, type: String) {
         ensureLoaded()
         val result = localState.remove(id, type)
         if (result.affectedCount > 0) {
