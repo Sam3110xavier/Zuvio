@@ -554,7 +554,9 @@ object MetaDetailsRepository {
         }
         val source = effectiveMoreLikeThisSource()
         val items = try {
-            withTimeoutOrNull(8_000L) {
+            // ID resolution may require a TMDB find/search request before recommendations.
+            // Give both requests enough time on slower mobile connections.
+            withTimeoutOrNull(15_000L) {
                 when (source) {
                 MoreLikeThisSourcePreference.TMDB -> TmdbMetadataService.getMoreLikeThisForMeta(meta, fallbackItemId, fallbackItemType)
                 MoreLikeThisSourcePreference.TRAKT ->
