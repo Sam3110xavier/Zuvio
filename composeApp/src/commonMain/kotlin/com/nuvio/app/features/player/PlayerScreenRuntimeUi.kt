@@ -36,15 +36,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioStatusModal
-import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.core.ui.LocalFold
 import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.party.PartyRepository
@@ -231,32 +229,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         }
         val playerSurfaceSourceUrl = if (isP2pPlaybackActive) p2pResolvedSourceUrl else activeSourceUrl
         val playbackKey = activePlaybackKey
-        val sourcePlaybackKey = playbackKey.copy(playbackEngine = null)
         val playerSurfaceEngineKey = playbackKey.playbackEngine ?: playerSettingsUiState.androidPlaybackEngine
         val initialPositionRequestKey = currentInitialPositionRequestKey()
-
-        LaunchedEffect(sourcePlaybackKey) {
-            engineFailoverTriggered = false
-            engineFailoverDisarmed = false
-            playbackEngineOverride = null
-        }
-
-        val resolvedAutoEngineState = remember(sourcePlaybackKey) {
-            mutableStateOf<AndroidPlaybackEngine?>(null)
-        }
-        if (!initialLoadCompleted || resolvedAutoEngineState.value == null) {
-            resolvedAutoEngineState.value = resolveAutoPlaybackEngine(
-                playbackEngineSetting = playerSettingsUiState.androidPlaybackEngine,
-                videoId = activeVideoId,
-                streamFilename = activeTorrentFilename ?: activeStreamFilename,
-                streamName = activeStreamTitle,
-                streamDescription = activeStreamSubtitle,
-                contentTitle = title,
-                genres = playerMeta?.genres.orEmpty(),
-                country = playerMeta?.country,
-            )
-        }
-        val resolvedAutoEngine = resolvedAutoEngineState.value
 
         if (playerSurfaceSourceUrl != null) {
             // Keep the player surface alive across URL/source changes so Android can replace
@@ -398,10 +372,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
             panelVisible = showPartyPanel && !isInPip,
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
-        Box(modifier = panelModifier) {
-            RenderPlayerModals(displayedPositionMs = displayedPositionMs)
-            RenderParty(runtime = runtime)
-            if (activeProviderAddonId == "live-tv" && !playerControlsLocked && !isInPip) {
+        if (activeProviderAddonId == "live-tv" && !playerControlsLocked && !isInPip) {
                 IconButton(
                     onClick = {
                         showLiveTvChannelsPanel = true
@@ -418,7 +389,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         tint = Color.White,
                     )
                 }
-            }
         }
 
         val completedMedia = completionRatingMedia
