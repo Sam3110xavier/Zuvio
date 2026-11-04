@@ -100,7 +100,9 @@ object MetaDetailsRepository {
             activeRequestKey = requestKey
             _uiState.value = MetaDetailsUiState(
                 isLoading = true,
-                meta = cachedBaseMeta,
+                // Keep the currently visible detail metadata consistent with the poster overlay
+                // while provider enrichment is running; the base cache intentionally stays raw.
+                meta = cachedBaseMeta.withUnreleasedFilter(),
             )
 
             scope.launch {

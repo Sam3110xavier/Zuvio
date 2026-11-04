@@ -34,6 +34,7 @@ class HomeHeroPagerTest {
             type = "movie",
             name = "Hero $index",
             poster = "https://example.test/hero-$index.jpg",
+            posterTextless = true,
         )
     }
 
