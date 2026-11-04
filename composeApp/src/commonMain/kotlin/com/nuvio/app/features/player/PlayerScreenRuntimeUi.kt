@@ -361,6 +361,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                 p2pRebufferMessage = p2pRebufferMessage,
                 p2pRebufferProgress = p2pRebufferProgress,
                 folded = fold != null,
+                isInPip = isInPip,
             )
         }
     }
@@ -626,8 +627,21 @@ private fun BoxScope.RenderPlaybackOverlays(
     p2pRebufferMessage: String?,
     p2pRebufferProgress: Float?,
     folded: Boolean,
+    isInPip: Boolean,
 ) {
     runtime.run {
+        val relatedItems = playerMeta?.moreLikeThis.orEmpty()
+        val showRelatedTitles = shouldShowMoreLikeThisOverlay(
+            isPlaybackEnded = playbackSnapshot.isEnded,
+            hasRecommendations = relatedItems.isNotEmpty(),
+            isSeries = isSeries,
+            hasNextEpisode = nextEpisodeInfo != null,
+            controlsLocked = playerControlsLocked,
+            dismissed = moreLikeThisDismissed,
+            hasPlaybackError = errorMessage != null,
+            isInPip = isInPip,
+            completionPromptVisible = showCompletionRatingPrompt,
+        )
         PlayerPlaybackOverlays(
             playerControlsLocked = playerControlsLocked,
             useLegacyLayout = playerSettingsUiState.useLegacyPlayerLayout,
@@ -697,6 +711,13 @@ private fun BoxScope.RenderPlaybackOverlays(
             showNextEpisodeCard = false
         },
         errorMessage = errorMessage,
+        moreLikeThisItems = relatedItems.take(4),
+        showMoreLikeThis = showRelatedTitles,
+        onOpenMoreLikeThis = { item ->
+            moreLikeThisDismissed = true
+            args.onOpenRelatedTitle(item)
+        },
+        onDismissMoreLikeThis = { moreLikeThisDismissed = true },
             onDismissError = {
                 flushWatchProgress()
                 args.onBack()

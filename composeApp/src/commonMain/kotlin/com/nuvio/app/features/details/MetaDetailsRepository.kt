@@ -213,6 +213,44 @@ object MetaDetailsRepository {
         _uiState.value = MetaDetailsUiState()
     }
 
+    /**
+     * Resolves metadata for playback and applies the same related-title source selection used
+     * by the details screen. The lightweight [fetch] path returns base metadata; without this
+     * step, recommendations are missing when playback starts directly from a catalog.
+     */
+    suspend fun fetchForPlayback(type: String, id: String): MetaDetails? {
+        val requestKey = "$type:$id"
+        TmdbSettingsRepository.ensureLoaded()
+        val mdbListSettings = MdbListSettingsRepository.snapshot()
+        val settingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
+
+        cachedMetaByRequestKey[requestKey]?.let { cached ->
+            cached.metaScreenMeta
+                ?.takeIf { cached.metaScreenSettingsFingerprint == settingsFingerprint }
+                ?.let { return it.withUnreleasedFilter() }
+        }
+
+        val baseMeta = fetch(type, id) ?: return null
+        val tmdbEnriched = withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
+            TmdbMetadataService.enrichMeta(
+                meta = baseMeta,
+                fallbackItemId = id,
+                settings = TmdbSettingsRepository.snapshot(),
+            )
+        } ?: baseMeta
+
+        return withContext(Dispatchers.Default) {
+            enrichForMetaScreen(
+                requestKey = requestKey,
+                meta = tmdbEnriched,
+                fallbackItemId = id,
+                fallbackItemType = type,
+                settings = mdbListSettings,
+                settingsFingerprint = settingsFingerprint,
+            )
+        }.withUnreleasedFilter()
+    }
+
     suspend fun fetch(type: String, id: String, cacheResult: Boolean = true): MetaDetails? {
         val requestKey = "$type:$id"
         cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }

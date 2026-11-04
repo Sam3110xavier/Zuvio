@@ -225,13 +225,13 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(parentMetaType, parentMetaId) {
+        // Display cached details immediately, then resolve the configured related-title
+        // source even when playback starts directly from Home rather than a details page.
         playerMeta = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
         playerMetaVideos = playerMeta?.videos.orEmpty()
-        if (playerMetaVideos.isEmpty()) {
-            MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.let { meta ->
-                playerMeta = meta
-                playerMetaVideos = meta.videos
-            }
+        MetaDetailsRepository.fetchForPlayback(parentMetaType, parentMetaId)?.let { meta ->
+            playerMeta = meta
+            playerMetaVideos = meta.videos
         }
     }
 

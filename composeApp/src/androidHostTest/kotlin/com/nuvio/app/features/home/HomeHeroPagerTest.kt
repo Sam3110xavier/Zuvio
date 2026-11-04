@@ -28,20 +28,34 @@ class HomeHeroPagerTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val items = listOf(
-        MetaPreview(
-            id = "banner-only",
-            type = "movie",
-            name = "Banner only",
-            banner = "https://example.test/banner.jpg",
-        ),
-    ) + List(8) { index ->
+    private val items = List(8) { index ->
         MetaPreview(
             id = "hero-$index",
             type = "movie",
             name = "Hero $index",
             poster = "https://example.test/hero-$index.jpg",
         )
+    }
+
+    @Test
+    fun bannerOnlyArtworkIsIncludedInTheHeroPager() {
+        compose.setContent {
+            MaterialTheme {
+                HomeHeroSection(
+                    items = listOf(
+                        MetaPreview(
+                            id = "banner-only",
+                            type = "movie",
+                            name = "Banner only",
+                            banner = "https://example.test/banner.jpg",
+                        ),
+                    ),
+                    modifier = Modifier.width(390.dp).testTag("hero"),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Banner only").assertIsDisplayed()
     }
 
     @Test
@@ -77,7 +91,6 @@ class HomeHeroPagerTest {
             }
         }
         compose.onNodeWithText("Hero 0").assertIsDisplayed()
-        compose.onAllNodes(hasText("Banner only")).assertCountEquals(0)
         compose.mainClock.autoAdvance = false
     }
 

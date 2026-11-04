@@ -8,12 +8,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.party.PartyMedia
+import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.player.ExternalPlayerIntentResult
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerScreen
 import com.nuvio.app.features.watchprogress.ResumePromptRepository
+import com.nuvio.app.navigation.DetailRoute
 import com.nuvio.app.navigation.NuvioNavigator
 import com.nuvio.app.navigation.PlayerRoute
 
@@ -132,6 +134,15 @@ internal fun PlayerDestination(
             openExternalStreamUrl(url)
         },
         onOpenPartyMedia = onOpenPartyMedia,
+        onOpenRelatedTitle = { item ->
+            navController.navigate(
+                DetailRoute(
+                    type = item.type,
+                    id = item.id,
+                    title = item.name,
+                ),
+            )
+        },
         modifier = Modifier.fillMaxSize(),
     )
 }

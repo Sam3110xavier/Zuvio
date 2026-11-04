@@ -186,6 +186,7 @@ internal class PlayerScreenRuntime(
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
     var currentTrackingMedia by mutableStateOf<TrackingMediaReference?>(null)
     var showCompletionRatingPrompt by mutableStateOf(false)
+    var moreLikeThisDismissed by mutableStateOf(false)
     var completionRatingMedia by mutableStateOf<TrackingMediaReference?>(null)
     var pendingCompletionRatingPromptKey by mutableStateOf<String?>(null)
     var lastCompletionRatingPromptKey: String? = null
