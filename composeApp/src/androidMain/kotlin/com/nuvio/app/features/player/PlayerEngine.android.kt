@@ -36,12 +36,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import com.nuvio.app.features.streams.redactedForLogs
+import com.nuvio.app.core.logging.InAppLogger
+import com.nuvio.app.core.logging.InAppLogLevel
 import kotlinx.coroutines.runBlocking
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -61,7 +65,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ForwardingRenderer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
-import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -105,6 +108,56 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "NuvioPlayer"
 private const val PLAYER_DIAGNOSTIC_TAG = "NuvioPlayerDiag"
+private const val MAX_LIVE_RECONNECT_ATTEMPTS = 3
+private const val LIVE_RECONNECT_BASE_DELAY_MS = 900L
+private fun logPlayerDiagnosticInfo(message: String) {
+    Log.i(PLAYER_DIAGNOSTIC_TAG, message)
+    InAppLogger.info(PLAYER_DIAGNOSTIC_TAG, message.replace(Regex("https?://[^\\s]+"), "[redacted-url]"))
+}
+
+private fun logPlayerDiagnosticWarn(message: String) {
+    Log.w(PLAYER_DIAGNOSTIC_TAG, message)
+    InAppLogger.warn(PLAYER_DIAGNOSTIC_TAG, message.replace(Regex("https?://[^\\s]+"), "[redacted-url]"))
+}
+
+private fun logPlayerDiagnosticError(message: String, throwable: Throwable? = null) {
+    if (throwable == null) Log.e(PLAYER_DIAGNOSTIC_TAG, message) else Log.e(PLAYER_DIAGNOSTIC_TAG, message, throwable)
+    InAppLogger.error(PLAYER_DIAGNOSTIC_TAG, message.replace(Regex("https?://[^\\s]+"), "[redacted-url]"))
+}
+
+
+/**
+ * Applies the optional Nuvio-patched Dolby Vision Profile 7 mapping API when available.
+ * Stock Media3 does not expose setMapDV7ToHevc, so this must not be a compile-time call.
+ */
+private fun DefaultRenderersFactory.setMapDV7ToHevcCompat(
+    enabled: Boolean,
+): DefaultRenderersFactory {
+    val setter = javaClass.methods.firstOrNull { method ->
+        method.name == "setMapDV7ToHevc" &&
+            method.parameterCount == 1 &&
+            method.parameterTypes[0] == Boolean::class.javaPrimitiveType
+    }
+    if (setter == null) {
+        if (enabled) {
+            logPlayerDiagnosticWarn(
+                "DV7-to-HEVC mapping was requested, but this stock Media3 build does not expose " +
+                    "the Nuvio setMapDV7ToHevc extension; the setting is ignored on this build.",
+            )
+        }
+        return this
+    }
+
+    return try {
+        setter.invoke(this, enabled)
+        this
+    } catch (error: Exception) {
+        logPlayerDiagnosticWarn(
+            "Could not apply the Nuvio DV7-to-HEVC mapping extension: ${error.javaClass.simpleName}",
+        )
+        this
+    }
+}
 
 private class PlaybackDiagnostics {
     var prepareStartedAtMs: Long = 0L
@@ -120,6 +173,7 @@ actual fun PlatformPlayerSurface(
     sourceResponseHeaders: Map<String, String>,
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
     streamType: String?,
+    isLive: Boolean,
     useYoutubeChunkedPlayback: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
@@ -143,6 +197,7 @@ actual fun PlatformPlayerSurface(
         sanitizePlaybackHeaders(sourceHeaders),
         sanitizePlaybackResponseHeaders(sourceResponseHeaders),
         normalizeStreamType(streamType).orEmpty(),
+        isLive,
         useYoutubeChunkedPlayback,
         initialPositionRequestKey.orEmpty(),
     )
@@ -159,6 +214,7 @@ actual fun PlatformPlayerSurface(
             sourceResponseHeaders = sourceResponseHeaders,
             externalSubtitles = externalSubtitles,
             streamType = streamType,
+            isLive = isLive,
             useYoutubeChunkedPlayback = useYoutubeChunkedPlayback,
             modifier = modifier,
             playWhenReady = playWhenReady,
@@ -213,6 +269,7 @@ private fun AndroidPlaybackEngine.initialAndroidEngine(): ResolvedAndroidPlaybac
 @Composable
 private fun ExoPlayerSurface(
     sourceUrl: String,
+    isLive: Boolean,
     sourceAudioUrl: String?,
     sourceHeaders: Map<String, String>,
     sourceResponseHeaders: Map<String, String>,
@@ -236,6 +293,7 @@ private fun ExoPlayerSurface(
     val latestOnError = rememberUpdatedState(onError)
     val latestOnInitialPositionHandled = rememberUpdatedState(onInitialPositionHandled)
     val latestPlayWhenReady = rememberUpdatedState(playWhenReady)
+    val latestResizeMode = rememberUpdatedState(resizeMode)
     val coroutineScope = rememberCoroutineScope()
 
     val playerSettings = remember {
@@ -260,12 +318,22 @@ private fun ExoPlayerSurface(
         sanitizedSourceHeaders,
         sanitizedSourceResponseHeaders,
         normalizedStreamType.orEmpty(),
+        isLive,
         useYoutubeChunkedPlayback,
         initialPositionRequestKey.orEmpty(),
     )
     // Tracks whether an ASS track was actively selected and video effects need activation.
     // When this flips to true, the player remember key changes and player rebuilds with effects.
     var videoEffectsNeeded by remember(playerSourceKey) { mutableStateOf(false) }
+    // Track restores/jobs belong to the stream, not to a one-off resume/seek request.
+    val playerTrackIdentityKey = listOf(
+        sourceUrl,
+        sourceAudioUrl.orEmpty(),
+        sanitizedSourceHeaders,
+        sanitizedSourceResponseHeaders,
+        normalizedStreamType.orEmpty(),
+        useYoutubeChunkedPlayback,
+    )
     val playbackDiagnostics = remember(playerSourceKey) { PlaybackDiagnostics() }
     var subtitleDelayMs by remember(playerSourceKey) { mutableStateOf(0) }
     var selectedExternalSubtitleMimeType by remember(playerSourceKey) { mutableStateOf<String?>(null) }
@@ -293,6 +361,7 @@ private fun ExoPlayerSurface(
                 url = sourceUrl,
                 responseHeaders = sanitizedSourceResponseHeaders,
                 streamType = normalizedStreamType,
+                isLive = isLive,
             ).buildUpon()
                 .setMediaId(sourceUrl)
                 .apply {
@@ -305,6 +374,11 @@ private fun ExoPlayerSurface(
         )
     }
     var probeAttempted by remember(playerSourceKey) { mutableStateOf(false) }
+    var liveReconnectAttempts by remember(playerSourceKey) { mutableStateOf(0) }
+    val liveReconnectJob = remember(playerSourceKey) { mutableStateOf<Job?>(null) }
+    DisposableEffect(playerSourceKey) {
+        onDispose { liveReconnectJob.value?.cancel() }
+    }
 
     val isLocalFileSource = remember(resolvedMediaItem) {
         resolvedMediaItem.isLocalFileSource()
@@ -368,34 +442,41 @@ private fun ExoPlayerSurface(
     }
 
     fun ExoPlayer.setPlaybackMediaItem(videoMediaItem: MediaItem, startPositionMs: Long? = null) {
-        if (!sourceAudioUrl.isNullOrBlank()) {
-            // Keep libass parsing for addon ASS subtitles, like sources the player builds itself.
-            val mediaSourceFactory = getAssMediaSourceFactoryCompat()
+        // Keep libass parsing for add-on ASS subtitles when the compatibility factory is
+        // available; otherwise use the normal per-source factory.
+        val mediaSourceFactory = if (!sourceAudioUrl.isNullOrBlank()) {
+            getAssMediaSourceFactoryCompat()
                 ?: DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        } else {
+            DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        }
+        // Keep the ExoPlayer alive across ordinary source switches so a compatible audio
+        // output can be reused. Both tracks must use the same source factory.
+        val mediaSource = if (!sourceAudioUrl.isNullOrBlank()) {
             val videoSource = mediaSourceFactory.createMediaSource(videoMediaItem)
             val audioSource = mediaSourceFactory.createMediaSource(playbackMediaItemFromUrl(sourceAudioUrl))
-            val mergedSource = MergingMediaSource(videoSource, audioSource)
-            if (startPositionMs != null) {
-                setMediaSource(mergedSource, startPositionMs.coerceAtLeast(0L))
-            } else {
-                setMediaSource(mergedSource)
-            }
-        } else if (startPositionMs != null) {
-            setMediaItem(videoMediaItem, startPositionMs.coerceAtLeast(0L))
+            MergingMediaSource(videoSource, audioSource)
         } else {
-            setMediaItem(videoMediaItem)
+            mediaSourceFactory.createMediaSource(videoMediaItem)
+        }
+        if (startPositionMs != null) {
+            setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
+        } else {
+            setMediaSource(mediaSource)
         }
     }
 
     val exoPlayer = remember(
-        sourceUrl,
-        sourceAudioUrl,
-        sanitizedSourceHeaders,
-        sanitizedSourceResponseHeaders,
-        normalizedStreamType,
-        useYoutubeChunkedPlayback,
+        // Stream URLs, per-stream headers, extractors and cache wrappers are handled by the
+        // per-source MediaSource built below. Do not recreate ExoPlayer/AudioTrack just because
+        // a user switches streams.
+        context,
         effectiveDecoderPriority,
-        initialPositionRequestKey,
+        useLibass,
+        libassRenderMode,
+        playerSettings.libassRenderScale,
+        playerSettings.mapDV7ToHevc,
+        playerSettings.tunnelingEnabled,
         playerSettings.exoNativeMemoryEnabled,
         playerSettings.bufferEngineEnabled,
         playerSettings.minBufferMs,
@@ -422,12 +503,15 @@ private fun ExoPlayerSurface(
                 else subtitlePresenter.present(cues, format?.sampleMimeType != MimeTypes.TEXT_SSA && format?.codecs != MimeTypes.TEXT_SSA)
             },
             videoBoundsFractionProvider = {
-                playerViewRef?.videoBoundsFraction(latestVideoAspectRatio.value)
+                playerViewRef?.videoBoundsFraction(
+                    mode = latestResizeMode.value,
+                    aspectRatio = latestVideoAspectRatio.value,
+                )
             },
         )
             .setExtensionRendererMode(effectiveDecoderPriority)
             .setEnableDecoderFallback(true)
-            .setMapDV7ToHevc(playerSettings.mapDV7ToHevc)
+            .setMapDV7ToHevcCompat(playerSettings.mapDV7ToHevc)
 
         val trackSelector = DefaultTrackSelector(context).apply {
             var parameters = buildUponParameters()
@@ -460,13 +544,13 @@ private fun ExoPlayerSurface(
         val loadControl = NuvioExoPlayerPerformanceHelper.buildLoadControl(
             context,
             PlaybackBufferSettings(
-                enabled = playerSettings.bufferEngineEnabled,
-                minBufferMs = playerSettings.minBufferMs,
-                maxBufferMs = playerSettings.maxBufferMs,
-                bufferForPlaybackMs = playerSettings.bufferForPlaybackMs,
-                bufferForPlaybackAfterRebufferMs = playerSettings.bufferForPlaybackAfterRebufferMs,
-                backBufferDurationMs = playerSettings.backBufferDurationMs,
-                targetBufferSizeMb = playerSettings.targetBufferSizeMb,
+                enabled = isLive || playerSettings.bufferEngineEnabled,
+                minBufferMs = if (isLive) 5_000 else playerSettings.minBufferMs,
+                maxBufferMs = if (isLive) 15_000 else playerSettings.maxBufferMs,
+                bufferForPlaybackMs = if (isLive) 1_000 else playerSettings.bufferForPlaybackMs,
+                bufferForPlaybackAfterRebufferMs = if (isLive) 2_000 else playerSettings.bufferForPlaybackAfterRebufferMs,
+                backBufferDurationMs = if (isLive) 0 else playerSettings.backBufferDurationMs,
+                targetBufferSizeMb = if (isLive) 50 else playerSettings.targetBufferSizeMb,
             ),
             localFileSource = isLocalFileSource,
         )
@@ -546,7 +630,13 @@ private fun ExoPlayerSurface(
         )
     }
 
+    fun isCurrentExoPlayerSource(): Boolean =
+        exoPlayer.currentMediaItem?.mediaId == sourceUrl
+
     fun dispatchExoPlayerSnapshot() {
+        // The ExoPlayer instance is shared across source switches. Do not publish a queued
+        // snapshot from the previous media item under the new playback identity.
+        if (!isCurrentExoPlayerSource()) return
         val snapshot = exoPlayer.snapshot()
         latestOnSnapshot.value(snapshot)
         nowPlayingController.syncPlayback(snapshot)
@@ -556,7 +646,14 @@ private fun ExoPlayerSurface(
         onDispose { nowPlayingController.release() }
     }
 
-    LaunchedEffect(exoPlayer, resolvedMediaItem, initialPositionRequestKey) {
+    LaunchedEffect(
+        exoPlayer,
+        resolvedMediaItem,
+        initialPositionRequestKey,
+        dataSourceFactory,
+        extractorsFactory,
+        sourceAudioUrl,
+    ) {
         val mediaItem = attachedAddonSubtitleConfig?.let { config ->
             resolvedMediaItem.buildUpon().setSubtitleConfigurations(listOf(config)).build()
         } ?: resolvedMediaItem
@@ -564,9 +661,7 @@ private fun ExoPlayerSurface(
             ?: initialPositionMs?.takeIf { it > 0L }
         playbackDiagnostics.attempt += 1
         playbackDiagnostics.prepareStartedAtMs = SystemClock.elapsedRealtime()
-        Log.i(
-            PLAYER_DIAGNOSTIC_TAG,
-            "prepare begin attempt=${playbackDiagnostics.attempt} " +
+        logPlayerDiagnosticInfo("prepare begin attempt=${playbackDiagnostics.attempt} " +
                 "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()} " +
                 "mime=${mediaItem.localConfiguration?.mimeType ?: "auto"} " +
                 "startPositionMs=${requestedStartPositionMs ?: 0L}",
@@ -583,9 +678,20 @@ private fun ExoPlayerSurface(
         exoPlayer.prepare()
     }
 
-    val pendingSubtitleTrackIndex = remember { mutableListOf<Int>() }
-    val pendingAudioTrackSelection = remember { mutableListOf<TrackSelectionSnapshot>() }
+    val pendingSubtitleTrackIndex = remember(playerTrackIdentityKey) { mutableListOf<Int>() }
+    val pendingAudioTrackSelection = remember(playerTrackIdentityKey) { mutableListOf<TrackSelectionSnapshot>() }
     var subtitleSelectionJob by remember { mutableStateOf<Job?>(null) }
+
+    // The same ExoPlayer now survives URL changes to preserve AudioTrack, so cancel stale
+    // subtitle reloads and track-restoration state when a different stream takes over.
+    DisposableEffect(playerTrackIdentityKey) {
+        onDispose {
+            subtitleSelectionJob?.cancel()
+            subtitleSelectionJob = null
+            pendingSubtitleTrackIndex.clear()
+            pendingAudioTrackSelection.clear()
+        }
+    }
     val isInPip = rememberIsInPictureInPicture()
     // Player size outside PiP, so PiP subtitles keep the full-screen size relative to the video.
     var playerSizeOutsidePip by remember { mutableStateOf(IntSize.Zero) }
@@ -627,7 +733,7 @@ private fun ExoPlayerSurface(
         Log.d(TAG, "$reason: preserving audio track index=${selection.index} id=${selection.id}")
     }
 
-    DisposableEffect(exoPlayer) {
+    DisposableEffect(exoPlayer, playerSourceKey, externalSubtitles) {
         PlayerPictureInPictureManager.registerPausePlaybackCallback {
             exoPlayer.pause()
         }
@@ -640,6 +746,28 @@ private fun ExoPlayerSurface(
                 }
                 exoPlayer.play()
             }
+        }
+
+        fun scheduleLiveReconnect(error: PlaybackException): Boolean {
+            val recoverable = error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+            if (!isLive || !recoverable || liveReconnectAttempts >= MAX_LIVE_RECONNECT_ATTEMPTS) return false
+            if (liveReconnectJob.value?.isActive == true) return true
+
+            liveReconnectAttempts += 1
+            val attempt = liveReconnectAttempts
+            liveReconnectJob.value = coroutineScope.launch {
+                delay(LIVE_RECONNECT_BASE_DELAY_MS * attempt)
+                if (exoPlayer.currentMediaItem?.mediaId != sourceUrl) return@launch
+                if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    exoPlayer.seekToDefaultPosition()
+                }
+                exoPlayer.prepare()
+                if (latestPlayWhenReady.value) exoPlayer.play() else exoPlayer.pause()
+            }
+            return true
         }
 
         fun reportPlayerError(error: PlaybackException) {
@@ -664,9 +792,7 @@ private fun ExoPlayerSurface(
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 syncPlayerViewKeepScreenOn()
-                Log.e(
-                    PLAYER_DIAGNOSTIC_TAG,
-                    "error attempt=${playbackDiagnostics.attempt} " +
+                logPlayerDiagnosticError("error attempt=${playbackDiagnostics.attempt} " +
                         "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                         "code=${error.errorCodeName} cause=${error.cause?.javaClass?.simpleName ?: "none"} " +
                         "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
@@ -695,12 +821,12 @@ private fun ExoPlayerSurface(
                             latestOnError.value(null)
                             return@launch
                         }
-                        reportPlayerError(error)
+                        if (!scheduleLiveReconnect(error)) reportPlayerError(error)
                     }
                     return
                 }
 
-                reportPlayerError(error)
+                if (!scheduleLiveReconnect(error)) reportPlayerError(error)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -712,9 +838,7 @@ private fun ExoPlayerSurface(
                     else -> "UNKNOWN($playbackState)"
                 }
                 Log.d(TAG, "onPlaybackStateChanged: $stateName")
-                Log.i(
-                    PLAYER_DIAGNOSTIC_TAG,
-                    "state=$stateName attempt=${playbackDiagnostics.attempt} " +
+                logPlayerDiagnosticInfo("state=$stateName attempt=${playbackDiagnostics.attempt} " +
                         "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                         "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
                         "bufferedMs=${exoPlayer.bufferedPosition.coerceAtLeast(0L)} " +
@@ -732,9 +856,7 @@ private fun ExoPlayerSurface(
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.i(
-                    PLAYER_DIAGNOSTIC_TAG,
-                    "isPlaying=$isPlaying attempt=${playbackDiagnostics.attempt} " +
+                logPlayerDiagnosticInfo("isPlaying=$isPlaying attempt=${playbackDiagnostics.attempt} " +
                         "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                         "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)}",
                 )
@@ -743,25 +865,50 @@ private fun ExoPlayerSurface(
             }
 
             override fun onRenderedFirstFrame() {
-                Log.i(
-                    PLAYER_DIAGNOSTIC_TAG,
-                    "firstFrame attempt=${playbackDiagnostics.attempt} " +
+                logPlayerDiagnosticInfo("firstFrame attempt=${playbackDiagnostics.attempt} " +
                         "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                         "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)}",
                 )
             }
 
             override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) {
+                logPlayerDiagnosticInfo("PLAYBACK_PARAMETERS attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
+                        "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
+                        "speed=${playbackParameters.speed} pitch=${playbackParameters.pitch}",
+                )
                 dispatchExoPlayerSnapshot()
             }
 
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                latestOnSnapshot.value(exoPlayer.snapshot())
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                val reasonName = when (reason) {
+                    Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> "AUTO_TRANSITION"
+                    Player.DISCONTINUITY_REASON_SEEK -> "SEEK"
+                    Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT -> "SEEK_ADJUSTMENT"
+                    Player.DISCONTINUITY_REASON_SKIP -> "SKIP"
+                    Player.DISCONTINUITY_REASON_REMOVE -> "REMOVE"
+                    else -> "OTHER($reason)"
                 }
+                logPlayerDiagnosticInfo("POSITION_DISCONTINUITY reason=$reasonName attempt=${playbackDiagnostics.attempt} " +
+                        "oldMs=${oldPosition.positionMs} newMs=${newPosition.positionMs} " +
+                        "speed=${exoPlayer.playbackParameters.speed} " +
+                        "audioFormat=${exoPlayer.audioFormat?.let { "${it.sampleMimeType}/${it.sampleRate}Hz/${it.channelCount}ch" } ?: "unknown"}",
+                )
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (!isCurrentExoPlayerSource()) return
+                latestOnSnapshot.value(exoPlayer.snapshot())
+                videoAspectRatio = videoSize.subtitleBoundsAspectRatio(resizeMode)
                 playerViewRef?.post {
-                    playerViewRef?.syncLibassOverlayGeometry()
+                    playerViewRef?.let { view ->
+                        view.applyNuvioAspectRatio(resizeMode, videoSize)
+                        view.syncLibassOverlayGeometry()
+                    }
                 }
             }
 
@@ -829,7 +976,125 @@ private fun ExoPlayerSurface(
 
         }
         exoPlayer.addListener(listener)
+        val audioDiagnosticsListener = object : AnalyticsListener {
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_DECODER_INITIALIZED decoder=$decoderName " +
+                        "initDurationMs=$initializationDurationMs " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
+                )
+            }
+
+            override fun onAudioDecoderReleased(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_DECODER_RELEASED decoder=$decoderName " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
+                )
+            }
+
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_INPUT_FORMAT_CHANGED mime=${format.sampleMimeType} " +
+                        "sampleRate=${format.sampleRate}Hz channels=${format.channelCount} " +
+                        "bitrate=${format.bitrate} decoderReuse=${decoderReuseEvaluation?.result ?: "unknown"} " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
+                )
+            }
+
+            override fun onAudioPositionAdvancing(
+                eventTime: AnalyticsListener.EventTime,
+                playoutStartSystemTimeMs: Long,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_POSITION_ADVANCING playoutStartSystemTimeMs=$playoutStartSystemTimeMs " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
+                        "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)}",
+                )
+            }
+
+            override fun onAudioTrackInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                audioTrackConfig: AudioSink.AudioTrackConfig,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_TRACK_INITIALIZED config=$audioTrackConfig " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
+                )
+            }
+
+            override fun onAudioTrackReleased(
+                eventTime: AnalyticsListener.EventTime,
+                audioTrackConfig: AudioSink.AudioTrackConfig,
+            ) {
+                logPlayerDiagnosticInfo(
+                    "AUDIO_TRACK_RELEASED config=$audioTrackConfig " +
+                        "attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
+                )
+            }
+
+            override fun onAudioCodecError(
+                eventTime: AnalyticsListener.EventTime,
+                audioCodecError: Exception,
+            ) {
+                logPlayerDiagnosticError(
+                    "AUDIO_CODEC_ERROR attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
+                        "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
+                        "error=${diagnosticThrowableChain(audioCodecError)}",
+                    audioCodecError,
+                )
+            }
+
+            override fun onAudioUnderrun(
+                eventTime: AnalyticsListener.EventTime,
+                bufferSize: Int,
+                bufferSizeMs: Long,
+                elapsedSinceLastFeedMs: Long,
+            ) {
+                logPlayerDiagnosticWarn("AUDIO_UNDERRUN attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
+                        "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
+                        "bufferSizeBytes=$bufferSize bufferSizeMs=$bufferSizeMs " +
+                        "elapsedSinceLastFeedMs=$elapsedSinceLastFeedMs " +
+                        "speed=${exoPlayer.playbackParameters.speed} " +
+                        "audioFormat=${exoPlayer.audioFormat?.let { "${it.sampleMimeType}/${it.sampleRate}Hz/${it.channelCount}ch" } ?: "unknown"}",
+                )
+            }
+
+            override fun onAudioSinkError(
+                eventTime: AnalyticsListener.EventTime,
+                audioSinkError: Exception,
+            ) {
+                logPlayerDiagnosticError("AUDIO_SINK_ERROR attempt=${playbackDiagnostics.attempt} " +
+                        "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
+                        "positionMs=${exoPlayer.currentPosition.coerceAtLeast(0L)} " +
+                        "speed=${exoPlayer.playbackParameters.speed} " +
+                        "error=${diagnosticThrowableChain(audioSinkError)}",
+                    audioSinkError,
+                )
+            }
+        }
+        exoPlayer.addAnalyticsListener(audioDiagnosticsListener)
         onDispose {
+            exoPlayer.removeAnalyticsListener(audioDiagnosticsListener)
             PlayerPictureInPictureManager.registerPausePlaybackCallback(null)
             PlayerPictureInPictureManager.registerTogglePlaybackCallback(null)
             exoPlayer.removeListener(listener)
@@ -898,7 +1163,15 @@ private fun ExoPlayerSurface(
 
     val latestChapterSourceUrl = rememberUpdatedState(sourceUrl)
     val latestChapterSourceHeaders = rememberUpdatedState(sanitizedSourceHeaders)
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(
+        exoPlayer,
+        autoSyncCoordinator,
+        playerSourceKey,
+        dataSourceFactory,
+        extractorsFactory,
+        sourceAudioUrl,
+        externalSubtitles,
+    ) {
         onControllerReady(
             autoSyncCoordinator.wrap(object : PlayerEngineController { // AutoSync hook
                 override val playbackEngine = AndroidPlaybackEngine.ExoPlayer
@@ -1166,8 +1439,15 @@ private fun ExoPlayerSurface(
                     player = exoPlayer
                     keepScreenOn = exoPlayer.shouldKeepPlayerScreenOn()
                     this.resizeMode = resizeMode.toExoResizeMode()
+                    applyNuvioAspectRatio(resizeMode, exoPlayer.videoSize)
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                     playerViewRef = this
+                    addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                        post {
+                            applyNuvioAspectRatio(latestResizeMode.value, exoPlayer.videoSize)
+                            syncLibassOverlayGeometry()
+                        }
+                    }
                     sidecarController.bindSubtitleView(this.subtitleView)
                     subtitleView?.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
                         val inPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
@@ -1193,6 +1473,7 @@ private fun ExoPlayerSurface(
                 playerView.player = exoPlayer
                 playerView.useController = useNativeController
                 playerView.resizeMode = resizeMode.toExoResizeMode()
+                playerView.applyNuvioAspectRatio(resizeMode, exoPlayer.videoSize)
                 playerViewRef = playerView
                 sidecarController.bindSubtitleView(playerView.subtitleView)
                 syncPlayerViewKeepScreenOn()
@@ -1207,6 +1488,12 @@ private fun ExoPlayerSurface(
                 }
             },
         )
+        LaunchedEffect(playerViewRef, resizeMode) {
+            val currentVideoSize = exoPlayer.videoSize
+            videoAspectRatio = currentVideoSize.subtitleBoundsAspectRatio(resizeMode)
+            playerViewRef?.applyNuvioAspectRatio(resizeMode, currentVideoSize)
+            playerViewRef?.post { playerViewRef?.syncLibassOverlayGeometry() }
+        }
         StyledSubtitleOverlay(subtitlePresenter.text, currentSubtitleStyle)
     }
 }
@@ -1320,9 +1607,7 @@ private fun LibmpvPlayerSurface(
             }
             override fun eventProperty(property: String, value: Boolean) {
                 if (property == "eof-reached" && value) {
-                    Log.w(
-                        PLAYER_DIAGNOSTIC_TAG,
-                        "mpv_property=eof-reached value=true attempt=${playbackDiagnostics.attempt} " +
+                    logPlayerDiagnosticWarn("mpv_property=eof-reached value=true attempt=${playbackDiagnostics.attempt} " +
                             "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
                     )
                 }
@@ -1351,9 +1636,7 @@ private fun LibmpvPlayerSurface(
             override fun event(eventId: Int, data: MPVNode) {
                 when (eventId) {
                     MPV.mpvEvent.MPV_EVENT_START_FILE -> {
-                        Log.i(
-                            PLAYER_DIAGNOSTIC_TAG,
-                            "mpv_event=START_FILE attempt=${playbackDiagnostics.attempt} " +
+                        logPlayerDiagnosticInfo("mpv_event=START_FILE attempt=${playbackDiagnostics.attempt} " +
                                 "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)}",
                         )
                         coroutineScope.launch(Dispatchers.Main.immediate) {
@@ -1369,9 +1652,7 @@ private fun LibmpvPlayerSurface(
                         coroutineScope.launch(Dispatchers.Main.immediate) {
                             latestOnError.value(null)
                             val snapshot = view.snapshot()
-                            Log.i(
-                                PLAYER_DIAGNOSTIC_TAG,
-                                "mpv_event=${if (eventId == MPV.mpvEvent.MPV_EVENT_FILE_LOADED) "FILE_LOADED" else "PLAYBACK_RESTART"} " +
+                            logPlayerDiagnosticInfo("mpv_event=${if (eventId == MPV.mpvEvent.MPV_EVENT_FILE_LOADED) "FILE_LOADED" else "PLAYBACK_RESTART"} " +
                                     "attempt=${playbackDiagnostics.attempt} " +
                                     "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                                     "positionMs=${snapshot.positionMs} bufferedMs=${snapshot.bufferedPositionMs} " +
@@ -1384,9 +1665,7 @@ private fun LibmpvPlayerSurface(
                     MPV.mpvEvent.MPV_EVENT_END_FILE -> {
                         coroutineScope.launch(Dispatchers.Main.immediate) {
                             val snapshot = view.snapshot()
-                            Log.w(
-                                PLAYER_DIAGNOSTIC_TAG,
-                                "mpv_event=END_FILE attempt=${playbackDiagnostics.attempt} " +
+                            logPlayerDiagnosticWarn("mpv_event=END_FILE attempt=${playbackDiagnostics.attempt} " +
                                     "elapsedMs=${diagnosticElapsedSince(playbackDiagnostics.prepareStartedAtMs)} " +
                                     "positionMs=${snapshot.positionMs} bufferedMs=${snapshot.bufferedPositionMs} " +
                                     "durationMs=${snapshot.durationMs} eof=${snapshot.isEnded} " +
@@ -1402,11 +1681,30 @@ private fun LibmpvPlayerSurface(
         }
         val logObserver = object : MPV.LogObserver {
             override fun logMessage(prefix: String, level: Int, text: String) {
-                Log.w(
-                    PLAYER_DIAGNOSTIC_TAG,
-                    "mpv_log level=$level prefix=${diagnosticPlayerMessage(prefix)} " +
-                        "message=${diagnosticPlayerMessage(text)}",
-                )
+                val safePrefix = diagnosticPlayerMessage(prefix)
+                val safeMessage = diagnosticPlayerMessage(text)
+                val message = "mpv_log level=$level prefix=$safePrefix message=$safeMessage"
+                when {
+                    level <= 20 -> logPlayerDiagnosticError(message)
+                    level <= 30 -> logPlayerDiagnosticWarn(message)
+                    level <= 40 -> logPlayerDiagnosticInfo(message)
+                    Regex("(?i)audio|audiotrack|ao_|decoder|resampl|underrun|buffer|device").containsMatchIn(
+                        "$safePrefix $safeMessage",
+                    ) -> {
+                        // Keep audio-related verbose MPV output available in the in-app
+                        // export without allowing unrelated trace/debug noise to evict
+                        // the actual player transition and underrun records.
+                        Log.d(PLAYER_DIAGNOSTIC_TAG, message)
+                        val redactedMessage = safeMessage.replace(Regex("https?://[^\\s]+"), "[redacted-url]")
+                        InAppLogger.logMpv(
+                            platform = "Android",
+                            prefix = safePrefix,
+                            level = "debug",
+                            message = "level=$level $redactedMessage",
+                        )
+                    }
+                    else -> Unit
+                }
             }
         }
         view.mpv.addObserver(observer)
@@ -1446,9 +1744,7 @@ private fun LibmpvPlayerSurface(
         val view = playerViewRef ?: return@LaunchedEffect
         playbackDiagnostics.attempt += 1
         playbackDiagnostics.prepareStartedAtMs = SystemClock.elapsedRealtime()
-        Log.i(
-            PLAYER_DIAGNOSTIC_TAG,
-            "mpv_prepare_begin attempt=${playbackDiagnostics.attempt} " +
+        logPlayerDiagnosticInfo("mpv_prepare_begin attempt=${playbackDiagnostics.attempt} " +
                 "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()}",
         )
         val snapshot = PlayerPlaybackSnapshot()
@@ -1556,6 +1852,8 @@ private class NuvioLibmpvView(
     private var currentSourceAudioUrl: String? = null
     private var currentRequestHeaders: Map<String, String> = emptyMap()
     private var currentExternalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle> = emptyList()
+    private var originalUserAgent: String? = null
+    private var originalUserAgentCaptured = false
     @Volatile
     private var latestSnapshot = PlayerPlaybackSnapshot()
     @Volatile
@@ -1677,11 +1975,29 @@ private class NuvioLibmpvView(
 
     fun attachStartupSubtitles() {
         executeMpv {
-            currentExternalSubtitles.forEachIndexed { index, subtitle ->
-                val flag = if (index == 0) "auto" else "cached"
-                mpv.command("sub-add", subtitle.url.toMpvSource(), flag, subtitle.name ?: subtitle.language, subtitle.language)
+            try {
+                currentExternalSubtitles.forEachIndexed { index, subtitle ->
+                    val flag = if (index == 0) "auto" else "cached"
+                    applyRequestHeadersNow(requestHeadersForSubtitle(subtitle))
+                    mpv.command("sub-add", subtitle.url.toMpvSource(), flag, subtitle.name ?: subtitle.language, subtitle.language)
+                }
+            } finally {
+                // Subtitle-specific headers must not leak into the active video request.
+                applyRequestHeadersNow(currentRequestHeaders)
             }
         }
+    }
+
+    private fun requestHeadersForSubtitle(
+        subtitle: com.nuvio.app.features.streams.StreamSubtitle,
+    ): Map<String, String> {
+        val merged = currentRequestHeaders.toMutableMap()
+        subtitle.headers.orEmpty().forEach { (key, value) ->
+            val existingKey = merged.keys.firstOrNull { it.equals(key, ignoreCase = true) }
+            if (existingKey != null) merged.remove(existingKey)
+            merged[key] = value
+        }
+        return sanitizePlaybackHeaders(merged)
     }
 
     private fun String.toMpvSource(): String =
@@ -1778,6 +2094,15 @@ private class NuvioLibmpvView(
     fun applyResizeMode(resizeMode: PlayerResizeMode) {
         executeMpv {
             when (resizeMode) {
+                PlayerResizeMode.BestFit -> {
+                    mpv.setPropertyString("keepaspect", "yes")
+                    mpv.setPropertyString("video-aspect-method", "container")
+                    mpv.setPropertyString("video-aspect-override", "no")
+                    mpv.setPropertyString("video-unscaled", "no")
+                    mpv.setPropertyDouble("video-zoom", 0.0)
+                    mpv.setPropertyDouble("panscan", 0.0)
+                }
+                // Fit, Fill, and Zoom retain the original official Nuvio mpv behaviour.
                 PlayerResizeMode.Fit -> {
                     mpv.setPropertyDouble("panscan", 0.0)
                     mpv.setPropertyString("video-aspect-override", "no")
@@ -1789,6 +2114,13 @@ private class NuvioLibmpvView(
                 PlayerResizeMode.Zoom -> {
                     mpv.setPropertyDouble("panscan", 0.5)
                     mpv.setPropertyString("video-aspect-override", "no")
+                }
+                PlayerResizeMode.Ratio16x9 -> {
+                    mpv.setPropertyString("keepaspect", "yes")
+                    mpv.setPropertyString("video-unscaled", "no")
+                    mpv.setPropertyString("video-aspect-override", "16:9")
+                    mpv.setPropertyDouble("video-zoom", 0.0)
+                    mpv.setPropertyDouble("panscan", 0.0)
                 }
             }
         }
@@ -1895,7 +2227,17 @@ private class NuvioLibmpvView(
             }
 
             override fun setSubtitleUri(url: String) {
-                executeMpv { mpv.command("sub-add", url, "select") }
+                executeMpv {
+                    val subtitle = currentExternalSubtitles.firstOrNull { it.url == url }
+                    try {
+                        if (subtitle != null) {
+                            applyRequestHeadersNow(requestHeadersForSubtitle(subtitle))
+                        }
+                        mpv.command("sub-add", url, "select")
+                    } finally {
+                        applyRequestHeadersNow(currentRequestHeaders)
+                    }
+                }
             }
 
             override fun clearExternalSubtitle() {
@@ -2032,9 +2374,17 @@ private class NuvioLibmpvView(
     }
 
     private fun applyRequestHeadersNow(headers: Map<String, String>) {
+        if (!originalUserAgentCaptured) {
+            originalUserAgent = runCatching { mpv.getPropertyString("user-agent") }.getOrNull()
+            originalUserAgentCaptured = true
+        }
         val userAgent = headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
         if (!userAgent.isNullOrBlank()) {
             mpv.setPropertyString("user-agent", userAgent)
+        } else {
+            // User-Agent is a separate mpv property; restore its original value when a request
+            // does not override it, rather than leaking the previous subtitle/source's value.
+            originalUserAgent?.let { mpv.setPropertyString("user-agent", it) }
         }
         val serialized = headers
             .filterKeys { !it.equals("User-Agent", ignoreCase = true) }
@@ -2254,9 +2604,43 @@ private fun PlaybackException.isDecoderFailure(): Boolean =
         PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED,
     )
 
+private fun VideoSize.subtitleBoundsAspectRatio(mode: PlayerResizeMode): Float = when (mode) {
+    PlayerResizeMode.Fit, PlayerResizeMode.Fill -> 0f
+    PlayerResizeMode.Ratio16x9 -> 16f / 9f
+    PlayerResizeMode.BestFit, PlayerResizeMode.Zoom -> {
+        if (width <= 0 || height <= 0) {
+            0f
+        } else {
+            val sampleAspectRatio = pixelWidthHeightRatio.takeIf { it.isFinite() && it > 0f } ?: 1f
+            width.toFloat() * sampleAspectRatio / height.toFloat()
+        }
+    }
+}
+
+private fun PlayerView.applyNuvioAspectRatio(mode: PlayerResizeMode, videoSize: VideoSize) {
+    val contentFrame = findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+        ?: return
+    val codedRatio = if (videoSize.width > 0 && videoSize.height > 0) {
+        videoSize.width.toFloat() / videoSize.height
+    } else 0f
+    val sampleAspectRatio = videoSize.pixelWidthHeightRatio
+        .takeIf { it.isFinite() && it > 0f } ?: 1f
+    val correctedRatio = if (codedRatio > 0f) codedRatio * sampleAspectRatio else 0f
+
+    when (mode) {
+        PlayerResizeMode.BestFit, PlayerResizeMode.Fit, PlayerResizeMode.Zoom ->
+            contentFrame.setAspectRatio(correctedRatio)
+        PlayerResizeMode.Fill ->
+            contentFrame.setAspectRatio(0f)
+        PlayerResizeMode.Ratio16x9 ->
+            contentFrame.setAspectRatio(16f / 9f)
+    }
+}
+
 private fun PlayerResizeMode.toExoResizeMode(): Int =
     when (this) {
-        PlayerResizeMode.Fit -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        PlayerResizeMode.BestFit, PlayerResizeMode.Fit, PlayerResizeMode.Ratio16x9 ->
+            AspectRatioFrameLayout.RESIZE_MODE_FIT
         PlayerResizeMode.Fill -> AspectRatioFrameLayout.RESIZE_MODE_FILL
         PlayerResizeMode.Zoom -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     }
@@ -2674,13 +3058,19 @@ private fun ExoPlayer.logCurrentTracks(context: String) {
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
-private fun PlayerView.videoBoundsFraction(aspectRatio: Float): RectF? {
+private fun PlayerView.videoBoundsFraction(
+    mode: PlayerResizeMode,
+    aspectRatio: Float,
+): RectF? {
     val subtitleView = this.subtitleView ?: return null
     val viewWidth = subtitleView.width.toFloat()
     val viewHeight = subtitleView.height.toFloat()
     if (viewWidth <= 0f || viewHeight <= 0f) return null
 
-    if (aspectRatio > 0f) {
+    // Zoom deliberately crops the source beyond the viewport. Its actual transformed
+    // bounds (including negative offsets and dimensions larger than the viewport) are
+    // required to remap bitmap subtitle coordinates correctly.
+    if (aspectRatio > 0f && mode != PlayerResizeMode.Zoom) {
         val parentRatio = viewWidth / viewHeight
         return if (parentRatio > aspectRatio) {
             val fitW = viewHeight * aspectRatio
@@ -2697,17 +3087,18 @@ private fun PlayerView.videoBoundsFraction(aspectRatio: Float): RectF? {
         ?: findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
             ?.also { setTag(androidx.media3.ui.R.id.exo_content_frame, it) }
         ?: return null
-    val frameWidth = contentFrame.width.toFloat()
-    val frameHeight = contentFrame.height.toFloat()
-    if (frameWidth <= 0f || frameHeight <= 0f) return null
-    if (frameWidth > viewWidth || frameHeight > viewHeight) return null
-    val left = contentFrame.x / viewWidth
-    val top = contentFrame.y / viewHeight
+    val transformedBounds = transformedChildBoundsInParent(contentFrame) ?: return null
+    if (
+        mode != PlayerResizeMode.Zoom && (
+            transformedBounds.left < 0f || transformedBounds.top < 0f ||
+            transformedBounds.right > viewWidth || transformedBounds.bottom > viewHeight
+        )
+    ) return null
     return RectF(
-        left,
-        top,
-        left + frameWidth / viewWidth,
-        top + frameHeight / viewHeight,
+        transformedBounds.left / viewWidth,
+        transformedBounds.top / viewHeight,
+        transformedBounds.right / viewWidth,
+        transformedBounds.bottom / viewHeight,
     )
 }
 

@@ -8,6 +8,9 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.fetchAddonResponseText
 import com.nuvio.app.core.poster.withCustomPosterUrls
 import com.nuvio.app.features.addons.supportsResource
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
+import com.nuvio.app.features.cloudstream.parseCloudStreamRouteId
+import com.nuvio.app.features.cloudstream.toMetaDetails
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
@@ -25,7 +28,6 @@ import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktRelatedRepository
 import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.tracking.TrackingSettingsRepository
-import com.nuvio.app.features.trakt.shouldUseTraktMoreLikeThis
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -62,20 +64,32 @@ object MetaDetailsRepository {
             loadServerMeta(requestKey, ref)
             return
         }
+        parseCloudStreamRouteId(id)?.let { route ->
+            loadCloudStreamMeta(requestKey, route.providerId, route.data)
+            return
+        }
         val currentState = _uiState.value
         val mdbListSettings = MdbListSettingsRepository.snapshot()
         val metaScreenSettingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
 
         cachedMetaByRequestKey[requestKey]?.let { cachedEntry ->
-            cachedEntry.metaScreenMeta
+            val cachedScreenMeta = cachedEntry.metaScreenMeta
                 ?.takeIf { cachedEntry.metaScreenSettingsFingerprint == metaScreenSettingsFingerprint }
-                ?.let { cachedMeta ->
-                    _uiState.value = MetaDetailsUiState(meta = cachedMeta.withUnreleasedFilter())
-                    activeRequestKey = requestKey
-                    return
-                }
+            val retryMissingTmdbRecommendations = cachedScreenMeta != null &&
+                shouldRetryMissingTmdbRecommendations(cachedScreenMeta)
+            if (cachedScreenMeta != null && !retryMissingTmdbRecommendations) {
+                _uiState.value = MetaDetailsUiState(meta = cachedScreenMeta.withUnreleasedFilter())
+                activeRequestKey = requestKey
+                return
+            }
 
-            val cachedBaseMeta = cachedEntry.baseMeta
+            // Keep any already-applied detail enrichment, but retry a previous empty TMDB
+            // recommendation result instead of treating that transient failure as a cache hit.
+            val cachedBaseMeta = if (retryMissingTmdbRecommendations) {
+                cachedScreenMeta!!
+            } else {
+                cachedEntry.baseMeta
+            }
             if (!shouldEnrichForMetaScreen(cachedBaseMeta, id, mdbListSettings)) {
                 _uiState.value = MetaDetailsUiState(meta = cachedBaseMeta.withUnreleasedFilter())
                 activeRequestKey = requestKey
@@ -90,7 +104,9 @@ object MetaDetailsRepository {
             activeRequestKey = requestKey
             _uiState.value = MetaDetailsUiState(
                 isLoading = true,
-                meta = cachedBaseMeta,
+                // Keep the currently visible detail metadata consistent with the poster overlay
+                // while provider enrichment is running; the base cache intentionally stays raw.
+                meta = cachedBaseMeta.withUnreleasedFilter(),
             )
 
             scope.launch {
@@ -206,12 +222,61 @@ object MetaDetailsRepository {
         _uiState.value = MetaDetailsUiState()
     }
 
+    /**
+     * Resolves metadata for playback and applies the same related-title source selection used
+     * by the details screen. The lightweight [fetch] path returns base metadata; without this
+     * step, recommendations are missing when playback starts directly from a catalog.
+     */
+    suspend fun fetchForPlayback(type: String, id: String): MetaDetails? {
+        val requestKey = "$type:$id"
+        TmdbSettingsRepository.ensureLoaded()
+        val mdbListSettings = MdbListSettingsRepository.snapshot()
+        val settingsFingerprint = buildMetaScreenSettingsFingerprint(mdbListSettings)
+
+        val cachedScreenMeta = cachedMetaByRequestKey[requestKey]?.let { cached ->
+            cached.metaScreenMeta
+                ?.takeIf { cached.metaScreenSettingsFingerprint == settingsFingerprint }
+        }
+        if (cachedScreenMeta != null && !shouldRetryMissingTmdbRecommendations(cachedScreenMeta)) {
+            return cachedScreenMeta.withUnreleasedFilter()
+        }
+
+        val baseMeta = cachedScreenMeta ?: fetch(type, id) ?: return null
+        val tmdbEnriched = withTimeoutOrNull(TMDB_ENRICH_TIMEOUT_MS) {
+            TmdbMetadataService.enrichMeta(
+                meta = baseMeta,
+                fallbackItemId = id,
+                settings = TmdbSettingsRepository.snapshot(),
+            )
+        } ?: baseMeta
+
+        return withContext(Dispatchers.Default) {
+            enrichForMetaScreen(
+                requestKey = requestKey,
+                meta = tmdbEnriched,
+                fallbackItemId = id,
+                fallbackItemType = type,
+                settings = mdbListSettings,
+                settingsFingerprint = settingsFingerprint,
+            )
+        }.withUnreleasedFilter()
+    }
+
     suspend fun fetch(type: String, id: String, cacheResult: Boolean = true): MetaDetails? {
         val requestKey = "$type:$id"
         cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
         ServerItemRef.parse(id)?.let { ref ->
             return runCatching { ServerCatalog.details(ref).meta }
                 .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+                ?.also { if (cacheResult) cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = it) }
+        }
+
+        parseCloudStreamRouteId(id)?.let { route ->
+            return runCatching {
+                CloudStreamRepository.initialize()
+                CloudStreamRepository.load(route.providerId, route.data).getOrThrow().toMetaDetails()
+            }.onFailure { if (it is CancellationException) throw it }
                 .getOrNull()
                 ?.also { if (cacheResult) cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = it) }
         }
@@ -235,6 +300,40 @@ object MetaDetailsRepository {
             if (cacheResult) {
                 cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = result)
             }
+        }
+    }
+
+    private fun loadCloudStreamMeta(requestKey: String, providerId: String, data: String) {
+        if (_uiState.value.meta?.id == requestKey.substringAfter(':') && !_uiState.value.isLoading) {
+            activeRequestKey = requestKey
+            return
+        }
+        if (_uiState.value.isLoading && activeRequestKey == requestKey) return
+
+        activeRequestKey = requestKey
+        _uiState.value = MetaDetailsUiState(isLoading = true)
+        scope.launch {
+            val result = runCatching {
+                CloudStreamRepository.initialize()
+                CloudStreamRepository.load(providerId, data).getOrThrow().toMetaDetails()
+            }
+            if (activeRequestKey != requestKey) return@launch
+            result.fold(
+                onSuccess = { meta ->
+                    cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = meta)
+                    // Provider metadata is authoritative; do not enrich opaque CloudStream IDs with TMDB.
+                    _uiState.value = MetaDetailsUiState(meta = meta.withUnreleasedFilter())
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    log.w(error) { "CloudStream details failed provider=$providerId" }
+                    _uiState.value = MetaDetailsUiState(
+                        errorMessage = error.message?.takeIf { it.isNotBlank() }
+                            ?: "Unable to load details from this CloudStream provider.",
+                    )
+                    activeRequestKey = null
+                },
+            )
         }
     }
 
@@ -459,61 +558,39 @@ object MetaDetailsRepository {
         TrackingSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
-
-        val trackingSettings = TrackingSettingsRepository.uiState.value
-        val isTraktAuthenticated = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
-
-        // Simkl source
-        if (shouldUseSimklMoreLikeThis(trackingSettings.moreLikeThisSource) &&
-            supportsMoreLikeThis(meta, fallbackItemType)
-        ) {
-            val items = runCatching {
-                com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(
-                    meta = meta,
-                    fallbackItemId = fallbackItemId,
-                    fallbackItemType = fallbackItemType,
-                )
-            }.onFailure { error ->
-                log.w { "Failed to load Simkl related titles for ${meta.id}: ${error.message}" }
-            }.getOrDefault(emptyList())
-
-            return meta.copy(
-                moreLikeThis = items,
-                moreLikeThisSource = MoreLikeThisSource.SIMKL.takeIf { items.isNotEmpty() },
-            )
-        }
-
-        // Trakt source
-        val shouldUseTrakt = shouldUseTraktMoreLikeThis(
-            isAuthenticated = isTraktAuthenticated,
-            source = trackingSettings.moreLikeThisSource,
-        ) && supportsMoreLikeThis(meta, fallbackItemType)
-
-        if (shouldUseTrakt) {
-            val items = runCatching {
-                TraktRelatedRepository.getRelated(
-                    meta = meta,
-                    fallbackItemId = fallbackItemId,
-                    fallbackItemType = fallbackItemType,
-                )
-            }.onFailure { error ->
-                log.w { "Failed to load Trakt related titles for ${meta.id}: ${error.message}" }
-            }.getOrDefault(emptyList())
-
-            return meta.copy(
-                moreLikeThis = items,
-                moreLikeThisSource = MoreLikeThisSource.TRAKT.takeIf { items.isNotEmpty() },
-            )
-        }
-
-        val tmdbSettings = TmdbSettingsRepository.snapshot()
-        if (!tmdbSettings.enabled || !tmdbSettings.useMoreLikeThis) {
+        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
+        if (!supportsMoreLikeThis(meta, fallbackItemType)) {
             return meta.copy(moreLikeThis = emptyList(), moreLikeThisSource = null)
         }
-
-        return meta.copy(
-            moreLikeThisSource = MoreLikeThisSource.TMDB.takeIf { meta.moreLikeThis.isNotEmpty() },
-        )
+        val source = effectiveMoreLikeThisSource()
+        val items = try {
+            // ID resolution may require a TMDB find/search request before recommendations.
+            // Give both requests enough time on slower mobile connections.
+            withTimeoutOrNull(15_000L) {
+                when (source) {
+                MoreLikeThisSourcePreference.TMDB -> TmdbMetadataService.getMoreLikeThisForMeta(meta, fallbackItemId, fallbackItemType)
+                MoreLikeThisSourcePreference.TRAKT ->
+                    if (TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED) {
+                        TraktRelatedRepository.getRelated(meta, fallbackItemId, fallbackItemType)
+                    } else emptyList()
+                MoreLikeThisSourcePreference.SIMKL ->
+                    if (com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value) {
+                        com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(meta, fallbackItemId, fallbackItemType)
+                    } else emptyList()
+                }
+            } ?: emptyList()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            log.w { "Failed to load $source related titles for ${meta.id}: ${error.message}" }
+            emptyList()
+        }
+        val displayedSource = if (items.isEmpty()) null else when (source) {
+            MoreLikeThisSourcePreference.TMDB -> MoreLikeThisSource.TMDB
+            MoreLikeThisSourcePreference.TRAKT -> MoreLikeThisSource.TRAKT
+            MoreLikeThisSourcePreference.SIMKL -> MoreLikeThisSource.SIMKL
+        }
+        return meta.copy(moreLikeThis = items, moreLikeThisSource = displayedSource)
     }
 
     private fun shouldFetchMdbListOnMetaScreen(
@@ -535,18 +612,34 @@ object MetaDetailsRepository {
         return shouldApplyMoreLikeThisSource(meta)
     }
 
+    private fun effectiveMoreLikeThisSource(): MoreLikeThisSourcePreference {
+        val preferred = TrackingSettingsRepository.uiState.value.moreLikeThisSource
+        val traktConnected = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
+        val simklConnected = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
+        return when (preferred) {
+            MoreLikeThisSourcePreference.TRAKT -> if (traktConnected) preferred else MoreLikeThisSourcePreference.TMDB
+            MoreLikeThisSourcePreference.SIMKL -> if (simklConnected) preferred else MoreLikeThisSourcePreference.TMDB
+            MoreLikeThisSourcePreference.TMDB -> preferred
+        }
+    }
+
     private fun shouldApplyMoreLikeThisSource(meta: MetaDetails): Boolean {
         TrackingSettingsRepository.ensureLoaded()
         TraktAuthRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
+        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
+        return when (effectiveMoreLikeThisSource()) {
+            MoreLikeThisSourcePreference.TMDB -> TmdbSettingsRepository.snapshot().useMoreLikeThis
+            MoreLikeThisSourcePreference.TRAKT,
+            MoreLikeThisSourcePreference.SIMKL -> true
+        }
+    }
 
-        val trackingSettings = TrackingSettingsRepository.uiState.value
-        val isTraktAuthenticated = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
-        val tmdbSettings = TmdbSettingsRepository.snapshot()
-        return shouldUseTraktMoreLikeThis(
-            isAuthenticated = isTraktAuthenticated,
-            source = trackingSettings.moreLikeThisSource,
-        ) || !tmdbSettings.enabled || !tmdbSettings.useMoreLikeThis || meta.moreLikeThisSource == null && meta.moreLikeThis.isNotEmpty()
+    private fun shouldRetryMissingTmdbRecommendations(meta: MetaDetails): Boolean {
+        if (meta.moreLikeThis.isNotEmpty()) return false
+        TmdbSettingsRepository.ensureLoaded()
+        return effectiveMoreLikeThisSource() == MoreLikeThisSourcePreference.TMDB &&
+            TmdbSettingsRepository.snapshot().useMoreLikeThis
     }
 
     private fun buildMetaScreenSettingsFingerprint(
@@ -558,23 +651,19 @@ object MetaDetailsRepository {
         val providers = settings.enabledProvidersInPriorityOrder().joinToString(",")
         val trackingSettings = TrackingSettingsRepository.uiState.value
         val traktAuthMode = TraktAuthRepository.uiState.value.mode
+        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
+        val simklAuthenticated = com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
         val tmdbSettings = TmdbSettingsRepository.snapshot()
         return buildString {
             append("${settings.enabled}:${settings.apiKey.trim()}:$providers")
             append("|mdblist_account=${settings.accountScope.takeUnless { settings.hasApiKey }}")
-            append("|more_like=${trackingSettings.moreLikeThisSource}:$traktAuthMode")
+            append("|more_like=${trackingSettings.moreLikeThisSource}:$traktAuthMode:$simklAuthenticated")
             append("|tmdb=${tmdbSettings.enabled}:${tmdbSettings.useMoreLikeThis}:${tmdbSettings.language}")
         }
     }
 
     private fun supportsMoreLikeThis(meta: MetaDetails, fallbackItemType: String): Boolean =
         normalizeMoreLikeThisType(meta.type) != null || normalizeMoreLikeThisType(fallbackItemType) != null
-
-    private fun shouldUseSimklMoreLikeThis(source: MoreLikeThisSourcePreference): Boolean {
-        if (source != MoreLikeThisSourcePreference.SIMKL) return false
-        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
-        return com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
-    }
 
     private fun normalizeMoreLikeThisType(value: String?): String? =
         when (value?.trim()?.lowercase()) {

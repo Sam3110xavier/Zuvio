@@ -71,6 +71,7 @@ fun <T> NuvioShelfSection(
     key: ((T) -> Any)? = null,
     animatePlacement: Boolean = false,
     state: LazyListState = rememberLazyListState(),
+    headerContent: (@Composable () -> Unit)? = null,
     itemContent: @Composable (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -89,6 +90,7 @@ fun <T> NuvioShelfSection(
                 viewAllPillSize = viewAllPillSize,
             )
         }
+        headerContent?.invoke()
         LazyRow(
             modifier = rowModifier.nuvioHorizontalScrollBleed(LocalVerticalBarPadding.current),
             state = state,

@@ -6,6 +6,7 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.fetchAddonResponseText
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
@@ -20,6 +21,10 @@ import com.nuvio.app.features.streams.InstalledStreamAddonTarget
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamBadgePresentation
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.buildCloudStreamSearchRequest
+import com.nuvio.app.features.streams.cloudStreamProviderGroupsForRequest
+import com.nuvio.app.features.streams.crossProviderStreamIdentity
+import com.nuvio.app.features.streams.resolveCloudStreamProviderStreams
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
@@ -55,6 +60,7 @@ object PlayerStreamsRepository {
     // source panel
     private val _sourceState = MutableStateFlow(StreamsUiState())
     val sourceState: StateFlow<StreamsUiState> = _sourceState.asStateFlow()
+    private val deadSourceIdentityKeys = MutableStateFlow<Set<String>>(emptySet())
     private var sourceJob: Job? = null
     private var sourceRequestKey: String? = null
 
@@ -106,14 +112,77 @@ object PlayerStreamsRepository {
         )
     }
 
+    fun currentSourceCandidates(): List<StreamItem> = _sourceState.value.groups.flatMap { it.streams }
+
+    /**
+     * Marks a startup-dead source and prunes it from the current source list.
+     * The identity set also filters late provider completions, so a slow add-on
+     * cannot reinsert a source that already timed out during this player session.
+     */
+    fun pruneDeadSource(stream: StreamItem, identityKeyOverride: String? = null) {
+        // Resolvers can replace a metadata-only source identity with a playable
+        // URL identity. Prefer the original candidate key supplied by the monitor.
+        val identityKey = identityKeyOverride ?: stream.playerSourceIdentityKey() ?: return
+        deadSourceIdentityKeys.update { it + identityKey }
+        _sourceState.update { current ->
+            val groups = current.groups.map { group ->
+                group.copy(
+                    streams = group.streams.filterNot {
+                        it.playerSourceIdentityKey() == identityKey
+                    },
+                )
+            }
+            val anyLoading = groups.any { it.isLoading }
+            current.copy(
+                groups = groups,
+                isAnyLoading = anyLoading,
+                emptyStateReason = groups.toEmptyStateReason(anyLoading),
+            )
+        }
+    }
+
+    private fun filterDeadSources(
+        stateFlow: MutableStateFlow<StreamsUiState>,
+        streams: List<StreamItem>,
+    ): List<StreamItem> {
+        if (stateFlow !== _sourceState) return streams
+        val deadKeys = deadSourceIdentityKeys.value
+        if (deadKeys.isEmpty()) return streams
+        return streams.filterNot { stream ->
+            stream.playerSourceIdentityKey()?.let(deadKeys::contains) == true
+        }
+    }
+
+    /**
+     * Starts or joins discovery and returns the current partial candidate list.
+     * It deliberately does not wait for every provider: the dead-link monitor
+     * re-reads this snapshot while providers continue filling groups in background.
+     */
+    suspend fun discoverSourceCandidates(
+        type: String,
+        videoId: String,
+        season: Int? = null,
+        episode: Int? = null,
+    ): List<StreamItem> {
+        loadSources(
+            type = type,
+            videoId = videoId,
+            season = season,
+            episode = episode,
+        )
+        return currentSourceCandidates().distinctBy { it.playerSourceIdentityKey() }
+    }
+
+    fun isSourceDiscoveryLoading(): Boolean = _sourceState.value.isAnyLoading
+
     fun stopSourcesLoading() {
-        PluginRepository.setLocalPluginSearchPaused(true)
-        cancelSourceJob()
+        // Dismissing the Sources panel must not cancel discovery needed by the
+        // dead-link monitor. clearAll() still cancels it when the player closes.
     }
 
     fun pauseSearchForPlayback() {
-        PluginRepository.setLocalPluginSearchPaused(true)
-        cancelSourceJob()
+        // Keep source and plugin fetching alive after a source is selected.
+        // Only episode-panel fetching is cancelled here; clearAll() owns cleanup.
         cancelEpisodeStreamsJob()
     }
 
@@ -172,6 +241,7 @@ object PlayerStreamsRepository {
         PluginRepository.setLocalPluginSearchPaused(true)
         sourceJob?.cancel()
         sourceRequestKey = null
+        deadSourceIdentityKeys.value = emptySet()
         _sourceState.value = StreamsUiState()
         clearEpisodeStreams()
     }
@@ -206,12 +276,19 @@ object PlayerStreamsRepository {
             return
         }
 
+        if (stateFlow === _sourceState && cachedKey != requestKey) {
+            deadSourceIdentityKeys.value = emptySet()
+        }
+
         setRequestKey(requestKey)
         jobHolder()?.cancel()
         stateFlow.value = StreamsUiState()
 
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
-        val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
+        val embeddedStreams = filterDeadSources(
+            stateFlow,
+            MetaDetailsRepository.findEmbeddedStreams(videoId),
+        )
         if (embeddedStreams.isNotEmpty()) {
             log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$videoId" }
             val group = AddonStreamGroup(
@@ -248,8 +325,27 @@ object PlayerStreamsRepository {
             repositories = pluginUiState.repositories,
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
+        val cloudStreamSearchRequest = buildCloudStreamSearchRequest(
+            type = type,
+            videoId = videoId,
+            parentMetaId = null,
+            parentMetaType = null,
+            season = season,
+            episode = episode,
+            searchTitle = null,
+        )
+        val cloudStreamProviderGroups = if (AppFeaturePolicy.pluginsEnabled && !isNativeServerRequest) {
+            cloudStreamProviderGroupsForRequest(type, cloudStreamSearchRequest)
+        } else {
+            emptyList()
+        }
 
-        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty()) {
+        if (
+            installedAddons.isEmpty() &&
+            pluginProviderGroups.isEmpty() &&
+            cloudStreamProviderGroups.isEmpty() &&
+            serverSources.isEmpty()
+        ) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoAddonsInstalled,
@@ -269,7 +365,12 @@ object PlayerStreamsRepository {
                 )
             }
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty()) {
+        if (
+            streamAddons.isEmpty() &&
+            pluginProviderGroups.isEmpty() &&
+            cloudStreamProviderGroups.isEmpty() &&
+            serverSources.isEmpty()
+        ) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
@@ -292,6 +393,13 @@ object PlayerStreamsRepository {
                 streams = emptyList(),
                 isLoading = true,
             )
+        } + cloudStreamProviderGroups.distinctBy { it.addonId }.map { providerGroup ->
+            AddonStreamGroup(
+                addonName = providerGroup.addonName,
+                addonId = providerGroup.addonId,
+                streams = emptyList(),
+                isLoading = true,
+            )
         } + serverSources.map { it.loadingGroup() }, installedAddonOrder, preferredGroupIds)
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         stateFlow.value = StreamsUiState(
@@ -307,7 +415,13 @@ object PlayerStreamsRepository {
                 .associate { it.addonId to it.scrapers.size }
                 .toMutableMap()
             val pluginFirstErrorByAddonId = mutableMapOf<String, String>()
-            val totalTasks = streamAddons.size + pluginProviderGroups.sumOf { it.scrapers.size } + serverSources.size
+            val cloudStreamRemainingByAddonId = cloudStreamProviderGroups
+                .groupingBy { it.addonId }
+                .eachCount()
+                .toMutableMap()
+            val cloudStreamFirstErrorByAddonId = mutableMapOf<String, String>()
+            val seenCloudStreamIdentities = mutableSetOf<String>()
+            val totalTasks = streamAddons.size + pluginProviderGroups.sumOf { it.scrapers.size } + cloudStreamProviderGroups.size + serverSources.size
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
             val debridAvailabilityJobs = mutableListOf<Job>()
 
@@ -330,9 +444,12 @@ object PlayerStreamsRepository {
 
             fun publishStreamGroup(group: AddonStreamGroup) {
                 stateFlow.update { current ->
+                    // Filter inside the StateFlow update so a concurrent prune
+                    // cannot be undone by a stale provider completion snapshot.
+                    val visibleGroup = group.copy(streams = filterDeadSources(stateFlow, group.streams))
                     val updated = StreamAutoPlaySelector.orderAddonStreams(
                         groups = current.groups.map { currentGroup ->
-                            if (currentGroup.addonId == group.addonId) group else currentGroup
+                            if (currentGroup.addonId == visibleGroup.addonId) visibleGroup else currentGroup
                         },
                         installedOrder = installedAddonOrder,
                         preferredGroupIds = preferredGroupIds,
@@ -415,6 +532,16 @@ object PlayerStreamsRepository {
                 launch { publishCompletion(StreamLoadCompletion.Addon(source.load())) }
             }
 
+            cloudStreamProviderGroups.forEach { providerGroup ->
+                launch {
+                    val group = resolveCloudStreamProviderStreams(
+                        providerGroup = providerGroup,
+                        request = cloudStreamSearchRequest,
+                    )
+                    publishCompletion(StreamLoadCompletion.Addon(group))
+                }
+            }
+
             pluginProviderGroups.forEach { providerGroup ->
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
@@ -477,10 +604,11 @@ object PlayerStreamsRepository {
                                     if (group.addonId != completion.addonId) {
                                         group
                                     } else {
-                                        val mergedStreams = if (completion.streams.isEmpty()) {
+                                        val incomingStreams = filterDeadSources(stateFlow, completion.streams)
+                                        val mergedStreams = if (incomingStreams.isEmpty()) {
                                             group.streams
                                         } else {
-                                            (group.streams + completion.streams).sortedForGroupedDisplay()
+                                            (group.streams + incomingStreams).sortedForGroupedDisplay()
                                         }
                                         val stillLoading = remaining > 0
                                         val finalError = if (mergedStreams.isEmpty() && !stillLoading) {
@@ -506,6 +634,37 @@ object PlayerStreamsRepository {
                             )
                         }
                     }
+                    is StreamLoadCompletion.CloudStreamProvider -> {
+                        val remaining = (cloudStreamRemainingByAddonId[completion.addonId] ?: 1) - 1
+                        cloudStreamRemainingByAddonId[completion.addonId] = remaining.coerceAtLeast(0)
+                        if (!completion.error.isNullOrBlank() &&
+                            cloudStreamFirstErrorByAddonId[completion.addonId].isNullOrBlank()
+                        ) {
+                            cloudStreamFirstErrorByAddonId[completion.addonId] = completion.error
+                        }
+                        val uniqueStreams = completion.streams.filter { stream ->
+                            seenCloudStreamIdentities.add(crossProviderStreamIdentity(stream))
+                        }
+                        val currentGroup = stateFlow.value.groups.firstOrNull { it.addonId == completion.addonId }
+                        val mergedStreams = currentGroup?.streams.orEmpty() + uniqueStreams
+                        val stillLoading = remaining > 0
+                        publishStreamGroup(
+                            presentStreamGroup(
+                                AddonStreamGroup(
+                                    addonName = completion.addonName,
+                                    addonId = completion.addonId,
+                                    streams = if (stillLoading) mergedStreams else mergedStreams.sortedForGroupedDisplay(),
+                                    isLoading = stillLoading,
+                                    error = if (mergedStreams.isEmpty() && !stillLoading) {
+                                        cloudStreamFirstErrorByAddonId[completion.addonId]
+                                    } else {
+                                        null
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+
                 }
             }
 

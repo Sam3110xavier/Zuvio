@@ -48,6 +48,7 @@ actual fun PlatformPlayerSurface(
     sourceResponseHeaders: Map<String, String>,
     externalSubtitles: List<com.nuvio.app.features.streams.StreamSubtitle>,
     streamType: String?,
+    isLive: Boolean,
     useYoutubeChunkedPlayback: Boolean,
     modifier: Modifier,
     playWhenReady: Boolean,
@@ -240,7 +241,8 @@ actual fun PlatformPlayerSurface(
 
             override fun setSubtitleUri(url: String) {
                 Logger.d(TAG) { "setSubtitleUri: $url" }
-                bridge.setSubtitleUrl(url)
+                val subtitleHeaders = externalSubtitles.firstOrNull { it.url == url }?.headers.orEmpty()
+                bridge.setSubtitleUrl(url, encodePlaybackHeadersForBridge(subtitleHeaders))
             }
 
             override fun clearExternalSubtitle() {
@@ -323,9 +325,11 @@ actual fun PlatformPlayerSurface(
     LaunchedEffect(bridge, resizeMode) {
         bridge.setResizeMode(
             when (resizeMode) {
-                PlayerResizeMode.Fit -> 0
-                PlayerResizeMode.Fill -> 1
-                PlayerResizeMode.Zoom -> 2
+                PlayerResizeMode.BestFit -> 0
+                PlayerResizeMode.Fit -> 1
+                PlayerResizeMode.Fill -> 2
+                PlayerResizeMode.Zoom -> 3
+                PlayerResizeMode.Ratio16x9 -> 4
             }
         )
     }

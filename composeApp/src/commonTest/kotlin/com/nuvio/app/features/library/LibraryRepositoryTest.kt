@@ -86,7 +86,168 @@ class LibraryRepositoryTest {
     }
 
     @Test
-    fun `library membership always includes local state before Trakt membership`() {
+    fun `active source exposes only its own membership destinations`() {
+        val tabs = libraryTabsForActiveSource(
+            listOf(
+                TrackingLibraryTab(
+                    key = "wetrakr:planning",
+                    title = "Planning",
+                    providerId = TrackingProviderId.WETRAKR,
+                    kind = TrackingLibraryTabKind.WATCHLIST,
+                ),
+                TrackingLibraryTab(
+                    key = "wetrakr:waiting",
+                    title = "Waiting",
+                    providerId = TrackingProviderId.WETRAKR,
+                    kind = TrackingLibraryTabKind.STATUS,
+                    isMembershipDestination = false,
+                ),
+            ),
+        )
+        assertEquals(listOf("wetrakr:planning"), tabs.map { it.key })
+        assertFalse(tabs.any { it.key.startsWith("trakt:") })
+    }
+
+    @Test
+    fun `hidden provider destinations preserve existing membership on save`() {
+        val tabs = listOf(
+            TrackingLibraryTab(
+                key = "wetrakr:planning",
+                title = "Planning",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.WATCHLIST,
+            ),
+            TrackingLibraryTab(
+                key = "wetrakr:waiting",
+                title = "Waiting",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.STATUS,
+                isMembershipDestination = false,
+            ),
+            TrackingLibraryTab(
+                key = "wetrakr:watching",
+                title = "Watching",
+                providerId = TrackingProviderId.WETRAKR,
+                kind = TrackingLibraryTabKind.STATUS,
+                supportedContentTypes = setOf("series"),
+            ),
+        )
+        val merged = mergeHiddenProviderMembership(
+            desiredMembership = mapOf("wetrakr:planning" to false),
+            providerTabs = tabs,
+            currentMembership = mapOf(
+                "wetrakr:planning" to true,
+                "wetrakr:waiting" to true,
+                "wetrakr:watching" to true,
+            ),
+        )
+        assertEquals(
+            mapOf(
+                "wetrakr:planning" to false,
+                "wetrakr:waiting" to true,
+                "wetrakr:watching" to true,
+            ),
+            merged,
+        )
+    }
+
+    @Test
+    fun `local status survives local storage payload round trip`() {
+        val state = LibraryLocalState()
+        val token = state.beginProfileLoad(profileId = 1).snapshot.token
+        state.completeProfileLoad(token, activeProfileId = 1, items = emptyList())
+        val snapshot = state.upsert(
+            libraryItem(id = "saved", savedAtEpochMs = 10L)
+                .copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey),
+        )
+
+        val decoded = LibraryStoragePayloadCodec.decode(LibraryStoragePayloadCodec.encode(snapshot))
+
+        assertEquals(
+            LocalLibraryStatus.COMPLETED.storageKey,
+            decoded.items.single().localStatus,
+        )
+    }
+
+    @Test
+    fun `legacy rewatching status maps into watching without a separate section`() {
+        assertEquals(LocalLibraryStatus.WATCHING, LocalLibraryStatus.fromStorage("rewatching"))
+        assertFalse(LocalLibraryStatus.entries.any { it.storageKey == "rewatching" })
+    }
+
+    @Test
+    fun `local status selection updates membership and groups saved titles into status sections`() {
+        val initial = libraryMembershipWithLocal(
+            inLocal = true,
+            localStatus = LocalLibraryStatus.PLANNING.storageKey,
+        )
+        val updated = selectLocalLibraryStatus(initial, LocalLibraryStatus.DROPPED)
+        assertTrue(updated["local"] == true)
+        assertTrue(updated[LocalLibraryStatus.DROPPED.sectionKey] == true)
+        assertFalse(updated[LocalLibraryStatus.PLANNING.sectionKey] == true)
+        assertEquals(LocalLibraryStatus.DROPPED, selectedLocalLibraryStatus(updated))
+
+        val sections = localLibrarySections(
+            listOf(
+                libraryItem(id = "a", savedAtEpochMs = 1L).copy(localStatus = LocalLibraryStatus.PLANNING.storageKey),
+                libraryItem(id = "b", savedAtEpochMs = 2L).copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey),
+                libraryItem(id = "c", savedAtEpochMs = 3L).copy(localStatus = LocalLibraryStatus.DROPPED.storageKey),
+            ),
+        )
+        assertEquals(
+            LocalLibraryStatus.entries.map(LocalLibraryStatus::sectionKey),
+            sections.map(LibrarySection::type),
+        )
+        assertEquals("Plan to Watch", sections.first().displayTitle)
+        assertTrue(sections.any { it.type == LocalLibraryStatus.WATCHING.sectionKey && it.items.isEmpty() })
+    }
+
+    @Test
+    fun `local library vertical projection exposes status sections`() {
+        val sections = localLibrarySections(
+            listOf(libraryItem(id = "a", savedAtEpochMs = 1L).copy(localStatus = LocalLibraryStatus.COMPLETED.storageKey)),
+        )
+        val projection = buildLibraryVerticalProjection(
+            sections = sections,
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = LocalLibraryStatus.COMPLETED.sectionKey,
+            selectedType = null,
+            sortOption = LibrarySortOption.ADDED_DESC,
+        )
+        assertEquals(listOf(LocalLibraryStatus.COMPLETED.sectionKey), projection.availableSections.map(LibrarySection::type))
+        assertEquals(LocalLibraryStatus.COMPLETED.sectionKey, projection.selectedSectionKey)
+        assertEquals(listOf("a"), projection.entries.map { entry -> entry.item.id })
+    }
+
+    @Test
+    fun `unselected local library item has no selected local status`() {
+        val membership = libraryMembershipWithLocal(inLocal = false)
+        assertFalse(membership["local"] == true)
+        assertNull(selectedLocalLibraryStatus(membership))
+        assertTrue(LocalLibraryStatus.entries.none { membership[it.sectionKey] == true })
+    }
+
+    @Test
+    fun `removing a local status section removes only local library membership`() {
+        val current = libraryMembershipWithLocal(
+            inLocal = true,
+            providerMembership = mapOf("trakt:watchlist" to true),
+            localStatus = LocalLibraryStatus.WATCHING.storageKey,
+        )
+        val updated = libraryMembershipAfterRemovingSection(
+            currentMembership = current,
+            listKey = LocalLibraryStatus.WATCHING.sectionKey,
+        )
+        assertFalse(updated["local"] == true)
+        assertTrue(LocalLibraryStatus.entries.none { updated[it.sectionKey] == true })
+        assertTrue(updated["trakt:watchlist"] == true)
+        assertTrue(isLocalLibrarySectionKey(LOCAL_LIBRARY_LIST_KEY))
+        assertTrue(isLocalLibrarySectionKey(LocalLibraryStatus.DROPPED.sectionKey))
+        assertFalse(isLocalLibrarySectionKey("trakt:watchlist"))
+    }
+
+    @Test
+    fun `local membership helper preserves its optional provider payload`() {
         val membership = libraryMembershipWithLocal(
             inLocal = true,
             providerMembership = mapOf("trakt:watchlist" to false),
@@ -95,6 +256,11 @@ class LibraryRepositoryTest {
         assertEquals(
             mapOf(
                 "local" to true,
+                LocalLibraryStatus.PLANNING.sectionKey to true,
+                LocalLibraryStatus.WATCHING.sectionKey to false,
+                LocalLibraryStatus.ON_HOLD.sectionKey to false,
+                LocalLibraryStatus.DROPPED.sectionKey to false,
+                LocalLibraryStatus.COMPLETED.sectionKey to false,
                 "trakt:watchlist" to false,
             ),
             membership,

@@ -19,9 +19,14 @@ internal fun LazyListScope.playbackSettingsContent(
             PlayerSettingsRepository.ensureLoaded()
             PlayerSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
+
         when (page) {
             SettingsPage.Playback -> {
-                val sections = visiblePlaybackSections(isIos, settings.androidPlaybackEngine, P2pSettingsRepository.isVisible)
+                val sections = visiblePlaybackSections(
+                    ios = isIos,
+                    engine = settings.androidPlaybackEngine,
+                    p2pVisible = P2pSettingsRepository.isVisible,
+                )
                 SettingsGroup(isTablet = isTablet) {
                     sections.forEachIndexed { index, section ->
                         if (index > 0) SettingsGroupDivider(isTablet = isTablet)
@@ -42,8 +47,12 @@ internal fun LazyListScope.playbackSettingsContent(
             SettingsPage.PlaybackAudio -> PlaybackAudioSettings(isTablet, settings)
             SettingsPage.PlaybackSubtitles -> PlaybackSubtitleSettings(isTablet, settings)
             SettingsPage.PlaybackVideo -> PlaybackVideoSettings(isTablet, settings)
-            SettingsPage.PlaybackBuffer -> if (!isIos) PlaybackBufferSettings(isTablet, settings)
-            SettingsPage.PlaybackP2p -> if (P2pSettingsRepository.isVisible) PlaybackP2pSettings(isTablet)
+            SettingsPage.PlaybackBuffer -> {
+                if (!isIos) PlaybackBufferSettings(isTablet, settings)
+            }
+            SettingsPage.PlaybackP2p -> {
+                if (P2pSettingsRepository.isVisible) PlaybackP2pSettings(isTablet)
+            }
             else -> Unit
         }
     }

@@ -156,6 +156,7 @@ internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {
         scrobbleStartRequestGeneration = 0L
         pendingSeekScrobbleRestart = false
         hasSentCompletionScrobbleForCurrentItem = false
+        moreLikeThisDismissed = false
         currentTrackingMedia = null
     }
 }

@@ -35,6 +35,8 @@ data class LibraryItem(
     override val trackingProviderItemId: String? = null,
     override val trackingSourceUrl: String? = null,
     val savedAtEpochMs: Long,
+    /** Status used only by the local Nuvio Library. */
+    val localStatus: String = LocalLibraryStatus.PLANNING.storageKey,
 ) : TrackingAttributedItem {
     override val trackingContentId: String
         get() = id
@@ -46,6 +48,23 @@ data class LibrarySection(
     val items: List<LibraryItem>,
 )
 
+enum class LocalLibraryStatus(val storageKey: String, val title: String) {
+    PLANNING("planning", "Plan to Watch"),
+    WATCHING("watching", "Watching"),
+    ON_HOLD("on_hold", "On Hold"),
+    DROPPED("dropped", "Dropped"),
+    COMPLETED("completed", "Completed");
+
+    val sectionKey: String
+        get() = "local:status:$storageKey"
+
+    companion object {
+        fun fromStorage(value: String?): LocalLibraryStatus =
+            entries.firstOrNull { it.storageKey.equals(value, ignoreCase = true) }
+                ?: if (value.equals("rewatching", ignoreCase = true)) WATCHING else PLANNING
+    }
+}
+
 internal fun librarySectionItemKey(sectionType: String, item: LibraryItem): String =
     "$sectionType|${item.type}|${item.id}"
 
@@ -54,6 +73,8 @@ enum class LibrarySourceMode {
     TRAKT,
     SIMKL,
     MDBLIST,
+    ANILIST,
+    WETRAKR,
 }
 
 data class LibraryUiState(

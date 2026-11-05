@@ -72,6 +72,7 @@ internal fun LazyListScope.advancedSettingsContent(
             }
         }
     }
+    dnsSettingsContent(isTablet)
     if (SentrySettingsRepository.isSupported) {
         item {
             val sentryEnabledFlow = remember {
@@ -140,6 +141,7 @@ internal fun LazyListScope.advancedSettingsContent(
             }
         }
     }
+    debugLogsSettingsContent(isTablet = isTablet)
 }
 
 @Composable

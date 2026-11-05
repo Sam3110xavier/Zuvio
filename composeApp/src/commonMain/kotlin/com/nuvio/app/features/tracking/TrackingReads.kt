@@ -26,13 +26,124 @@ data class TrackingLibraryTab(
     val privacy: LibraryListPrivacy? = null,
 )
 
+private fun String.normalizedTrackingContentType(): String = when (trim().lowercase()) {
+    "movie", "movies", "film", "films" -> "movie"
+    "series", "tv", "show", "shows" -> "series"
+    "anime-series", "anime-movie" -> "anime"
+    else -> trim().lowercase()
+}
+
 fun TrackingLibraryTab.supportsContentType(contentType: String): Boolean =
     supportedContentTypes == null || supportedContentTypes.any { supported ->
-        supported.equals(contentType, ignoreCase = true)
+        supported.normalizedTrackingContentType() == contentType.normalizedTrackingContentType()
     }
 
 fun TrackingLibraryTab.membershipTitle(): String =
     providerId?.let { "${it.displayName} · $title" } ?: title
+
+/** Shared status vocabulary used by the Add to Library picker. */
+enum class UnifiedTrackingStatus(val title: String) {
+    PLAN_TO_WATCH("Plan to Watch"),
+    WATCHING("Watching"),
+    ON_HOLD("On Hold"),
+    DROPPED("Dropped"),
+    REWATCHING("Rewatching"),
+    COMPLETED("Completed"),
+}
+
+fun TrackingLibraryTab.unifiedTrackingStatus(): UnifiedTrackingStatus? {
+    if (providerId == null || !isMembershipDestination ||
+        kind == TrackingLibraryTabKind.PERSONAL || kind == TrackingLibraryTabKind.EXTERNAL
+    ) return null
+    val normalized = "$key $title".lowercase().replace('_', ' ').replace(':', ' ')
+    return when {
+        "rewatching" in normalized || "repeating" in normalized -> UnifiedTrackingStatus.REWATCHING
+        "plan to watch" in normalized || "plantowatch" in normalized ||
+            "planning" in normalized || "watchlist" in normalized -> UnifiedTrackingStatus.PLAN_TO_WATCH
+        "watching" in normalized || "current" in normalized -> UnifiedTrackingStatus.WATCHING
+        "on hold" in normalized || "hold" in normalized || "paused" in normalized -> UnifiedTrackingStatus.ON_HOLD
+        "dropped" in normalized -> UnifiedTrackingStatus.DROPPED
+        "completed" in normalized || "watched" in normalized -> UnifiedTrackingStatus.COMPLETED
+        else -> null
+    }
+}
+
+fun unifiedTrackingStatuses(tabs: List<TrackingLibraryTab>): List<UnifiedTrackingStatus> {
+    val statuses = tabs
+        .filter { it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST }
+        .mapNotNullTo(linkedSetOf(), TrackingLibraryTab::unifiedTrackingStatus)
+    val hasWatchlistOnlyProvider = tabs
+        .filter { it.providerId != null && it.isMembershipDestination }
+        .groupBy(TrackingLibraryTab::providerId)
+        .values
+        .any { providerTabs ->
+            providerTabs.count { it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST } == 1
+        }
+    if (hasWatchlistOnlyProvider) statuses += UnifiedTrackingStatus.PLAN_TO_WATCH
+    return UnifiedTrackingStatus.entries.filter(statuses::contains)
+}
+
+fun selectedUnifiedTrackingStatus(
+    tabs: List<TrackingLibraryTab>,
+    membership: Map<String, Boolean>,
+): UnifiedTrackingStatus? {
+    val providerGroups = tabs
+        .filter { it.providerId != null && it.isMembershipDestination }
+        .groupBy(TrackingLibraryTab::providerId)
+        .values
+    val hasStatusProvider = providerGroups.any { providerTabs ->
+        providerTabs.any { it.kind == TrackingLibraryTabKind.STATUS }
+    }
+    val selectedStatuses = providerGroups.mapNotNull { providerTabs ->
+        val statusTabs = providerTabs.filter { it.kind == TrackingLibraryTabKind.STATUS }
+        if (hasStatusProvider && statusTabs.isEmpty()) return@mapNotNull null
+        val candidates = if (statusTabs.isNotEmpty()) {
+            providerTabs.filter {
+                it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST
+            }
+        } else {
+            providerTabs.filter { it.kind == TrackingLibraryTabKind.WATCHLIST }
+                .takeIf { it.size == 1 }
+                .orEmpty()
+        }
+        val selected = candidates.filter { membership[it.key] == true }
+        val mappedStatuses = selected.mapNotNullTo(linkedSetOf(), TrackingLibraryTab::unifiedTrackingStatus)
+        when {
+            mappedStatuses.size == 1 -> mappedStatuses.single()
+            mappedStatuses.isEmpty() && candidates.size == 1 &&
+                candidates.single().kind == TrackingLibraryTabKind.WATCHLIST && selected.isNotEmpty() ->
+                UnifiedTrackingStatus.PLAN_TO_WATCH
+            else -> null
+        }
+    }.distinct()
+    return selectedStatuses.singleOrNull()
+}
+
+fun selectUnifiedTrackingStatus(
+    tabs: List<TrackingLibraryTab>,
+    membership: Map<String, Boolean>,
+    status: UnifiedTrackingStatus,
+): Map<String, Boolean> {
+    val updated = membership.toMutableMap()
+    tabs
+        .filter { it.providerId != null && (it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST) }
+        .groupBy(TrackingLibraryTab::providerId)
+        .values
+        .forEach { nativeTabs ->
+            if (nativeTabs.size == 1 && nativeTabs.single().kind == TrackingLibraryTabKind.WATCHLIST) {
+                // Providers with one native list keep using that list for every unified status.
+                updated[nativeTabs.single().key] = true
+                return@forEach
+            }
+            val statusTabs = nativeTabs.filter {
+                it.kind == TrackingLibraryTabKind.STATUS || it.kind == TrackingLibraryTabKind.WATCHLIST
+            }
+            // Select only a native destination that represents this status; clear previous
+            // provider statuses so the title cannot remain in multiple library sections.
+            statusTabs.forEach { tab -> updated[tab.key] = tab.unifiedTrackingStatus() == status }
+        }
+    return updated
+}
 
 internal fun trackingMembershipDestinations(
     tabs: List<TrackingLibraryTab>,

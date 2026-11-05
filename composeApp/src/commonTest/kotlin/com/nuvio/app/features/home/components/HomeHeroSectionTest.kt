@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,6 +22,107 @@ class HomeHeroSectionTest {
     fun `indicators select the closest occurrence of a title`() {
         assertEquals(85, heroPageForItem(currentPage = 83, itemIndex = 5, itemCount = 8))
         assertEquals(81, heroPageForItem(currentPage = 83, itemIndex = 1, itemCount = 8))
+    }
+
+    @Test
+    fun `portrait priority is banner then backdrop then poster`() {
+        val item = MetaPreview(id = "portrait", type = "movie", name = "Portrait", poster = "poster.jpg", banner = "banner.jpg", background = "backdrop.jpg")
+        val selection = selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)
+        assertEquals("banner.jpg", selection?.imageUrl)
+        assertEquals(true, selection?.showTitleOverlay)
+    }
+
+    @Test
+    fun `portrait uses backdrop before poster and poster has no overlay by default`() {
+        val item = MetaPreview(id = "portrait", type = "movie", name = "Portrait", poster = "poster.jpg", background = "backdrop.jpg")
+        val backdrop = selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)
+        assertEquals("backdrop.jpg", backdrop?.imageUrl)
+        assertEquals(true, backdrop?.showTitleOverlay)
+        val poster = selectHomeHeroArtwork(item.copy(background = null), HomeHeroOrientation.Portrait)
+        assertEquals("poster.jpg", poster?.imageUrl)
+        assertEquals(false, poster?.showTitleOverlay)
+    }
+
+    @Test
+    fun `textless poster opts into logo or text overlay`() {
+        val item = MetaPreview(id = "textless", type = "movie", name = "Textless", poster = "poster.jpg", posterTextless = true)
+        assertEquals(true, selectHomeHeroArtwork(item, HomeHeroOrientation.Portrait)?.showTitleOverlay)
+    }
+
+    @Test
+    fun `landscape priority is banner then backdrop then landscape poster then poster`() {
+        val all = MetaPreview(id = "landscape", type = "movie", name = "Landscape", poster = "poster.jpg", landscapePoster = "landscape.jpg", banner = "banner.jpg", background = "backdrop.jpg")
+        assertEquals("banner.jpg", selectHomeHeroArtwork(all, HomeHeroOrientation.Landscape)?.imageUrl)
+        assertEquals("backdrop.jpg", selectHomeHeroArtwork(all.copy(banner = null), HomeHeroOrientation.Landscape)?.imageUrl)
+        val landscape = selectHomeHeroArtwork(all.copy(banner = null, background = null), HomeHeroOrientation.Landscape)
+        assertEquals("landscape.jpg", landscape?.imageUrl)
+        assertEquals(false, landscape?.showTitleOverlay)
+        val poster = selectHomeHeroArtwork(all.copy(banner = null, background = null, landscapePoster = null), HomeHeroOrientation.Landscape)
+        assertEquals("poster.jpg", poster?.imageUrl)
+        assertEquals(false, poster?.showTitleOverlay)
+    }
+
+    @Test
+    fun `hero eligibility follows the active orientation`() {
+        val banner = MetaPreview(id = "banner", type = "movie", name = "Banner", banner = "banner.jpg")
+        val backdrop = MetaPreview(id = "backdrop", type = "movie", name = "Backdrop", background = "backdrop.jpg")
+        val wideOnly = MetaPreview(id = "wide", type = "movie", name = "Wide", landscapePoster = "wide.jpg")
+        assertEquals(true, isHomeHeroEligible(banner, HomeHeroOrientation.Portrait))
+        assertEquals(true, isHomeHeroEligible(backdrop, HomeHeroOrientation.Portrait))
+        assertEquals(false, isHomeHeroEligible(wideOnly, HomeHeroOrientation.Portrait))
+        assertEquals(false, isHomeHeroEligible(MetaPreview(id = "empty", type = "movie", name = "Empty"), HomeHeroOrientation.Portrait))
+    }
+
+    @Test
+    fun `orientation follows window dimensions rather than tablet width`() {
+        assertEquals(HomeHeroOrientation.Portrait, homeHeroOrientation(800, 1200))
+        assertEquals(HomeHeroOrientation.Landscape, homeHeroOrientation(1200, 800))
+    }
+
+    @Test
+    fun `selected title index is restored by stable key after filtering or reordering`() {
+        val one = MetaPreview(id = "one", type = "movie", name = "One", poster = "one.jpg")
+        val two = MetaPreview(id = "two", type = "movie", name = "Two", poster = "two.jpg")
+        val three = MetaPreview(id = "three", type = "movie", name = "Three", poster = "three.jpg")
+
+        assertEquals(1, homeHeroItemIndexForKey(listOf(three, two), "movie:two"))
+        assertEquals(0, homeHeroItemIndexForKey(listOf(one, three), "movie:missing"))
+    }
+
+    @Test
+    fun `logo URL duplicated from hero artwork is not treated as a title logo`() {
+        val item = MetaPreview(
+            id = "same-artwork",
+            type = "series",
+            name = "Actual title",
+            banner = "https://example.com/banner.jpg",
+            logo = "https://example.com/banner.jpg",
+        )
+
+        assertEquals(false, isDistinctHomeHeroLogo(item, requireNotNull(item.logo)))
+    }
+
+    @Test
+    fun `separate logo URL remains eligible regardless of poster textless flag`() {
+        val item = MetaPreview(
+            id = "separate-logo",
+            type = "series",
+            name = "Actual title",
+            banner = "https://example.com/banner.jpg",
+            logo = "https://example.com/logo.png",
+            posterTextless = false,
+        )
+
+        assertEquals(true, isDistinctHomeHeroLogo(item, requireNotNull(item.logo)))
+    }
+
+    @Test
+    fun `logo validation rejects portrait and landscape poster aspect ratios`() {
+        assertEquals(true, isValidHomeHeroLogo(widthPx = 1200, heightPx = 400))
+        assertEquals(false, isValidHomeHeroLogo(widthPx = 1600, heightPx = 900))
+        assertEquals(false, isValidHomeHeroLogo(widthPx = 400, heightPx = 800))
+        assertEquals(false, isValidHomeHeroLogo(widthPx = 0, heightPx = 400))
+        assertEquals(false, isValidHomeHeroLogo(widthPx = 400, heightPx = 0))
     }
 
     @Test

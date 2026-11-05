@@ -169,7 +169,9 @@ final class MPVPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         ensurePlayerViewController().applyAudioLanguagePreferences(languages)
     }
     func selectSubtitleTrack(trackId: Int32) { playerVC?.selectSubtitle(Int(trackId)) }
-    func setSubtitleUrl(url: String) { playerVC?.addSubtitleUrl(url) }
+    func setSubtitleUrl(url: String, headersJson: String?) {
+        playerVC?.addSubtitleUrl(url, headers: parseRequestHeaders(headersJson))
+    }
     func clearExternalSubtitle() { playerVC?.removeExternalSubtitles() }
     func clearExternalSubtitleAndSelect(trackId: Int32) { playerVC?.removeExternalSubtitlesAndSelect(Int(trackId)) }
     func setSubtitleDelayMs(delayMs: Int32) { playerVC?.setSubtitleDelayMs(Int(delayMs)) }
@@ -310,6 +312,7 @@ final class MPVPlayerViewController: UIViewController {
     private lazy var eventQueue = DispatchQueue(label: "mpv-events", qos: .userInitiated)
     private var recentPlaybackLogs: [String] = []
     private var activeRequestHeaders: [String: String] = [:]
+    private var defaultUserAgent: String?
     private var preferredAudioLanguages: [String] = []
 
     // Cached track lists
@@ -561,6 +564,8 @@ final class MPVPlayerViewController: UIViewController {
         checkError(mpv_set_option_string(mpv, "hdr-compute-peak", "yes"))
 
         checkError(mpv_initialize(mpv))
+        // Preserve mpv's default User-Agent so per-stream/subtitle overrides can be reverted.
+        defaultUserAgent = getString("user-agent")
         applyAudioLanguagePreferences(preferredAudioLanguages)
 
         // Observe properties
@@ -825,14 +830,34 @@ final class MPVPlayerViewController: UIViewController {
     func setResize(_ mode: Int) {
         guard mpv != nil else { return }
         switch mode {
-        case 1: // Fill
-            setStringProperty("panscan", "1.0")
+        case 0: // Best Fit: preserve the source display aspect ratio.
+            setStringProperty("keepaspect", "yes")
+            setStringProperty("video-aspect-method", "container")
+            setStringProperty("video-aspect-override", "no")
             setStringProperty("video-unscaled", "no")
-        case 2: // Zoom
-            setStringProperty("panscan", "1.0")
-            setStringProperty("video-unscaled", "no")
-        default: // Fit
+            setStringProperty("video-zoom", "0")
+            setStringProperty("panscan", "0")
+        case 1: // Official Fit.
             setStringProperty("panscan", "0.0")
+            setStringProperty("video-aspect-override", "no")
+            setStringProperty("video-unscaled", "no")
+        case 2: // Official Fill.
+            setStringProperty("panscan", "1.0")
+            setStringProperty("video-aspect-override", "no")
+            setStringProperty("video-unscaled", "no")
+        case 3: // Official Zoom.
+            setStringProperty("panscan", "0.5")
+            setStringProperty("video-aspect-override", "no")
+            setStringProperty("video-unscaled", "no")
+        case 4: // Fixed 16:9.
+            setStringProperty("keepaspect", "yes")
+            setStringProperty("video-aspect-override", "16:9")
+            setStringProperty("video-unscaled", "no")
+            setStringProperty("video-zoom", "0")
+            setStringProperty("panscan", "0")
+        default:
+            setStringProperty("panscan", "0.0")
+            setStringProperty("video-aspect-override", "no")
             setStringProperty("video-unscaled", "no")
         }
     }
@@ -869,8 +894,17 @@ final class MPVPlayerViewController: UIViewController {
         guard mpv != nil, isFileLoaded else {
             pendingSubtitleUrl = url
             return
+    func addSubtitleUrl(_ url: String, headers: [String: String]) {
+        guard mpv != nil else { return }
+        let subtitleHeaders = sanitizeRequestHeaders(headers)
+        let previousHeaders = activeRequestHeaders
+        if !subtitleHeaders.isEmpty {
+            applyRequestHeaders(mergingRequestHeaders(previousHeaders, overriding: subtitleHeaders))
         }
         command("sub-add", args: [url, "select"])
+        if !subtitleHeaders.isEmpty {
+            applyRequestHeaders(previousHeaders)
+        }
     }
 
     private func addSubtitle(_ subtitle: PluginSubtitle, mode: String) {
@@ -879,7 +913,7 @@ final class MPVPlayerViewController: UIViewController {
         let previousHeaders = activeRequestHeaders
 
         if !subtitleHeaders.isEmpty {
-            applyRequestHeaders(previousHeaders.merging(subtitleHeaders) { _, subtitleValue in subtitleValue })
+            applyRequestHeaders(mergingRequestHeaders(previousHeaders, overriding: subtitleHeaders))
         }
 
         command(
@@ -1417,6 +1451,20 @@ final class MPVPlayerViewController: UIViewController {
         }
     }
 
+    private func mergingRequestHeaders(
+        _ base: [String: String],
+        overriding overrides: [String: String]
+    ) -> [String: String] {
+        var merged = base
+        for (key, value) in overrides {
+            if let existingKey = merged.keys.first(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) {
+                merged.removeValue(forKey: existingKey)
+            }
+            merged[key] = value
+        }
+        return merged
+    }
+
     private func sanitizeRequestHeaders(_ headers: [String: String]) -> [String: String] {
         guard !headers.isEmpty else { return [:] }
 
@@ -1434,12 +1482,21 @@ final class MPVPlayerViewController: UIViewController {
 
     private func applyRequestHeaders(_ headers: [String: String]) {
         guard mpv != nil else { return }
-        if headers.isEmpty {
-            checkError(mpv_set_property_string(mpv, "http-header-fields", ""))
-            return
+
+        // mpv exposes User-Agent as its own property. Putting it in http-header-fields
+        // does not reliably override the actual request User-Agent, and leaving a
+        // subtitle-specific value active would leak it into later video requests.
+        let userAgent = headers.first {
+            $0.key.caseInsensitiveCompare("User-Agent") == .orderedSame
+        }?.value
+        if let userAgent, !userAgent.isEmpty {
+            setStringProperty("user-agent", userAgent)
+        } else if let defaultUserAgent {
+            setStringProperty("user-agent", defaultUserAgent)
         }
 
         let serialized = headers
+            .filter { $0.key.caseInsensitiveCompare("User-Agent") != .orderedSame }
             .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
             .map { key, value in
                 let escapedValue = value

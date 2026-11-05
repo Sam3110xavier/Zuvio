@@ -87,8 +87,10 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.features.addons.AddAddonResult
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
+import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryFile
@@ -113,6 +115,8 @@ import com.nuvio.app.features.home.buildAddonCatalogRefreshSignature
 import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.LocalLibraryStatus
+import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.rememberLibrarySectionTitleResolver
 import com.nuvio.app.features.library.LibrarySortOption
@@ -139,6 +143,10 @@ import com.nuvio.app.features.player.recordExternalPlaybackProgress
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
+import com.nuvio.app.features.livetv.LiveTvChannel
+import com.nuvio.app.features.livetv.LiveTvIncomingSource
+import com.nuvio.app.features.livetv.LiveTvIncomingSourceRepository
+import com.nuvio.app.features.livetv.LiveTvRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.player.SubtitleLanguageOption
 import com.nuvio.app.features.player.prepareExternalPlayerLaunch
@@ -153,6 +161,7 @@ import com.nuvio.app.features.settings.HomescreenSettingsScreen
 import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
 import com.nuvio.app.features.settings.MetaScreenSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
+import com.nuvio.app.features.settings.SettingsPage
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.BingeGroupCacheRepository
@@ -162,10 +171,12 @@ import com.nuvio.app.features.streams.PlaybackAvailability
 import com.nuvio.app.features.streams.rememberPlaybackAvailability
 import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamsRepository
+import com.nuvio.app.features.tracking.UnifiedTrackingStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.toggleTrackingLibraryMembership
+import com.nuvio.app.features.tracking.selectUnifiedTrackingStatus
 import com.nuvio.app.features.updater.AppUpdaterHost
 import com.nuvio.app.features.updater.AppUpdaterPlatform
 import com.nuvio.app.features.updater.rememberAppUpdaterController
@@ -185,10 +196,13 @@ import com.nuvio.app.navigation.*
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import com.nuvio.app.features.servers.ServerRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -214,10 +228,7 @@ internal fun MainAppContent(
 ) {
         val navBackStack = rememberNavBackStack(navigationSavedStateConfiguration, initialRoute)
         val posterNavigation = remember { PosterNavigationState() }
-        val metaScreenSettings by remember {
-            MetaScreenSettingsRepository.ensureLoaded()
-            MetaScreenSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
+        val metaScreenSettings by MetaScreenSettingsRepository.uiState.collectAsStateWithLifecycle()
         val posterNavigationEnabled = supportsPosterNavigationMotion &&
             metaScreenSettings.posterTransitionEnabled && onNavigate == null
         val routeDisposalDecorator = remember {
@@ -236,16 +247,43 @@ internal fun MainAppContent(
             )
         }
         val appUpdaterController = rememberAppUpdaterController()
-        if (ownsAppRuntime) {
-            remember {
-                EpisodeReleaseNotificationsRepository.ensureLoaded()
+        // Load local snapshots away from the UI thread. These repositories perform
+        // synchronous preference/file reads and some decode sizable JSON payloads.
+        // State collection below remains pure and reacts when each snapshot is ready.
+        var localRepositoriesLoaded by remember { mutableStateOf(false) }
+        var runtimeRepositoriesInitialized by remember(ownsAppRuntime) {
+            mutableStateOf(!ownsAppRuntime)
+        }
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) {
+                MetaScreenSettingsRepository.ensureLoaded()
+                HomeCatalogSettingsRepository.ensureLoaded()
+                LibraryRepository.ensureLoaded()
+                PlayerSettingsRepository.ensureLoaded()
+                P2pSettingsRepository.ensureLoaded()
+                WatchedRepository.ensureLoaded()
+                DownloadsRepository.ensureLoaded()
+                ServerRepository.ensureLoaded()
+                ContinueWatchingPreferencesRepository.ensureLoaded()
             }
-            remember {
+            localRepositoriesLoaded = true
+        }
+        LaunchedEffect(ownsAppRuntime) {
+            if (!ownsAppRuntime) {
+                runtimeRepositoriesInitialized = true
+                return@LaunchedEffect
+            }
+            withContext(Dispatchers.IO) {
+                EpisodeReleaseNotificationsRepository.ensureLoaded()
+                AddonRepository.initialize()
+                PluginRepository.initialize()
+                CloudStreamRepository.initialize()
+                ProfileSettingsSync.startObserving()
                 CollectionSyncService.startObserving()
             }
-            remember {
-                ProfileSettingsSync.startObserving()
-            }
+            // CloudStream repository refreshes schedule their network jobs internally.
+            CloudStreamRepository.refreshAll(force = false)
+            runtimeRepositoriesInitialized = true
         }
         val hapticFeedback = LocalHapticFeedback.current
         val focusManager = LocalFocusManager.current
@@ -293,14 +331,8 @@ internal fun MainAppContent(
         var pickerError by remember { mutableStateOf<String?>(null) }
         var pendingTrackingRemoval by remember { mutableStateOf<PendingTrackingMembershipRemoval?>(null) }
         val trackingListsUpdateFailedMessage = stringResource(Res.string.tracking_lists_update_failed)
-        val addonsUiState by remember {
-            AddonRepository.initialize()
-            AddonRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val libraryUiState by remember {
-            LibraryRepository.ensureLoaded()
-            LibraryRepository.uiState
-        }.collectAsStateWithLifecycle()
+        val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+        val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
         val authState by AuthRepository.state.collectAsStateWithLifecycle()
         val openPosterActions: (PosterActionTarget) -> Unit = { target ->
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -311,31 +343,39 @@ internal fun MainAppContent(
                 selectedPosterActionTarget = target
             }
         }
+        val openLibraryMembershipPicker: (LibraryItem, String) -> Unit = { libraryItem, title ->
+            pickerItem = libraryItem
+            pickerTitle = title
+            pickerTabs = LibraryRepository.libraryListTabs(libraryItem)
+            pickerMembership = pickerTabs.associate { tab -> tab.key to false }
+            pickerPending = true
+            pickerError = null
+            showLibraryListPicker = true
+            coroutineScope.launch {
+                runCatching {
+                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
+                    val tabs = LibraryRepository.libraryListTabs(libraryItem)
+                    pickerTabs = tabs
+                    pickerMembership = snapshot
+                }.onFailure { error ->
+                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
+                }
+                pickerPending = false
+            }
+        }
         val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
         val launchOverlayProfile = profileState.activeProfile ?: profileState.profiles.firstOrNull()
-    val playerSettingsUiState by remember {
-        PlayerSettingsRepository.ensureLoaded()
-        PlayerSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val playerSettingsUiState by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
     var visiblePlayerEntries by remember { mutableIntStateOf(0) }
     var streamLandscapeLoadingVisible by remember(currentRoute) { mutableStateOf(false) }
     if (currentRoute is PlayerRoute || visiblePlayerEntries > 0 || streamLandscapeLoadingVisible) {
         LockPlayerToLandscape()
         HidePlayerSystemBars()
     }
-    val p2pSettingsUiState by remember {
-        P2pSettingsRepository.ensureLoaded()
-        P2pSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val watchedUiState by remember {
-        WatchedRepository.ensureLoaded()
-        WatchedRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val p2pSettingsUiState by P2pSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
     val fullyWatchedSeriesKeys by WatchedRepository.fullyWatchedSeriesKeys.collectAsStateWithLifecycle()
-    val downloadsUiState by remember {
-        DownloadsRepository.ensureLoaded()
-        DownloadsRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val downloadsUiState by DownloadsRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by remember {
         NetworkStatusRepository.uiState
     }.collectAsStateWithLifecycle()
@@ -356,12 +396,14 @@ internal fun MainAppContent(
     val nativeSwitchProfileTitle = stringResource(Res.string.compose_settings_root_switch_profile_title)
     val nativeAddProfileTitle = stringResource(Res.string.compose_profile_add_profile)
     val homescreenSettingsTitle = stringResource(Res.string.compose_settings_page_homescreen)
+    val mergedRowsSettingsTitle = stringResource(Res.string.settings_merged_rows_title)
     val metaScreenSettingsTitle = stringResource(Res.string.compose_settings_page_meta_screen)
     val continueWatchingSettingsTitle = stringResource(Res.string.compose_settings_page_continue_watching)
     val debridSettingsTitle = stringResource(Res.string.compose_settings_page_debrid)
     val downloadsTitle = stringResource(Res.string.compose_settings_root_downloads_title)
     val addonsSettingsTitle = stringResource(Res.string.compose_settings_page_addons)
     val pluginsSettingsTitle = stringResource(Res.string.compose_settings_page_plugins)
+    val cloudStreamSettingsTitle = stringResource(Res.string.compose_settings_page_cloudstream)
     val accountSettingsTitle = stringResource(Res.string.compose_settings_page_account)
     val supportersSettingsTitle = stringResource(Res.string.compose_settings_page_supporters_contributors)
     val licensesSettingsTitle = stringResource(Res.string.compose_settings_page_licenses_attributions)
@@ -386,16 +428,28 @@ internal fun MainAppContent(
     val homeCatalogRefreshKey = remember(addonsUiState.addons) {
         buildAddonCatalogRefreshSignature(addonsUiState.addons)
     }
+    val addonsWaitingForFirstManifest = addonsUiState.addons.isWaitingForFirstEnabledManifest()
 
-    val serversUiState by remember {
-        ServerRepository.ensureLoaded()
-        ServerRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val serversUiState by ServerRepository.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(appContentGeneration, homeCatalogRefreshKey, serversUiState.revision) {
-        if (!ownsAppRuntime) return@LaunchedEffect
-        val enabledAddons = addonsUiState.addons.enabledAddons()
-        if (enabledAddons.isWaitingForFirstEnabledManifest()) return@LaunchedEffect
+    LaunchedEffect(
+        appContentGeneration,
+        homeCatalogRefreshKey,
+        serversUiState.revision,
+        addonsWaitingForFirstManifest,
+        localRepositoriesLoaded,
+        runtimeRepositoriesInitialized,
+    ) {
+        if (!ownsAppRuntime || !localRepositoriesLoaded || !runtimeRepositoriesInitialized) {
+            return@LaunchedEffect
+        }
+        // Add-on manifests can finish in a short burst during startup. Coalesce
+        // those state updates so the home catalog pipeline is not cancelled and
+        // restarted once per manifest.
+        delay(350)
+        val latestAddons = AddonRepository.uiState.value.addons
+        if (latestAddons.isWaitingForFirstEnabledManifest()) return@LaunchedEffect
+        val enabledAddons = latestAddons.enabledAddons()
         HomeCatalogSettingsRepository.syncCatalogs(enabledAddons)
         HomeRepository.refresh(enabledAddons)
     }
@@ -416,6 +470,7 @@ internal fun MainAppContent(
 
         when (tab) {
             AppScreenTab.Home -> homeScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.LiveTv -> Unit
             AppScreenTab.Search -> {
                 searchFocusRequestCount++
                 searchScrollToTopRequests.tryEmit(Unit)
@@ -648,6 +703,11 @@ internal fun MainAppContent(
         }
     }
 
+    LaunchedEffect(profileState.activeProfile?.profileIndex) {
+        if (!ownsAppRuntime) return@LaunchedEffect
+        LiveTvRepository.onProfileChanged()
+    }
+
     LaunchedEffect(authState, profileState.activeProfile?.profileIndex) {
         if (!ownsAppRuntime) return@LaunchedEffect
         val authenticatedState = authState as? AuthState.Authenticated
@@ -689,10 +749,7 @@ internal fun MainAppContent(
             }
         }
     }
-    val continueWatchingPreferencesUiState by remember {
-        ContinueWatchingPreferencesRepository.ensureLoaded()
-        ContinueWatchingPreferencesRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val continueWatchingPreferencesUiState by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(
         initialHomeReady,
@@ -743,7 +800,7 @@ internal fun MainAppContent(
                             launchSingleTop = true
                         }
                         NuvioToastController.show(getString(Res.string.addons_modal_checking_title))
-                        AddonRepository.initialize()
+                        withContext(Dispatchers.IO) { AddonRepository.initialize() }
                         when (val result = AddonRepository.addAddon(deepLink.manifestUrl)) {
                             is AddAddonResult.Success -> {
                                 NuvioToastController.show(
@@ -829,6 +886,122 @@ internal fun MainAppContent(
                 ExternalPlayerIntentResult.Failed -> {
                     NuvioToastController.show(externalPlayerFailedText)
                     false
+                }
+            }
+        }
+
+        suspend fun launchPlayer(launch: PlayerLaunch) {
+            if (playerSettingsUiState.externalPlayerEnabled) {
+                openExternalPlayback(launch)
+            } else {
+                val launchId = PlayerLaunchStore.put(launch)
+                navController.navigate(PlayerRoute(launchId = launchId, title = launch.title))
+            }
+        }
+
+        suspend fun openLiveTvChannel(
+            channel: LiveTvChannel,
+            providerName: String = "Live TV",
+            recordRecent: Boolean = true,
+        ) {
+            if (recordRecent) {
+                LiveTvRepository.recordRecentChannel(channel)
+            }
+            val stableChannelId = channel.id.ifBlank { channel.streamUrl }
+            launchPlayer(
+                PlayerLaunch(
+                    profileId = activePlaybackProfileId,
+                    title = channel.name,
+                    sourceUrl = channel.streamUrl,
+                    sourceHeaders = channel.headers,
+                    streamType = channel.streamType,
+                    logo = channel.logoUrl,
+                    streamTitle = channel.name,
+                    streamSubtitle = channel.group.takeIf { it.isNotBlank() },
+                    providerName = providerName,
+                    providerAddonId = "live-tv",
+                    contentType = "live-tv",
+                    videoId = channel.id.ifBlank { stableChannelId },
+                    parentMetaId = stableChannelId,
+                    parentMetaType = "live-tv",
+                ),
+            )
+        }
+
+        LaunchedEffect(
+            activePlaybackProfileId,
+            p2pSettingsUiState.p2pEnabled,
+            playerSettingsUiState.externalPlayerEnabled,
+        ) {
+            if (!ownsAppRuntime) return@LaunchedEffect
+            LiveTvIncomingSourceRepository.requests.collectLatest { request ->
+                when (request) {
+                    is LiveTvIncomingSource.DirectStream -> {
+                        openLiveTvChannel(
+                            channel = LiveTvChannel(
+                                id = "shared:${request.url}",
+                                name = request.title.ifBlank { "Shared stream" },
+                                streamUrl = request.url,
+                                group = "Shared",
+                                headers = request.headers,
+                            ),
+                            providerName = "Shared",
+                            recordRecent = false,
+                        )
+                    }
+
+                    is LiveTvIncomingSource.SourceUrl -> {
+                        LiveTvRepository.load(request.url)
+                            .onSuccess { channels ->
+                                if (channels.size == 1) {
+                                    openLiveTvChannel(channels.first(), providerName = "Shared")
+                                } else {
+                                    activateTab(AppScreenTab.LiveTv)
+                                }
+                            }
+                            .onFailure { error ->
+                                NuvioToastController.show(error.message ?: "Unable to open shared playlist.")
+                            }
+                    }
+
+                    is LiveTvIncomingSource.PlaylistData -> {
+                        LiveTvRepository.loadLocalPlaylist(request.fileName, request.data)
+                            .onSuccess { channels ->
+                                if (channels.size == 1) {
+                                    openLiveTvChannel(channels.first(), providerName = "Shared")
+                                } else {
+                                    activateTab(AppScreenTab.LiveTv)
+                                }
+                            }
+                            .onFailure { error ->
+                                NuvioToastController.show(error.message ?: "Unable to open shared playlist.")
+                            }
+                    }
+
+                    is LiveTvIncomingSource.Magnet -> {
+                        if (!p2pSettingsUiState.p2pEnabled) {
+                            NuvioToastController.show("Enable P2P playback to open magnet links.")
+                            return@collectLatest
+                        }
+                        val title = "Magnet stream"
+                        launchPlayer(
+                            PlayerLaunch(
+                                profileId = activePlaybackProfileId,
+                                title = title,
+                                sourceUrl = "torrent://${request.infoHash}",
+                                streamTitle = title,
+                                streamSubtitle = request.infoHash,
+                                providerName = "Magnet",
+                                providerAddonId = "shared-magnet",
+                                contentType = "shared-stream",
+                                videoId = request.infoHash,
+                                parentMetaId = request.infoHash,
+                                parentMetaType = "shared-stream",
+                                torrentInfoHash = request.infoHash,
+                                torrentTrackers = request.trackers,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -1110,6 +1283,7 @@ internal fun MainAppContent(
                     is PartyEvent.MemberLeft -> getString(Res.string.party_member_left, event.name)
                     PartyEvent.Removed -> getString(Res.string.party_removed)
                     PartyEvent.Ended -> getString(Res.string.party_ended)
+                    PartyEvent.HostLeft -> "Host left the party"
                     is PartyEvent.MediaChanged -> getString(Res.string.party_media_changed, event.media.title)
                     is PartyEvent.ControlChanged -> getString(
                         if (event.hostOnly) Res.string.party_control_host_only else Res.string.party_control_everyone,
@@ -1141,6 +1315,8 @@ internal fun MainAppContent(
             LibrarySourceMode.TRAKT -> stringResource(Res.string.compose_catalog_subtitle_trakt_library)
             LibrarySourceMode.SIMKL -> stringResource(Res.string.compose_catalog_subtitle_simkl_library)
                                     LibrarySourceMode.MDBLIST -> stringResource(Res.string.library_mdblist_title)
+            LibrarySourceMode.ANILIST -> stringResource(Res.string.library_anilist_title)
+            LibrarySourceMode.WETRAKR -> stringResource(Res.string.library_wetrakr_title)
         }
 
         val resolveLibrarySectionTitle = rememberLibrarySectionTitleResolver()
@@ -1393,6 +1569,9 @@ internal fun MainAppContent(
                                     )
                                 },
                                 onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
+                                onLiveTvChannelClick = { channel ->
+                                    coroutineScope.launch { openLiveTvChannel(channel) }
+                                },
                                 onCloudFilePlay = { item, file ->
                                     coroutineScope.launch {
                                         val resumeItem = WatchProgressRepository
@@ -1446,6 +1625,16 @@ internal fun MainAppContent(
                                 onPluginsSettingsClick = {
                                     if (AppFeaturePolicy.pluginsEnabled) {
                                         navController.navigate(PluginsSettingsRoute(pluginsSettingsTitle))
+                                    }
+                                },
+                                onCloudStreamSettingsClick = {
+                                    if (AppFeaturePolicy.pluginsEnabled) {
+                                        navController.navigate(
+                                            SettingsPageRoute(
+                                                pageName = SettingsPage.CloudStream.name,
+                                                title = cloudStreamSettingsTitle,
+                                            ),
+                                        )
                                     }
                                 },
                                 onAccountSettingsClick = { navController.navigate(AccountSettingsRoute(accountSettingsTitle)) },
@@ -1590,7 +1779,17 @@ internal fun MainAppContent(
                 }
                 entry<HomescreenSettingsRoute> { route ->
                     SettingsDestination(route, navController) { onBack ->
-                        HomescreenSettingsScreen(onBack = onBack)
+                        HomescreenSettingsScreen(
+                            onBack = onBack,
+                            onMergedRowsClick = {
+                                navController.navigate(
+                                    SettingsPageRoute(
+                                        pageName = SettingsPage.MergedRows.name,
+                                        title = mergedRowsSettingsTitle,
+                                    ),
+                                )
+                            },
+                        )
                     }
                 }
                 entry<MetaScreenSettingsRoute> { route ->
@@ -1752,6 +1951,9 @@ internal fun MainAppContent(
                                 } else {
                                     PosterZoomOverlayExitAnimation.COLLAPSE
                                 },
+                                onLongSelected = posterActionTarget.libraryItem?.let { libraryItem ->
+                                    { openLibraryMembershipPicker(libraryItem, preview.name) }
+                                },
                                 onSelected = {
                                     val libraryItem = posterActionTarget.libraryItem
                                         ?: preview.toLibraryItem(savedAtEpochMs = 0L)
@@ -1826,33 +2028,10 @@ internal fun MainAppContent(
                                             if (removesFromLibrary) {
                                                 animationKey?.let(libraryDisintegrationRequests::arm)
                                             }
-                                            LibraryRepository.remove(libraryItem.id)
+                                            LibraryRepository.remove(libraryItem.id, libraryItem.type)
                                         }
                                     } else {
-                                        if (!isRemoteLibrarySource) {
-                                            LibraryRepository.toggleLocalSaved(libraryItem)
-                                        } else {
-                                            pickerItem = libraryItem
-                                            pickerTitle = preview.name
-                                            pickerTabs = LibraryRepository.libraryListTabs(libraryItem)
-                                            pickerMembership = pickerTabs.associate { it.key to false }
-                                            pickerPending = true
-                                            pickerError = null
-                                            showLibraryListPicker = true
-                                            coroutineScope.launch {
-                                                runCatching {
-                                                    val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                                    val tabs = LibraryRepository.libraryListTabs(libraryItem)
-                                                    pickerTabs = tabs
-                                                    pickerMembership = tabs.associate { tab ->
-                                                        tab.key to (snapshot[tab.key] == true)
-                                                    }
-                                                }.onFailure { error ->
-                                                    pickerError = error.message ?: getString(Res.string.trakt_lists_load_failed)
-                                                }
-                                                pickerPending = false
-                                            }
-                                        }
+                                        openLibraryMembershipPicker(libraryItem, preview.name)
                                     }
                                 },
                             ),
@@ -2002,6 +2181,24 @@ internal fun MainAppContent(
                         membership = pickerMembership,
                         key = listKey,
                     )
+                },
+                onSelectStatus = { status ->
+                    val updatedMembership = selectUnifiedTrackingStatus(
+                        tabs = pickerTabs,
+                        membership = pickerMembership,
+                        status = status,
+                    )
+                    pickerMembership = if (
+                        status == UnifiedTrackingStatus.COMPLETED &&
+                        pickerItem?.let { LibraryRepository.isLocallySaved(it.id, it.type) } == true
+                    ) {
+                        selectLocalLibraryStatus(updatedMembership, LocalLibraryStatus.COMPLETED)
+                    } else {
+                        updatedMembership
+                    }
+                },
+                onSelectLocalStatus = { status ->
+                    pickerMembership = selectLocalLibraryStatus(pickerMembership, status)
                 },
                 onDismiss = {
                     if (!pickerPending) {

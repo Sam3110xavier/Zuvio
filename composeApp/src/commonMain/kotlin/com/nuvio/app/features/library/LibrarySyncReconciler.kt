@@ -28,6 +28,14 @@ internal fun reconcileLibrarySnapshot(
     val pendingUpserts = pendingUpsertKeysByKey.toMutableMap()
     val pendingDeletes = pendingDeleteKeysByKey.toMutableMap()
     pendingDeletes.keys.forEach(serverItemsByKey::remove)
+    // Local status is device-local; retain it when remote metadata refreshes.
+    serverItemsByKey.keys.toList().forEach { key ->
+        val localItem = localItemsByKey[key]
+        val serverItem = serverItemsByKey[key]
+        if (localItem != null && serverItem != null && key !in pendingUpserts) {
+            serverItemsByKey[key] = serverItem.copy(localStatus = localItem.localStatus)
+        }
+    }
     pendingUpserts.keys.forEach { key ->
         localItemsByKey[key]?.let { item -> serverItemsByKey[key] = item }
     }
@@ -54,7 +62,14 @@ internal fun reconcileLibraryDelta(
         if (key in pendingUpsertKeysByKey || key in pendingDeleteKeysByKey) return@forEach
 
         when (event.operation.trim().lowercase()) {
-            "upsert" -> items[key] = event.item
+            "upsert" -> {
+                val existing = items[key]
+                items[key] = if (existing != null) {
+                    event.item.copy(localStatus = existing.localStatus)
+                } else {
+                    event.item
+                }
+            }
             "delete" -> items.remove(key)
         }
     }

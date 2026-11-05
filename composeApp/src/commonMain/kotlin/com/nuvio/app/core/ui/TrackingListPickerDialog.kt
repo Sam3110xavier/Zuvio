@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -12,10 +13,20 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import com.nuvio.app.features.library.LocalLibraryStatus
+import com.nuvio.app.features.library.selectedLocalLibraryStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
+import com.nuvio.app.features.tracking.UnifiedTrackingStatus
+import com.nuvio.app.features.tracking.selectedUnifiedTrackingStatus
+import com.nuvio.app.features.tracking.unifiedTrackingStatuses
+import com.nuvio.app.features.tracking.unifiedTrackingStatus
 import com.nuvio.app.features.tracking.membershipTitle
 import com.nuvio.app.features.tracking.trackingMembershipDestinations
 import nuvio.composeapp.generated.resources.Res
@@ -35,12 +46,22 @@ fun TrackingListPickerDialog(
     isPending: Boolean,
     errorMessage: String?,
     onToggle: (String) -> Unit,
+    onSelectStatus: (UnifiedTrackingStatus) -> Unit,
+    onSelectLocalStatus: (LocalLibraryStatus) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     if (!visible) return
     val tokens = MaterialTheme.nuvio
     val destinations = trackingMembershipDestinations(tabs)
+    val localTab = destinations.firstOrNull { it.providerId == null }
+    val statusOptions = unifiedTrackingStatuses(destinations)
+    val selectedStatus = selectedUnifiedTrackingStatus(destinations, membership)
+    val selectedLocalStatus = selectedLocalLibraryStatus(membership)
+    val otherLists = destinations.filter { tab ->
+        tab.providerId != null && tab.unifiedTrackingStatus() == null
+    }
+    var showOtherLists by remember(tabs) { mutableStateOf(false) }
 
     DialogSurface(
         onDismissRequest = onDismiss,
@@ -71,9 +92,7 @@ fun TrackingListPickerDialog(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
                 ) {
-                    NuvioLoadingIndicator(
-                        modifier = Modifier.size(tokens.icons.lg),
-                    )
+                    NuvioLoadingIndicator(modifier = Modifier.size(tokens.icons.lg))
                     Text(
                         text = stringResource(Res.string.compose_tracking_list_picker_loading),
                         style = MaterialTheme.typography.bodyMedium,
@@ -88,14 +107,78 @@ fun TrackingListPickerDialog(
                     .height(NuvioTokens.Space.s80 + NuvioTokens.Space.s80 + NuvioTokens.Space.s80 + NuvioTokens.Space.s40),
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
-                items(items = destinations, key = { it.key }) { tab ->
-                    DialogOption(
-                        text = tab.membershipTitle(),
-                        selected = membership[tab.key] == true,
-                        enabled = !isPending,
-                        role = Role.Checkbox,
-                        onClick = { onToggle(tab.key) },
-                    )
+                if (statusOptions.isNotEmpty()) {
+                    item(key = "unified-tracking-status-heading") {
+                        Text(
+                            text = "Tracking status",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                    items(statusOptions, key = { it.name }) { status ->
+                        DialogOption(
+                            text = status.title,
+                            selected = selectedStatus == status,
+                            enabled = !isPending,
+                            role = Role.RadioButton,
+                            onClick = { onSelectStatus(status) },
+                        )
+                    }
+                }
+                localTab?.let { tab ->
+                    item(key = "local-library-heading") {
+                        Text(
+                            text = "Local library",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                    item(key = tab.key) {
+                        DialogOption(
+                            text = tab.membershipTitle(),
+                            selected = membership[tab.key] == true,
+                            enabled = !isPending,
+                            role = Role.Checkbox,
+                            onClick = { onToggle(tab.key) },
+                        )
+                    }
+                    item(key = "local-library-status-heading") {
+                        Text(
+                            text = "Nuvio Library status",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                    items(LocalLibraryStatus.entries, key = { "local-status-${it.storageKey}" }) { status ->
+                        DialogOption(
+                            text = status.title,
+                            selected = selectedLocalStatus == status,
+                            enabled = !isPending,
+                            role = Role.RadioButton,
+                            onClick = { onSelectLocalStatus(status) },
+                        )
+                    }
+                }
+                if (otherLists.isNotEmpty()) {
+                    item(key = "other-tracking-lists-heading") {
+                        Text(
+                            text = if (showOtherLists) "Hide other lists (${otherLists.size})" else "Other lists (${otherLists.size})",
+                            modifier = Modifier.fillMaxWidth().clickable(enabled = !isPending) { showOtherLists = !showOtherLists },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.colors.textMuted,
+                        )
+                    }
+                    if (showOtherLists) {
+                        items(otherLists, key = { it.key }) { tab ->
+                            DialogOption(
+                                text = tab.membershipTitle(),
+                                selected = membership[tab.key] == true,
+                                enabled = !isPending,
+                                role = Role.Checkbox,
+                                onClick = { onToggle(tab.key) },
+                            )
+                        }
+                    }
                 }
             }
         }

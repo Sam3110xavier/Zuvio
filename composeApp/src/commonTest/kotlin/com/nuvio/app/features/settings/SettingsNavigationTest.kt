@@ -20,6 +20,14 @@ class SettingsNavigationTest {
             assertEquals(SettingsCategory.Look, page.category)
         }
         assertEquals(SettingsPage.Root, SettingsPage.Layout.previousPage())
+        assertEquals(SettingsPage.Homescreen, SettingsPage.MergedRows.previousPage())
+        assertEquals(SettingsCategory.Look, SettingsPage.MergedRows.category)
+    }
+
+    @Test
+    fun cloudStreamSettingsBelongToContentDiscovery() {
+        assertEquals(SettingsPage.ContentDiscovery, SettingsPage.CloudStream.previousPage())
+        assertEquals(SettingsCategory.Watch, SettingsPage.CloudStream.category)
     }
 
     @Test

@@ -25,6 +25,29 @@ object PlayerNextEpisodeRules {
         return sortedEpisodes.getOrNull(currentIndex + 1)
     }
 
+    /**
+     * Returns true only when the current episode exists in the supplied metadata and is the
+     * final known episode. A missing or incomplete episode list must never be treated as a
+     * completed series.
+     */
+    fun isFinalKnownEpisode(
+        videos: List<MetaVideo>,
+        currentSeason: Int?,
+        currentEpisode: Int?,
+    ): Boolean {
+        if (currentSeason == null || currentEpisode == null) return false
+        val sortedEpisodes = videos
+            .filter { it.season != null && it.episode != null }
+            .sortedWith(
+                compareBy<MetaVideo> { it.season ?: Int.MAX_VALUE }
+                    .thenBy { it.episode ?: Int.MAX_VALUE }
+            )
+        val currentIndex = sortedEpisodes.indexOfFirst {
+            it.season == currentSeason && it.episode == currentEpisode
+        }
+        return currentIndex >= 0 && currentIndex == sortedEpisodes.lastIndex
+    }
+
     fun shouldShowNextEpisodeCard(
         positionMs: Long,
         durationMs: Long,

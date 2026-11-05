@@ -118,6 +118,8 @@ import com.nuvio.app.features.details.components.TrailerPlayerPopup
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.LocalLibraryStatus
+import com.nuvio.app.features.library.selectLocalLibraryStatus
 import com.nuvio.app.features.library.PendingTrackingMembershipRemoval
 import com.nuvio.app.features.library.TrackingMembershipRemovalConfirmationHost
 import com.nuvio.app.features.library.executeTrackingMembershipOperation
@@ -139,9 +141,11 @@ import com.nuvio.app.features.trakt.TraktCommentReview
 import com.nuvio.app.features.trakt.TraktCommentsRepository
 import com.nuvio.app.features.trakt.TraktCommentsSettings
 import com.nuvio.app.features.trakt.TraktConnectionMode
+import com.nuvio.app.features.tracking.UnifiedTrackingStatus
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.toggleTrackingLibraryMembership
+import com.nuvio.app.features.tracking.selectUnifiedTrackingStatus
 import com.nuvio.app.features.tracking.TrackingSettingsRepository
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
@@ -1517,6 +1521,24 @@ fun MetaDetailsScreen(
                                     key = listKey,
                                 )
                             },
+                            onSelectStatus = { status ->
+                                val updatedMembership = selectUnifiedTrackingStatus(
+                                    tabs = pickerTabs,
+                                    membership = pickerMembership,
+                                    status = status,
+                                )
+                                pickerMembership = if (
+                                    status == UnifiedTrackingStatus.COMPLETED &&
+                                    LibraryRepository.isLocallySaved(meta.id, meta.type)
+                                ) {
+                                    selectLocalLibraryStatus(updatedMembership, LocalLibraryStatus.COMPLETED)
+                                } else {
+                                    updatedMembership
+                                }
+                            },
+                            onSelectLocalStatus = { status ->
+                                pickerMembership = selectLocalLibraryStatus(pickerMembership, status)
+                            },
                             onDismiss = {
                                 if (!pickerPending) {
                                     showLibraryListPicker = false
@@ -2407,6 +2429,7 @@ private fun ConfiguredMetaSections(
                         MoreLikeThisSource.TMDB -> stringResource(Res.string.detail_more_like_this_powered_by_tmdb)
                         MoreLikeThisSource.TRAKT -> stringResource(Res.string.detail_more_like_this_powered_by_trakt)
                         MoreLikeThisSource.SIMKL -> stringResource(Res.string.detail_more_like_this_powered_by_simkl)
+                        MoreLikeThisSource.ANILIST -> stringResource(Res.string.detail_more_like_this_powered_by_anilist)
                         null -> null
                     }
                     DetailPosterRailSection(
@@ -2417,6 +2440,7 @@ private fun ConfiguredMetaSections(
                         showHeader = showHeader,
                         horizontalScrollPadding = horizontalScrollPadding,
                         sourceLabel = sourceLabel,
+                        forcePortrait = true,
                         onPosterClick = onOpenMeta,
                     )
                 }

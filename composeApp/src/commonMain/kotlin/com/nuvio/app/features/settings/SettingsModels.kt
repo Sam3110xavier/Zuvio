@@ -181,6 +181,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.Watch,
         parentPage = ContentDiscovery,
     ),
+    CloudStream(
+        titleRes = Res.string.compose_settings_page_cloudstream,
+        category = SettingsCategory.Watch,
+        parentPage = ContentDiscovery,
+    ),
     MediaServers(
         titleRes = Res.string.compose_settings_page_media_servers,
         category = SettingsCategory.Watch,
@@ -195,6 +200,11 @@ internal enum class SettingsPage(
         titleRes = Res.string.compose_settings_page_homescreen,
         category = SettingsCategory.Look,
         parentPage = Layout,
+    ),
+    MergedRows(
+        titleRes = Res.string.settings_merged_rows_title,
+        category = SettingsCategory.Look,
+        parentPage = Homescreen,
     ),
     MetaScreen(
         titleRes = Res.string.compose_settings_page_meta_screen,
@@ -218,6 +228,11 @@ internal enum class SettingsPage(
     ),
     Debrid(
         titleRes = Res.string.compose_settings_page_debrid,
+        category = SettingsCategory.Services,
+        parentPage = Integrations,
+    ),
+    Telegram(
+        titleRes = Res.string.settings_telegram_title,
         category = SettingsCategory.Services,
         parentPage = Integrations,
     ),
@@ -258,14 +273,17 @@ internal val SettingsPage.icon: ImageVector
         SettingsPage.ContentDiscovery -> Icons.Default.Explore
         SettingsPage.Addons -> Icons.Default.Extension
         SettingsPage.Plugins -> Icons.Default.Power
+        SettingsPage.CloudStream -> Icons.Default.Hub
         SettingsPage.MediaServers -> Icons.Default.Dns
         SettingsPage.MediaServer -> Icons.Default.Dns
         SettingsPage.Homescreen -> Icons.Default.Dashboard
+        SettingsPage.MergedRows -> Icons.Default.Layers
         SettingsPage.MetaScreen -> Icons.Default.Description
         SettingsPage.Integrations -> Icons.Default.Link
         SettingsPage.TmdbEnrichment -> Icons.Default.Link
         SettingsPage.MdbListRatings -> Icons.Default.Link
         SettingsPage.Debrid -> Icons.Default.Link
+        SettingsPage.Telegram -> Icons.Default.Link
         SettingsPage.TraktAuthentication -> Icons.Default.Sync
         SettingsPage.PlaybackPlayer -> Icons.Default.SmartDisplay
         SettingsPage.PlaybackStreamSelection -> Icons.AutoMirrored.Filled.PlaylistPlay

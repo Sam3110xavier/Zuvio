@@ -269,7 +269,7 @@ object WatchProgressRepository {
     private val metadataEnrichmentAttempts = mutableMapOf<String, Int>()
     private val persistLock = SynchronizedObject()
     private var persistSequence = 0L
-    private var persistedSequence = 0L
+    private val persistedSequencesByProfile = mutableMapOf<Int, Long>()
     private val pendingPersists = mutableMapOf<Int, PendingWatchProgressPayload>()
     private val providerMetadataOverlay = ProviderProgressMetadataOverlay()
     private val nuvioPullMutex = Mutex()
@@ -1528,8 +1528,11 @@ object WatchProgressRepository {
                 dirtyProgressKeys = pending.dirtyProgressKeys,
             )
             synchronized(persistLock) {
+                // Persist ordering is independent for each profile. A newer write for one
+                // profile must never suppress a pending write belonging to another profile.
+                val persistedSequence = persistedSequencesByProfile[profileId] ?: 0L
                 if (pending.sequence <= persistedSequence) return@synchronized
-                persistedSequence = pending.sequence
+                persistedSequencesByProfile[profileId] = pending.sequence
                 WatchProgressStorage.savePayload(profileId, payload)
                 if (pendingPersists[profileId]?.sequence == pending.sequence) {
                     pendingPersists.remove(profileId)

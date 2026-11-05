@@ -53,6 +53,7 @@ internal fun PlaybackStreamSettings(
     var showAutoPlayAddonSelectionDialog by remember { mutableStateOf(false) }
     var showAutoPlayPluginSelectionDialog by remember { mutableStateOf(false) }
     var showAutoPlayRegexDialog by remember { mutableStateOf(false) }
+    var showAutoPlayAddonPriorityDialog by remember { mutableStateOf(false) }
     val pluginsEnabled = AppFeaturePolicy.pluginsEnabled
     val addonUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val pluginUiState = if (pluginsEnabled) {
@@ -107,6 +108,62 @@ internal fun PlaybackStreamSettings(
                         isTablet = isTablet,
                         onClick = { showAutoPlayRegexDialog = true },
                     )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Dead-link auto fallback",
+                    description = "Skip sources that remain stuck buffering after the timeout.",
+                    checked = settings.deadLinkTimeoutEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setDeadLinkTimeoutEnabled,
+                )
+                if (settings.deadLinkTimeoutEnabled) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_dead_link_timeout),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_dead_link_timeout_description),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            ValueBox(
+                                text = stringResource(
+                                    Res.string.settings_playback_seconds,
+                                    settings.deadLinkTimeoutSeconds,
+                                ),
+                                modifier = Modifier.wrapContentWidth(),
+                            )
+                        }
+                        var deadLinkTimeoutSlider by remember(settings.deadLinkTimeoutSeconds) {
+                            mutableFloatStateOf(settings.deadLinkTimeoutSeconds.toFloat())
+                        }
+                        Slider(
+                            value = deadLinkTimeoutSlider,
+                            onValueChange = {
+                                deadLinkTimeoutSlider = it.toInt().coerceIn(5, 60).toFloat()
+                            },
+                            onValueChangeFinished = {
+                                PlayerSettingsRepository.setDeadLinkTimeoutSeconds(deadLinkTimeoutSlider.toInt())
+                            },
+                            valueRange = 5f..60f,
+                            steps = 54,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
                 SettingsGroupDivider(isTablet = isTablet)
                 val timeoutSec = settings.streamAutoPlayTimeoutSeconds
@@ -186,6 +243,31 @@ internal fun PlaybackStreamSettings(
                         isTablet = isTablet,
                         onClick = { showAutoPlayAddonSelectionDialog = true },
                     )
+                    if (settings.streamAutoPlayMode == StreamAutoPlayMode.SEMI_AUTOMATIC) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val priorityAddonNames = addonUiState.addons
+                            .enabledAddons()
+                            .mapNotNull { addon ->
+                                addon.manifest
+                                    ?.takeIf { manifest ->
+                                        manifest.resources.any { resource -> resource.name == "stream" }
+                                    }
+                                    ?.name
+                            }
+                            .distinct()
+                        val configuredPriority = settings.streamAutoPlayAddonPriority
+                            .filter { it in priorityAddonNames }
+                        SettingsNavigationRow(
+                            title = "Semi-auto add-on priority",
+                            description = if (configuredPriority.isEmpty()) {
+                                "Use enabled add-on order; tap to customise"
+                            } else {
+                                configuredPriority.take(3).joinToString(" → ")
+                            },
+                            isTablet = isTablet,
+                            onClick = { showAutoPlayAddonPriorityDialog = true },
+                        )
+                    }
                 }
                 if (pluginsEnabled && settings.streamAutoPlaySource != StreamAutoPlaySource.INSTALLED_ADDONS_ONLY) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -282,6 +364,26 @@ internal fun PlaybackStreamSettings(
         )
     }
 
+    if (showAutoPlayAddonPriorityDialog) {
+        val addonNames = addonUiState.addons
+            .enabledAddons()
+            .mapNotNull { addon ->
+                addon.manifest
+                    ?.takeIf { manifest -> manifest.resources.any { resource -> resource.name == "stream" } }
+                    ?.name
+            }
+            .distinct()
+        StreamAutoPlayProviderPriorityDialog(
+            items = addonNames,
+            currentOrder = settings.streamAutoPlayAddonPriority,
+            onOrderSaved = {
+                PlayerSettingsRepository.setStreamAutoPlayAddonPriority(it)
+                showAutoPlayAddonPriorityDialog = false
+            },
+            onDismiss = { showAutoPlayAddonPriorityDialog = false },
+        )
+    }
+
     if (showAutoPlayRegexDialog) {
         StreamAutoPlayRegexDialog(
             initialRegex = settings.streamAutoPlayRegex,
@@ -355,4 +457,5 @@ internal val StreamAutoPlayMode.labelRes: StringResource
         StreamAutoPlayMode.MANUAL -> Res.string.settings_playback_stream_selection_mode_manual
         StreamAutoPlayMode.FIRST_STREAM -> Res.string.settings_playback_stream_selection_mode_first_stream
         StreamAutoPlayMode.REGEX_MATCH -> Res.string.settings_playback_stream_selection_mode_regex
+        StreamAutoPlayMode.SEMI_AUTOMATIC -> Res.string.settings_playback_stream_selection_mode_semi_automatic
     }

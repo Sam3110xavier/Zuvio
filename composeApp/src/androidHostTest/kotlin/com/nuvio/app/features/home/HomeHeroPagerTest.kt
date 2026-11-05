@@ -29,7 +29,34 @@ class HomeHeroPagerTest {
     val compose = createComposeRule()
 
     private val items = List(8) { index ->
-        MetaPreview(id = "hero-$index", type = "movie", name = "Hero $index")
+        MetaPreview(
+            id = "hero-$index",
+            type = "movie",
+            name = "Hero $index",
+            poster = "https://example.test/hero-$index.jpg",
+            posterTextless = true,
+        )
+    }
+
+    @Test
+    fun bannerOnlyArtworkIsIncludedInTheHeroPager() {
+        compose.setContent {
+            MaterialTheme {
+                HomeHeroSection(
+                    items = listOf(
+                        MetaPreview(
+                            id = "banner-only",
+                            type = "movie",
+                            name = "Banner only",
+                            banner = "https://example.test/banner.jpg",
+                        ),
+                    ),
+                    modifier = Modifier.width(390.dp).testTag("hero"),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Banner only").assertIsDisplayed()
     }
 
     @Test

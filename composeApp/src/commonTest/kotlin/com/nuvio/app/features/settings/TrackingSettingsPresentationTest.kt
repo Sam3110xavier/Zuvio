@@ -53,12 +53,40 @@ class TrackingSettingsPresentationTest {
 
         assertEquals(
             MoreLikeThisSourcePreference.TMDB,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = false),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = false, simklConnected = false),
         )
         assertEquals(
             MoreLikeThisSourcePreference.TRAKT,
-            effectiveTrackingRecommendationsSource(stored, traktConnected = true),
+            effectiveTrackingRecommendationsSource(stored, traktConnected = true, simklConnected = false),
         )
         assertEquals(MoreLikeThisSourcePreference.TRAKT, stored)
+    }
+
+    @Test
+    fun `TMDB remains selectable and Simkl falls back when disconnected`() {
+        assertEquals(
+            MoreLikeThisSourcePreference.TMDB,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.TMDB,
+                traktConnected = false,
+                simklConnected = false,
+            ),
+        )
+        assertEquals(
+            MoreLikeThisSourcePreference.TMDB,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.SIMKL,
+                traktConnected = false,
+                simklConnected = false,
+            ),
+        )
+        assertEquals(
+            MoreLikeThisSourcePreference.SIMKL,
+            effectiveTrackingRecommendationsSource(
+                MoreLikeThisSourcePreference.SIMKL,
+                traktConnected = false,
+                simklConnected = true,
+            ),
+        )
     }
 }

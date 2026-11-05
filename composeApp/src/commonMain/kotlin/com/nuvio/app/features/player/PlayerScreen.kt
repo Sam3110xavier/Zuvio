@@ -3,6 +3,7 @@ package com.nuvio.app.features.player
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.nuvio.app.features.party.PartyMedia
+import com.nuvio.app.features.home.MetaPreview
 
 @Composable
 fun PlayerScreen(
@@ -23,6 +24,7 @@ fun PlayerScreen(
     onOpenInExternalPlayer: ((ExternalPlayerPlaybackRequest) -> Unit)? = null,
     onOpenExternalUrl: ((String) -> Unit)? = null,
     onOpenPartyMedia: (PartyMedia) -> Unit = {},
+    onOpenRelatedTitle: (MetaPreview) -> Unit = {},
     modifier: Modifier = Modifier,
     logo: String? = null,
     poster: String? = null,
@@ -47,6 +49,7 @@ fun PlayerScreen(
     launchId: Long? = null,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    semiAutoSelectedQuality: com.nuvio.app.features.streams.StreamAutoPlayPreferredQuality? = null,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
@@ -90,7 +93,9 @@ fun PlayerScreen(
             launchId = launchId,
             sourceFilename = sourceFilename,
             onOpenPartyMedia = onOpenPartyMedia,
+            onOpenRelatedTitle = onOpenRelatedTitle,
             stream = stream,
+            semiAutoSelectedQuality = semiAutoSelectedQuality,
         )
     )
 }

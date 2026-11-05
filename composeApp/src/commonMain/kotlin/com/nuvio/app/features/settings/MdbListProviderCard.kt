@@ -8,10 +8,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.format.formatLocalDateTime
-import com.nuvio.app.features.mdblist.messageResource
 import com.nuvio.app.features.mdblist.MdbListAuthError
 import com.nuvio.app.features.mdblist.MdbListSyncError
 import com.nuvio.app.features.mdblist.MdbListTracker
+import com.nuvio.app.features.mdblist.messageResource
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingRefreshIntent
 import com.nuvio.app.features.watchprogress.WatchProgressSourceCoordinator
@@ -27,9 +27,11 @@ internal fun MdbListProviderCard(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val status = accountStatus.takeIf { it.scope == auth.scope }
     val syncStatus = sync.takeIf { it.scope == auth.scope }
+
     LaunchedEffect(auth.scope) {
         if (auth.session != null) MdbListTracker.account.resumePolling(auth.scope)
     }
+
     TrackingProviderCard(
         brand = TrackingBrand.MDBLIST,
         mode = when {
@@ -39,7 +41,10 @@ internal fun MdbListProviderCard(modifier: Modifier = Modifier) {
         },
         credentialsConfigured = MdbListTracker.auth.hasRequiredCredentials(),
         isLoading = status?.isBusy == true,
-        connectedLabel = stringResource(Res.string.settings_mdblist_connected_as, auth.user?.username ?: stringResource(Res.string.settings_mdblist_account_fallback)),
+        connectedLabel = stringResource(
+            Res.string.settings_mdblist_connected_as,
+            auth.user?.username ?: stringResource(Res.string.settings_mdblist_account_fallback),
+        ),
         connectedDescription = stringResource(Res.string.settings_mdblist_connected_description),
         signInDescription = stringResource(Res.string.settings_mdblist_sign_in_description),
         finishSignInLabel = stringResource(Res.string.settings_mdblist_finish_sign_in),
@@ -54,11 +59,19 @@ internal fun MdbListProviderCard(modifier: Modifier = Modifier) {
         statusMessage = when {
             syncStatus?.isLoading == true -> stringResource(Res.string.settings_mdblist_syncing)
             auth.isAuthenticated && syncStatus?.snapshot?.checkedAtEpochMs != null -> stringResource(
-                Res.string.settings_mdblist_last_synced, formatLocalDateTime(syncStatus.snapshot.checkedAtEpochMs))
+                Res.string.settings_mdblist_last_synced,
+                formatLocalDateTime(syncStatus.snapshot.checkedAtEpochMs),
+            )
             else -> null
         },
-        errorMessage = if (status?.revokeFailed == true) stringResource(Res.string.settings_mdblist_revoke_failed)
-            else mdbListAccountError(auth.error ?: status?.authError, status?.error ?: syncStatus?.error),
+        errorMessage = when {
+            status?.revokeFailed == true -> stringResource(Res.string.settings_mdblist_revoke_failed)
+            !auth.isAuthenticated -> null
+            else -> mdbListAccountError(
+                auth.error ?: status?.authError,
+                status?.error ?: syncStatus?.error,
+            )
+        },
         websiteLabel = stringResource(Res.string.settings_mdblist_visit),
         websiteUrl = "https://mdblist.com",
         onConnectRequested = { MdbListTracker.account.connect(auth.scope) },
@@ -66,6 +79,7 @@ internal fun MdbListProviderCard(modifier: Modifier = Modifier) {
         onCancelAuthorization = { MdbListTracker.account.cancel(auth.scope) },
         onDisconnect = { scope.launch { MdbListTracker.account.disconnect(auth.scope) } },
         onSyncRequested = {
+            if (!auth.isAuthenticated) return@TrackingProviderCard
             scope.launch {
                 WatchProgressSourceCoordinator.refreshProviderAndActiveSource(
                     profileId = auth.scope.profileId,
@@ -73,7 +87,9 @@ internal fun MdbListProviderCard(modifier: Modifier = Modifier) {
                     refreshProvider = {
                         MdbListTracker.store.checkScope(auth.scope)
                         MdbListTracker.sync.refresh(TrackingRefreshIntent.USER_INITIATED)
-                        MdbListTracker.sync.state.value.let { it.scope == auth.scope && it.hasLoaded && it.error == null }
+                        MdbListTracker.sync.state.value.let {
+                            it.scope == auth.scope && it.hasLoaded && it.error == null
+                        }
                     },
                 )
             }

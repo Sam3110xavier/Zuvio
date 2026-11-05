@@ -15,7 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
 
 private const val BASE_URL = "https://api.trakt.tv"
-private const val RELATED_LIMIT = 20
+private const val RELATED_LIMIT = 100
 private const val RELATED_CACHE_TTL_MS = 10 * 60_000L
 
 object TraktRelatedRepository {

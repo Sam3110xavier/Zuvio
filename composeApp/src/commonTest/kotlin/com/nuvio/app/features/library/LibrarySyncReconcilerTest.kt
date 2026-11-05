@@ -55,6 +55,47 @@ class LibrarySyncReconcilerTest {
     }
 
     @Test
+    fun `snapshot refresh preserves existing local library status`() {
+        val localItem = libraryItem(id = "saved", savedAtEpochMs = 10L)
+            .copy(localStatus = LocalLibraryStatus.DROPPED.storageKey)
+        val remoteItem = libraryItem(id = "saved", savedAtEpochMs = 20L)
+
+        val result = reconcileLibrarySnapshot(
+            serverItems = listOf(remoteItem),
+            localItemsByKey = mapOf(libraryItemKey(localItem.id, localItem.type) to localItem),
+            pendingUpsertKeysByKey = emptyMap(),
+            pendingDeleteKeysByKey = emptyMap(),
+        )
+
+        assertEquals(
+            LocalLibraryStatus.DROPPED.storageKey,
+            result.itemsByKey[libraryItemKey("saved", "movie")]?.localStatus,
+        )
+        assertEquals(20L, result.itemsByKey[libraryItemKey("saved", "movie")]?.savedAtEpochMs)
+    }
+
+    @Test
+    fun `delta metadata upsert preserves existing local library status`() {
+        val localItem = libraryItem(id = "saved", savedAtEpochMs = 10L)
+            .copy(localStatus = LocalLibraryStatus.ON_HOLD.storageKey)
+        val remoteItem = libraryItem(id = "saved", savedAtEpochMs = 20L)
+
+        val result = reconcileLibraryDelta(
+            events = listOf(LibraryDeltaEvent(eventId = 2L, operation = "upsert", item = remoteItem)),
+            currentItemsByKey = mapOf(libraryItemKey(localItem.id, localItem.type) to localItem),
+            pendingUpsertKeysByKey = emptyMap(),
+            pendingDeleteKeysByKey = emptyMap(),
+            currentCursorEventId = 1L,
+        )
+
+        assertEquals(
+            LocalLibraryStatus.ON_HOLD.storageKey,
+            result.itemsByKey[libraryItemKey("saved", "movie")]?.localStatus,
+        )
+        assertEquals(20L, result.itemsByKey[libraryItemKey("saved", "movie")]?.savedAtEpochMs)
+    }
+
+    @Test
     fun `delta applies ordered upserts and deletes and advances cursor`() {
         val existing = libraryItem(id = "existing", savedAtEpochMs = 1L)
         val added = libraryItem(id = "added", savedAtEpochMs = 2L)

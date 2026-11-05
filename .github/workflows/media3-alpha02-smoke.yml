@@ -1,0 +1,81 @@
+name: Media3 Alpha02 Build Smoke Test
+
+on:
+  push:
+    branches: [test-media-update, cmp-rewrite, watchparty-sync-correction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media3-alpha02-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-smoke:
+    name: Build full-debug APKs and Android test APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # GitHub's Ubuntu runner already includes Android SDK packages. Avoid
+      # setup-android's attempted installation of the obsolete "tools" package,
+      # which failed before Gradle ran in the previous attempt.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Prepare runtime properties
+        env:
+          LOCAL_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
+        run: |
+          if [ -n "$LOCAL_PROPERTIES_BASE64" ]; then
+            printf '%s' "$LOCAL_PROPERTIES_BASE64" | base64 --decode > local.properties
+            sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_STORE_FILE)[[:space:]]*=/d' local.properties
+          else
+            touch local.properties
+          fi
+
+      - name: Run Android host unit tests
+        run: ./gradlew --no-daemon :composeApp:testAndroidHostTest --stacktrace
+
+      - name: Build full-debug app and instrumentation test APKs
+        run: |
+          ./gradlew --no-daemon \
+            :androidApp:assembleFullDebug \
+            :androidApp:assembleFullDebugAndroidTest \
+            -Pnuvio.android.distribution=full \
+            -Pnuvio.ios.distribution=appstore \
+            --stacktrace
+
+      - name: Verify APK outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_APK="$(find androidApp/build/outputs/apk -type f -name '*full*debug*.apk' ! -path '*androidTest*' -print -quit)"
+          TEST_APK="$(find androidApp/build/outputs/apk -type f -path '*androidTest*' -name '*.apk' -print -quit)"
+          test -n "$APP_APK" || { echo "Full-debug app APK was not produced"; exit 1; }
+          test -n "$TEST_APK" || { echo "Android instrumentation test APK was not produced"; exit 1; }
+          echo "App APK: $APP_APK"
+          echo "Test APK: $TEST_APK"
+          unzip -l "$APP_APK" | grep -E 'classes[0-9]*\.dex$'
+          unzip -l "$TEST_APK" | grep -E 'classes[0-9]*\.dex$'
+
+      - name: Upload APK artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media3-alpha02-full-debug-apks
+          path: |
+            androidApp/build/outputs/apk/**/full/debug/*.apk
+            androidApp/build/outputs/apk/**/androidTest/*.apk
+          if-no-files-found: error
+          retention-days: 7

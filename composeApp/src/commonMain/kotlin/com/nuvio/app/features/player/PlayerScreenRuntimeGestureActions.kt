@@ -73,6 +73,7 @@ internal fun PlayerScreenRuntime.lockPlayerControls() {
     showSourcesPanel = false
     showEpisodesPanel = false
     showChaptersPanel = false
+    showLiveTvChannelsPanel = false
     episodeStreamsPanelState = EpisodeStreamsPanelState()
     PlayerStreamsRepository.clearEpisodeStreams()
 }
@@ -256,13 +257,7 @@ internal fun PlayerScreenRuntime.cycleResizeMode() {
     resizeMode = nextMode
     lastSyncedSettingsResizeMode = nextMode
     PlayerSettingsRepository.setResizeMode(nextMode)
-    showGestureMessage(
-        when (nextMode) {
-            PlayerResizeMode.Fit -> resizeModeFitLabel
-            PlayerResizeMode.Fill -> resizeModeFillLabel
-            PlayerResizeMode.Zoom -> resizeModeZoomLabel
-        },
-    )
+    showGestureMessage(nextMode.label)
     controlsVisible = true
 }
 

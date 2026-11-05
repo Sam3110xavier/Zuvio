@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import androidx.media3.common.NuvioEngineConfig
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.upstream.DefaultAllocator
@@ -23,17 +22,91 @@ internal object NuvioExoPlayerPerformanceHelper {
     private const val BACK_BUFFER_TARGET_SHARE_NUM = 1L
     private const val BACK_BUFFER_TARGET_SHARE_DEN = 2L
 
+    private const val NUVIO_ENGINE_CONFIG_CLASS = "androidx.media3.common.NuvioEngineConfig"
+
+    @Volatile
+    private var nativeModeUnavailableWarningLogged = false
+
     @Volatile
     var enabled: Boolean = false
         set(value) {
-            val active = value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            if (!value) {
+                setNuvioEngineConfigMode(false)
+                field = false
+                return
+            }
+
+            val active = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                hasPatchedNativeAllocatorConstructor() &&
+                setNuvioEngineConfigMode(true)
             field = active
-            if (active) {
-                NuvioEngineConfig.set(NuvioEngineConfig.nuvioMode())
-            } else {
-                NuvioEngineConfig.set(NuvioEngineConfig.stockMode())
+            if (!active) {
+                setNuvioEngineConfigMode(false)
+                warnNativeModeUnavailableOnce()
             }
         }
+
+    /**
+     * Nuvio's native-memory profile is provided by patched Media3 artifacts, not stock Maven
+     * Media3. Discover it reflectively so stock Media3 builds compile and safely fall back instead
+     * of pretending native allocator pooling is active.
+     */
+    private fun hasPatchedNativeAllocatorConstructor(): Boolean {
+        val hasCustomAllocator = DefaultAllocator::class.java.constructors.any { constructor ->
+            val types = constructor.parameterTypes
+            types.size == 4 &&
+                types[0] == Boolean::class.javaPrimitiveType &&
+                types[1] == Int::class.javaPrimitiveType &&
+                types[2] == Int::class.javaPrimitiveType &&
+                types[3] == Boolean::class.javaPrimitiveType
+        }
+        if (!hasCustomAllocator) return false
+        return try {
+            Class.forName(NUVIO_ENGINE_CONFIG_CLASS)
+            true
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+    }
+
+    private fun setNuvioEngineConfigMode(useNuvioMode: Boolean): Boolean {
+        return try {
+            val configClass = Class.forName(NUVIO_ENGINE_CONFIG_CLASS)
+            val instance = configClass.getField("INSTANCE").get(null)
+            val factoryName = if (useNuvioMode) "nuvioMode" else "stockMode"
+            val modeFactory = configClass.methods.firstOrNull {
+                it.name == factoryName && it.parameterCount == 0
+            } ?: return false
+            val mode = modeFactory.invoke(instance)
+            val setter = configClass.methods.firstOrNull {
+                it.name == "set" &&
+                    it.parameterCount == 1 &&
+                    mode != null &&
+                    it.parameterTypes[0].isAssignableFrom(mode.javaClass)
+            } ?: return false
+            setter.invoke(instance, mode)
+            true
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+    }
+
+    private fun warnNativeModeUnavailableOnce() {
+        if (nativeModeUnavailableWarningLogged) return
+        synchronized(this) {
+            if (nativeModeUnavailableWarningLogged) return
+            nativeModeUnavailableWarningLogged = true
+            Log.w(
+                TAG,
+                "Nuvio native-memory mode is unavailable with the current Media3 artifacts; " +
+                    "falling back to stock Media3 allocation and heap-safe buffer settings",
+            )
+        }
+    }
 
     fun getWarningNativeMemoryLimitMb(context: Context): Int {
         val totalMem = deviceRamBytes(context)
@@ -205,7 +278,7 @@ internal object NuvioExoPlayerPerformanceHelper {
         }
         Log.i(TAG, "native load control targetMb=$targetBufferMb backBufferMs=$backBufferMs")
         return DefaultLoadControl.Builder()
-            .setAllocator(DefaultAllocator(true, ALLOCATOR_SEGMENT_SIZE, 64, true))
+            .setAllocator(createNativeAllocator())
             .setTargetBufferBytes(targetBufferBytes)
             .setBufferDurationsMs(
                 minBufferMs,
@@ -216,6 +289,25 @@ internal object NuvioExoPlayerPerformanceHelper {
             .setPrioritizeTimeOverSizeThresholds(false)
             .setBackBuffer(backBufferMs, true)
             .build()
+    }
+
+    private fun createNativeAllocator(): DefaultAllocator {
+        val constructor = DefaultAllocator::class.java.constructors.firstOrNull { candidate ->
+            val types = candidate.parameterTypes
+            types.size == 4 &&
+                types[0] == Boolean::class.javaPrimitiveType &&
+                types[1] == Int::class.javaPrimitiveType &&
+                types[2] == Int::class.javaPrimitiveType &&
+                types[3] == Boolean::class.javaPrimitiveType
+        } ?: return DefaultAllocator(true, ALLOCATOR_SEGMENT_SIZE, 64)
+
+        return try {
+            constructor.newInstance(true, ALLOCATOR_SEGMENT_SIZE, 64, true) as DefaultAllocator
+        } catch (error: Exception) {
+            Log.w(TAG, "Custom Media3 allocator unavailable; using the stock allocator", error)
+            enabled = false
+            DefaultAllocator(true, ALLOCATOR_SEGMENT_SIZE, 64)
+        }
     }
 
     private fun effectiveBackBufferMs(backBufferMs: Int, minBufferMs: Int): Int {
