@@ -129,9 +129,9 @@ internal fun selectHomeHeroArtwork(
     // the addon explicitly marks the poster as textless.
     val candidates = when (orientation) {
         HomeHeroOrientation.Landscape -> listOf(
-            Triple(item.landscapePoster, HomeHeroArtworkAnchor.Center, true),
             Triple(item.banner, HomeHeroArtworkAnchor.Center, true),
             Triple(item.background, HomeHeroArtworkAnchor.Center, true),
+            Triple(item.landscapePoster, HomeHeroArtworkAnchor.Center, false),
             Triple(item.poster, HomeHeroArtworkAnchor.Center, item.posterTextless),
         )
         HomeHeroOrientation.Portrait -> listOf(
