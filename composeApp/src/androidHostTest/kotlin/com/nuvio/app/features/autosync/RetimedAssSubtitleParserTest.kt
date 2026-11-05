@@ -1,6 +1,6 @@
 package com.nuvio.app.features.autosync
 
-import androidx.media3.common.util.Consumer
+import java.util.function.Consumer
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.SubtitleParser
 import kotlin.test.assertContentEquals
