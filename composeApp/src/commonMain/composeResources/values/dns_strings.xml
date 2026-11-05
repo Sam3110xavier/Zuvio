@@ -1,0 +1,7 @@
+<resources>
+    <string name="settings_advanced_section_network">NETWORK</string>
+    <string name="settings_advanced_dns">DNS provider</string>
+    <string name="settings_advanced_dns_system">System default</string>
+    <string name="settings_advanced_dns_doh_format">%1$s · DNS over HTTPS</string>
+    <string name="settings_advanced_dns_note">Choose which DNS-over-HTTPS provider Nuvio uses for supported network requests. System default uses your device or network DNS. If a selected provider is unavailable, Nuvio falls back to system DNS.</string>
+</resources>
