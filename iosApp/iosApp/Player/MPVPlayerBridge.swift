@@ -294,7 +294,7 @@ final class MPVPlayerViewController: UIViewController {
     private var startupSubtitles: [PluginSubtitle] = []
     /// mpv's sub-add needs a loaded file. An add-on subtitle selected before that (Nuvio restores
     /// the remembered one as soon as add-ons answer, often while the stream still opens) waits here.
-    private var pendingSubtitleUrl: String?
+    private var pendingSubtitle: (url: String, headers: [String: String])?
     private var isFileLoaded = false
     private var pendingLoadRetryWorkItem: DispatchWorkItem?
     private var mpv: OpaquePointer?
@@ -891,15 +891,15 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func addSubtitleUrl(_ url: String) {
-        guard mpv != nil, isFileLoaded else {
-            pendingSubtitleUrl = url
-            return
-        }
         addSubtitleUrl(url, headers: [:])
     }
 
     func addSubtitleUrl(_ url: String, headers: [String: String]) {
         guard mpv != nil else { return }
+        guard isFileLoaded else {
+            pendingSubtitle = (url: url, headers: headers)
+            return
+        }
         let subtitleHeaders = sanitizeRequestHeaders(headers)
         let previousHeaders = activeRequestHeaders
         if !subtitleHeaders.isEmpty {
@@ -932,7 +932,7 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func removeExternalSubtitles() {
-        pendingSubtitleUrl = nil
+        pendingSubtitle = nil
         guard mpv != nil else { return }
         let count = getInt("track-list/count")
         for i in stride(from: count - 1, through: 0, by: -1) {
@@ -1032,7 +1032,7 @@ final class MPVPlayerViewController: UIViewController {
         pendingSurfaceLayoutWorkItems.removeAll(keepingCapacity: false)
         pendingLoadRequest = nil
         startupSubtitles = []
-        pendingSubtitleUrl = nil
+        pendingSubtitle = nil
         isFileLoaded = false
         nowPlayingController.invalidate()
         clearPlaybackError()
@@ -1333,9 +1333,9 @@ final class MPVPlayerViewController: UIViewController {
                         let subtitles = self.startupSubtitles
                         self.startupSubtitles = []
                         subtitles.forEach { self.addSubtitle($0, mode: "auto") }
-                        if let url = self.pendingSubtitleUrl {
-                            self.pendingSubtitleUrl = nil
-                            self.addSubtitleUrl(url)
+                        if let subtitle = self.pendingSubtitle {
+                            self.pendingSubtitle = nil
+                            self.addSubtitleUrl(subtitle.url, headers: subtitle.headers)
                         }
                         self.updateState()
                         self.publishNowPlayingForPlaybackSession()
