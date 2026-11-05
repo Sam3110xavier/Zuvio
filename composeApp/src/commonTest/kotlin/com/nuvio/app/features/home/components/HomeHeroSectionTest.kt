@@ -50,12 +50,14 @@ class HomeHeroSectionTest {
     }
 
     @Test
-    fun `landscape priority is landscape poster then banner then backdrop then poster`() {
+    fun `landscape priority is banner then backdrop then landscape poster then poster`() {
         val all = MetaPreview(id = "landscape", type = "movie", name = "Landscape", poster = "poster.jpg", landscapePoster = "landscape.jpg", banner = "banner.jpg", background = "backdrop.jpg")
-        assertEquals("landscape.jpg", selectHomeHeroArtwork(all, HomeHeroOrientation.Landscape)?.imageUrl)
-        assertEquals("banner.jpg", selectHomeHeroArtwork(all.copy(landscapePoster = null), HomeHeroOrientation.Landscape)?.imageUrl)
-        assertEquals("backdrop.jpg", selectHomeHeroArtwork(all.copy(landscapePoster = null, banner = null), HomeHeroOrientation.Landscape)?.imageUrl)
-        val poster = selectHomeHeroArtwork(all.copy(landscapePoster = null, banner = null, background = null), HomeHeroOrientation.Landscape)
+        assertEquals("banner.jpg", selectHomeHeroArtwork(all, HomeHeroOrientation.Landscape)?.imageUrl)
+        assertEquals("backdrop.jpg", selectHomeHeroArtwork(all.copy(banner = null), HomeHeroOrientation.Landscape)?.imageUrl)
+        val landscape = selectHomeHeroArtwork(all.copy(banner = null, background = null), HomeHeroOrientation.Landscape)
+        assertEquals("landscape.jpg", landscape?.imageUrl)
+        assertEquals(false, landscape?.showTitleOverlay)
+        val poster = selectHomeHeroArtwork(all.copy(banner = null, background = null, landscapePoster = null), HomeHeroOrientation.Landscape)
         assertEquals("poster.jpg", poster?.imageUrl)
         assertEquals(false, poster?.showTitleOverlay)
     }
