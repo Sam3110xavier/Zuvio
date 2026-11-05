@@ -894,6 +894,10 @@ final class MPVPlayerViewController: UIViewController {
         guard mpv != nil, isFileLoaded else {
             pendingSubtitleUrl = url
             return
+        }
+        addSubtitleUrl(url, headers: [:])
+    }
+
     func addSubtitleUrl(_ url: String, headers: [String: String]) {
         guard mpv != nil else { return }
         let subtitleHeaders = sanitizeRequestHeaders(headers)
