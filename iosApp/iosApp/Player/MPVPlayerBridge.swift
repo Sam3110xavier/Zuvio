@@ -292,6 +292,10 @@ final class MPVPlayerViewController: UIViewController {
     private var pendingSurfaceLayoutWorkItems: [DispatchWorkItem] = []
     private var pendingLoadRequest: PendingLoadRequest?
     private var startupSubtitles: [PluginSubtitle] = []
+    /// mpv's sub-add needs a loaded file. An add-on subtitle selected before that (Nuvio restores
+    /// the remembered one as soon as add-ons answer, often while the stream still opens) waits here.
+    private var pendingSubtitle: (url: String, headers: [String: String])?
+    private var isFileLoaded = false
     private var pendingLoadRetryWorkItem: DispatchWorkItem?
     private var mpv: OpaquePointer?
     private var cachedNowPlayingMetadata: CachedNowPlayingMetadata?
@@ -679,6 +683,7 @@ final class MPVPlayerViewController: UIViewController {
         applyRequestHeaders(sanitizedHeaders)
         isPlayerLoading = true
         isPlayerEnded = false
+        isFileLoaded = false
         applyAudioLanguagePreferences(preferredAudioLanguages)
         startupSubtitles = request.subtitles
         command("loadfile", args: [request.urlString, "replace"])
@@ -760,6 +765,7 @@ final class MPVPlayerViewController: UIViewController {
             clearPlaybackError()
             applyRequestHeaders(activeRequestHeaders)
             let pos = getDouble("time-pos")
+            isFileLoaded = false
             command("loadfile", args: [path, "replace"])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.command("seek", args: [String(format: "%.3f", pos), "absolute"])
@@ -884,8 +890,16 @@ final class MPVPlayerViewController: UIViewController {
         }
     }
 
+    func addSubtitleUrl(_ url: String) {
+        addSubtitleUrl(url, headers: [:])
+    }
+
     func addSubtitleUrl(_ url: String, headers: [String: String]) {
         guard mpv != nil else { return }
+        guard isFileLoaded else {
+            pendingSubtitle = (url: url, headers: headers)
+            return
+        }
         let subtitleHeaders = sanitizeRequestHeaders(headers)
         let previousHeaders = activeRequestHeaders
         if !subtitleHeaders.isEmpty {
@@ -918,6 +932,7 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func removeExternalSubtitles() {
+        pendingSubtitle = nil
         guard mpv != nil else { return }
         let count = getInt("track-list/count")
         for i in stride(from: count - 1, through: 0, by: -1) {
@@ -932,6 +947,7 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func removeExternalSubtitlesAndSelect(_ trackId: Int) {
+        pendingSubtitle = nil
         guard mpv != nil else { return }
         let count = getInt("track-list/count")
         for i in stride(from: count - 1, through: 0, by: -1) {
@@ -1016,6 +1032,8 @@ final class MPVPlayerViewController: UIViewController {
         pendingSurfaceLayoutWorkItems.removeAll(keepingCapacity: false)
         pendingLoadRequest = nil
         startupSubtitles = []
+        pendingSubtitle = nil
+        isFileLoaded = false
         nowPlayingController.invalidate()
         clearPlaybackError()
         deactivateAudioSession()
@@ -1311,9 +1329,14 @@ final class MPVPlayerViewController: UIViewController {
                     DispatchQueue.main.async {
                         self.clearPlaybackError()
                         self.isPlayerLoading = false
+                        self.isFileLoaded = true
                         let subtitles = self.startupSubtitles
                         self.startupSubtitles = []
                         subtitles.forEach { self.addSubtitle($0, mode: "auto") }
+                        if let subtitle = self.pendingSubtitle {
+                            self.pendingSubtitle = nil
+                            self.addSubtitleUrl(subtitle.url, headers: subtitle.headers)
+                        }
                         self.updateState()
                         self.publishNowPlayingForPlaybackSession()
                         self.logCurrentAudioOutput()
