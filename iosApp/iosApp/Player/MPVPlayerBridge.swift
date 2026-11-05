@@ -947,7 +947,7 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func removeExternalSubtitlesAndSelect(_ trackId: Int) {
-        pendingSubtitleUrl = nil
+        pendingSubtitle = nil
         guard mpv != nil else { return }
         let count = getInt("track-list/count")
         for i in stride(from: count - 1, through: 0, by: -1) {
