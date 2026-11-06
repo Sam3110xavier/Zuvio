@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
@@ -85,35 +83,20 @@ private fun HomeCatalogRowSectionContent(
     onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
-    val rowState = rememberLazyListState()
-    val prefetchTargets = remember(entries, posterCardStyle) {
-        entries.map { item ->
-            item.homePosterImages(posterCardStyle, useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled)
-                .toPrefetchTarget()
-        }
-    }
-    PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
-
-    NuvioShelfSection(
-        title = section.title,
-        entries = entries,
-        modifier = modifier,
-        headerHorizontalPadding = sectionPadding,
-        rowContentPadding = PaddingValues(horizontal = sectionPadding),
-        onViewAllClick = onViewAllClick,
-        viewAllPillSize = NuvioViewAllPillSize.Compact,
-        key = { item -> item.stableKey() },
-        state = rowState,
-    ) { item ->
-        HomePosterCard(
-            item = item,
-            useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled,
-            isWatched = WatchingState.isPosterWatched(
-                watchedKeys = watchedKeys,
     var selectedTabKey by remember(section.key) { mutableStateOf("all") }
     val selectedTab = section.sourceTabs.firstOrNull { it.key == selectedTabKey }
         ?: section.sourceTabs.firstOrNull()
     val visibleEntries = selectedTab?.items ?: entries
+    val rowState = rememberLazyListState()
+    val prefetchTargets = remember(visibleEntries, posterCardStyle) {
+        visibleEntries.map { item ->
+            item.homePosterImages(
+                posterCardStyle,
+                useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled,
+            ).toPrefetchTarget()
+        }
+    }
+    PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
 
     Column(modifier = modifier.fillMaxWidth()) {
         if (section.sourceTabs.size > 1) {
@@ -143,6 +126,7 @@ private fun HomeCatalogRowSectionContent(
             onViewAllClick = onViewAllClick,
             viewAllPillSize = NuvioViewAllPillSize.Compact,
             key = { item -> item.stableKey() },
+            state = rowState,
         ) { item ->
             HomePosterCard(
                 item = item,
