@@ -401,6 +401,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         Box(modifier = videoModifier) {
             RenderPlaybackOverlays(
                 runtime = runtime,
+                isInPip = isInPip,
                 currentGestureFeedback = currentGestureFeedback,
                 p2pInitialLoadingMessage = p2pInitialLoadingMessage,
                 p2pInitialLoadingProgress = p2pInitialLoadingProgress,
@@ -777,6 +778,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
 @Composable
 private fun BoxScope.RenderPlaybackOverlays(
     runtime: PlayerScreenRuntime,
+    isInPip: Boolean,
     currentGestureFeedback: GestureFeedbackState?,
     p2pInitialLoadingMessage: String?,
     p2pInitialLoadingProgress: Float?,
@@ -786,6 +788,18 @@ private fun BoxScope.RenderPlaybackOverlays(
     folded: Boolean,
 ) {
     runtime.run {
+        val relatedItems = if (args.onOpenMetaDetails != null) movieRecommendationCandidates else emptyList()
+        val showRelatedTitles = shouldShowMoreLikeThisOverlay(
+            isPlaybackEnded = playbackSnapshot.isEnded,
+            hasRecommendations = relatedItems.isNotEmpty(),
+            isSeries = isSeries,
+            hasNextEpisode = nextEpisodeInfo != null,
+            controlsLocked = playerControlsLocked,
+            dismissed = moreLikeThisDismissed,
+            hasPlaybackError = errorMessage != null,
+            isInPip = isInPip,
+            completionPromptVisible = false,
+        )
         val overlaySnapshot = if (playerControlsLocked && lockedOverlayVisible) {
             playbackSnapshot
         } else {
@@ -899,7 +913,7 @@ private fun BoxScope.RenderPlaybackOverlays(
         } else {
             emptyList()
         },
-        showMovieRecommendationCard = showMovieRecommendationCard,
+        showMovieRecommendationCard = showMovieRecommendationCard && !showRelatedTitles,
         movieRecommendationStage = movieRecommendationStage,
         onOpenMovieRecommendation = { preview ->
             flushWatchProgress()
@@ -913,6 +927,14 @@ private fun BoxScope.RenderPlaybackOverlays(
             )
             showMovieRecommendationCard = false
         },
+        moreLikeThisItems = relatedItems,
+        showMoreLikeThis = showRelatedTitles,
+        onOpenMoreLikeThis = { item ->
+            moreLikeThisDismissed = true
+            flushWatchProgress()
+            args.onOpenMetaDetails?.invoke(item)
+        },
+        onDismissMoreLikeThis = { moreLikeThisDismissed = true },
         errorMessage = errorMessage,
             onDismissError = {
                 flushWatchProgress()

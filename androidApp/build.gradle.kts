@@ -35,6 +35,12 @@ fun envOrLocalProperty(key: String): String? =
     providers.environmentVariable(key).orNull?.trim()?.takeIf { it.isNotBlank() }
         ?: localProps.getProperty(key)?.trim()?.takeIf { it.isNotBlank() }
 
+val androidDistribution = (
+    providers.gradleProperty("nuvio.android.distribution").orNull
+        ?: envOrLocalProperty("NUVIO_ANDROID_DISTRIBUTION")
+        ?: "playstore"
+    ).trim().lowercase()
+
 val sentryAuthToken = envOrLocalProperty("SENTRY_AUTH_TOKEN")
 val sentryOrg = envOrLocalProperty("SENTRY_ORG")
 val sentryProject = envOrLocalProperty("SENTRY_PROJECT")
@@ -140,6 +146,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "../composeApp/proguard-rules.pro",
             )
+            if (androidDistribution == "full") {
+                proguardFiles("../composeApp/proguard-cloudstream-full.pro")
+            }
             signingConfig = signingConfigs.getByName("release")
             ndk {
                 debugSymbolLevel = "FULL"
