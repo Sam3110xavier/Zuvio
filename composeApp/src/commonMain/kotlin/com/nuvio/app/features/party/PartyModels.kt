@@ -118,6 +118,14 @@ internal fun shouldPublishHostPartyMedia(
     playerReady: Boolean,
 ): Boolean = isHost && playerReady && partyMediaKey != localMediaKey
 
+/** Do not publish a new player's stream until the party has accepted that media identity. */
+internal fun shouldShareHostStreamForMedia(
+    isHost: Boolean,
+    sharingEnabled: Boolean,
+    partyMediaKey: String?,
+    localMediaKey: String,
+): Boolean = isHost && sharingEnabled && partyMediaKey == localMediaKey
+
 private val SHAREABLE_URL = Regex("^https?://(?!localhost|127\\.|0\\.0\\.0\\.0|\\[::1])[^\\s/]+", RegexOption.IGNORE_CASE)
 
 internal fun partyMediaKey(metaType: String, metaId: String, season: Int?, episode: Int?): String =

@@ -186,4 +186,13 @@ class PartyStreamTest {
         assertFalse(shouldPublishHostPartyMedia(true, "movie|old||", "movie|new||", playerReady = false))
     }
 
+
+    @Test
+    fun hostStreamWaitsForPartyMediaToMatch() {
+        assertTrue(shouldShareHostStreamForMedia(true, true, "movie|new||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(true, true, "movie|old||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(false, true, "movie|new||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(true, false, "movie|new||", "movie|new||"))
+    }
+
 }
