@@ -67,6 +67,15 @@ class TrackingReadsTest {
     }
 
     @Test
+    fun `provider paused labels map to on hold status`() {
+        val aniListPaused = tab("anilist:status:paused").copy(title = "Paused")
+        val weTrakrPaused = tab("wetrakr:status:paused").copy(title = "Paused")
+
+        assertTrue(aniListPaused.matchesStatus(TrackingListStatus.ON_HOLD))
+        assertTrue(weTrakrPaused.matchesStatus(TrackingListStatus.ON_HOLD))
+    }
+
+    @Test
     fun `non destination status stays in selection group without appearing in picker`() {
         val watching = tab("simkl:watching", selectionGroup = "simkl:status")
         val completed = tab("simkl:completed", selectionGroup = "simkl:status")
