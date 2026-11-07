@@ -234,7 +234,11 @@ fun NuvioPosterCard(
                             alignment = Alignment.CenterStart,
                             onSuccess = { result ->
                                 val image = result.result.image
-                                logoIsLandscape = isLandscapeLogo(image.width, image.height)
+                                logoIsLandscape = isLandscapeLogo(
+                                    image.width,
+                                    image.height,
+                                    minimumAspectRatio = 1.2f,
+                                )
                             },
                             onError = { logoIsLandscape = false },
                         )
@@ -366,8 +370,6 @@ internal val NuvioPosterShape.aspectRatio: Float
         NuvioPosterShape.Landscape -> PosterLandscapeAspectRatio
     }
 
-internal fun isLandscapeLogo(width: Int, height: Int): Boolean =
-    width > 0 && height > 0 && width.toFloat() / height.toFloat() >= 1.2f
 
 private data class CatalogLogoOverlaySize(
     val width: Dp,

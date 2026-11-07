@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.RemoveCircle
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -2272,7 +2274,7 @@ internal fun MainAppContent(
                                 if (providerId != null && droppedStatusAvailable) {
                                     add(
                                         PosterZoomOverlayAction(
-                                            icon = Icons.Default.RemoveCircleOutline,
+                                            icon = Icons.Default.RemoveCircle,
                                             label = "Mark as Dropped",
                                             onSelected = {
                                                 coroutineScope.launch {
@@ -2315,7 +2317,7 @@ internal fun MainAppContent(
                                 if (providerId != null && onHoldStatusAvailable) {
                                     add(
                                         PosterZoomOverlayAction(
-                                            icon = Icons.Default.PauseCircleOutline,
+                                            icon = Icons.Default.PauseCircle,
                                             label = "Mark as On Hold",
                                             onSelected = {
                                                 coroutineScope.launch {
