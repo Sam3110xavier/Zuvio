@@ -184,6 +184,8 @@ import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.TrackingProviderId
+import com.nuvio.app.features.tracking.TrackingListStatus
+import com.nuvio.app.features.tracking.matchesStatus
 import com.nuvio.app.features.tracking.toggleTrackingLibraryMembership
 import com.nuvio.app.features.updater.AppUpdaterHost
 import com.nuvio.app.features.updater.AppUpdaterPlatform
@@ -2098,6 +2100,21 @@ internal fun MainAppContent(
                     )
                     val removesFromLibrary = isSaved &&
                         (posterActionTarget.libraryItem != null || !isRemoteLibrarySource)
+                    val statusLibraryItem = posterActionTarget.libraryItem
+                    val statusProviderId = statusLibraryItem
+                        ?.let { TrackingProviderId.fromStorage(libraryUiState.sourceMode.name) }
+                    val statusTabs = if (statusProviderId == null || statusLibraryItem == null) {
+                        emptyList()
+                    } else {
+                        LibraryRepository.libraryListTabs(statusLibraryItem)
+                            .filter { tab -> tab.providerId == statusProviderId }
+                    }
+                    val droppedStatusAvailable = statusTabs.any { tab ->
+                        tab.matchesStatus(TrackingListStatus.DROPPED)
+                    }
+                    val onHoldStatusAvailable = statusTabs.any { tab ->
+                        tab.matchesStatus(TrackingListStatus.ON_HOLD)
+                    }
                     NuvioPosterZoomActionOverlay(
                         imageUrl = selectedPosterAnchor?.imageUrl ?: preview.poster,
                         title = preview.name,
@@ -2109,9 +2126,10 @@ internal fun MainAppContent(
                             },
                         isWatched = isWatched,
                         anchor = selectedPosterAnchor,
-                        actions = listOf(
-                            PosterZoomOverlayAction(
-                                icon = if (isSaved) Icons.Default.DeleteOutline else Icons.Default.Add,
+                        actions = buildList {
+                            add(
+                                PosterZoomOverlayAction(
+                                    icon = if (isSaved) Icons.Default.DeleteOutline else Icons.Default.Add,
                                 label = if (isSaved) {
                                     stringResource(Res.string.hero_remove_from_library)
                                 } else {
@@ -2226,9 +2244,11 @@ internal fun MainAppContent(
                                         }
                                     }
                                 },
-                            ),
-                            PosterZoomOverlayAction(
-                                icon = if (isWatched) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
+                                ),
+                            )
+                            add(
+                                PosterZoomOverlayAction(
+                                    icon = if (isWatched) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
                                 label = if (isWatched) {
                                     stringResource(Res.string.hero_mark_unwatched)
                                 } else {
@@ -2239,8 +2259,58 @@ internal fun MainAppContent(
                                         WatchingActions.togglePosterWatched(preview)
                                     }
                                 },
-                            ),
-                        ),
+                                ),
+                            )
+                            statusLibraryItem?.let { item ->
+                                val providerId = statusProviderId
+                                if (providerId != null && droppedStatusAvailable) {
+                                    add(
+                                        PosterZoomOverlayAction(
+                                            icon = Icons.Default.RemoveCircleOutline,
+                                            label = "Mark as Dropped",
+                                            onSelected = {
+                                                coroutineScope.launch {
+                                                    runCatching {
+                                                        LibraryRepository.moveToStatus(
+                                                            item = item,
+                                                            status = TrackingListStatus.DROPPED,
+                                                            providerId = providerId,
+                                                        )
+                                                    }.onFailure { error ->
+                                                        NuvioToastController.show(
+                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                        ),
+                                    )
+                                }
+                                if (providerId != null && onHoldStatusAvailable) {
+                                    add(
+                                        PosterZoomOverlayAction(
+                                            icon = Icons.Default.PauseCircleOutline,
+                                            label = "Mark as On Hold",
+                                            onSelected = {
+                                                coroutineScope.launch {
+                                                    runCatching {
+                                                        LibraryRepository.moveToStatus(
+                                                            item = item,
+                                                            status = TrackingListStatus.ON_HOLD,
+                                                            providerId = providerId,
+                                                        )
+                                                    }.onFailure { error ->
+                                                        NuvioToastController.show(
+                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                        ),
+                                    )
+                                }
+                            }
+                        },
                         backdrop = posterOverlayBackdrop,
                         onDismissed = {
                             selectedPosterActionTarget = null
