@@ -408,6 +408,7 @@ object HomeRepository {
                 val section = cachedSections[definition.cacheKey]
                     ?.withPosterOverlay()
                     ?.withReleaseFilter()
+                    ?.withGlobalPosterFilter()
                     ?: return@mapNotNull null
                 if (section.items.isEmpty()) return@mapNotNull null
                 val customTitle = preference?.customTitle.orEmpty()
@@ -530,7 +531,11 @@ object HomeRepository {
             currentDefinitions
                 .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
                 .mapNotNull { definition -> cachedSections[definition.cacheKey] }
-                .map { section -> section.withPosterOverlay().withReleaseFilter() }
+                .map { section ->
+                    section.withPosterOverlay()
+                        .withReleaseFilter()
+                        .withGlobalPosterFilter()
+                }
                 .flatMap { section -> section.items }
                 .distinctBy { item -> "${item.type}:${item.id}" }
                 .shuffled(heroRandom)
@@ -540,7 +545,7 @@ object HomeRepository {
         }
         lastPublishedCatalogHeroEmpty = snapshot.heroEnabled && catalogHeroItems.isEmpty()
         val visibleHeroItems = _uiState.value.heroItems
-        val heroItems = if (snapshot.heroEnabled) {
+        val selectedHeroItems = if (snapshot.heroEnabled) {
             if (
                 keepVisibleHeroWhilePending &&
                 visibleHeroItems.isNotEmpty() &&
@@ -552,6 +557,15 @@ object HomeRepository {
             }
         } else {
             emptyList()
+        }
+        val heroItems = if (snapshot.hideMergedTitlesWithoutPosters) {
+            filterMergedHomeItems(
+                items = selectedHeroItems,
+                contentType = MergedHomeRowContentType.ALL,
+                hideTitlesWithoutPosters = true,
+            )
+        } else {
+            selectedHeroItems
         }
 
         _uiState.value = HomeUiState(
