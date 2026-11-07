@@ -224,25 +224,11 @@ private fun PlayerScreenRuntime.applyPartyPaused(paused: Boolean, force: Boolean
 }
 
 private fun PlayerScreenRuntime.handlePartyMediaChange(media: PartyMedia) {
-    if (media.key == partyKey) return
-    val season = media.season
-    val episode = media.episode
-    if (media.metaId == parentMetaId && isSeries && season != null && episode != null) {
-        val next = nextEpisodeInfo
-        if (next != null && next.hasAired && next.season == season && next.episode == episode) {
-            playNextEpisode()
-            return
-        }
-        val video = playerMetaVideos.firstOrNull { it.season == season && it.episode == episode }
-        if (video != null) {
-            episodeStreamsPanelState = EpisodeStreamsPanelState(showStreams = true, selectedEpisode = video)
-            showEpisodesPanel = true
-            showPartyPanel = false
-            return
-        }
-    }
+    val party = PartyRepository.state.value.party ?: return
+    if (party.isHost || media.key == partyKey || media.key != party.media.key) return
     showPartyChat = false
-    showPartyPanel = true
+    showPartyPanel = false
+    onFollowPartyMedia(media)
 }
 
 @Composable
