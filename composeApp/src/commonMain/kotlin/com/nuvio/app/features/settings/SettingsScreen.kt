@@ -713,6 +713,10 @@ private fun MobileSettingsScreen(
                         )
                     }
                 }
+                SettingsPage.NuvioReshaped -> nuvioReshapedSettingsContent(
+                    isTablet = false,
+                    onPageClick = onPageChange,
+                )
                 SettingsPage.Account -> accountSettingsContent(
                     isTablet = false,
                 )
@@ -1181,6 +1185,10 @@ private fun TabletSettingsScreen(
                             )
                         }
                     }
+                    SettingsPage.NuvioReshaped -> nuvioReshapedSettingsContent(
+                        isTablet = true,
+                        onPageClick = ::openInlinePage,
+                    )
                     SettingsPage.Account -> accountSettingsContent(
                         isTablet = true,
                     )

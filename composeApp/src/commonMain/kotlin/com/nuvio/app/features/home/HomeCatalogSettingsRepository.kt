@@ -557,6 +557,32 @@ object HomeCatalogSettingsRepository {
         }
     }
 
+    fun setAddonCatalogsEnabled(addonId: String, enabled: Boolean) {
+        ensureLoaded()
+        if (addonId.isBlank()) return
+        val keys = definitions
+            .filterNot { definition -> ServerCatalog.isServerKey(definition.key) }
+            .filter { definition -> definition.addonGroupId() == addonId }
+            .map { definition -> definition.key }
+        if (keys.isEmpty()) return
+
+        val updatedPreferences = preferences.toMutableMap()
+        var changed = false
+        keys.forEach { key ->
+            val current = updatedPreferences[key] ?: return@forEach
+            if (current.enabled != enabled) {
+                updatedPreferences[key] = current.copy(enabled = enabled)
+                changed = true
+            }
+        }
+        if (!changed) return
+        preferences = updatedPreferences.toMap()
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+        HomeCatalogSettingsSyncService.triggerPush()
+    }
+
     fun setCustomTitle(key: String, title: String) {
         updatePreference(key) { preference ->
             preference.copy(customTitle = title)
@@ -907,6 +933,40 @@ object HomeCatalogSettingsRepository {
 
     fun moveDown(key: String) {
         move(key = key, direction = 1)
+    }
+
+    fun moveByVisibilityIndex(fromIndex: Int, toIndex: Int, visible: Boolean) {
+        ensureLoaded()
+        val allItems = _uiState.value.items
+        val groupItems = allItems.filter { it.enabled == visible }
+        if (fromIndex !in groupItems.indices || toIndex !in groupItems.indices || fromIndex == toIndex) return
+        val fromItem = groupItems[fromIndex]
+        val toItem = groupItems[toIndex]
+
+        fun pinSection(item: HomeCatalogSettingsItem): HomeCatalogRowPlacement = when {
+            item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP ||
+                (item.isCollection && item.isPinnedToTop) -> HomeCatalogRowPlacement.PINNED_TOP
+            item.rowPlacement == HomeCatalogRowPlacement.PINNED_BOTTOM -> HomeCatalogRowPlacement.PINNED_BOTTOM
+            else -> HomeCatalogRowPlacement.NORMAL
+        }
+        val fromSection = pinSection(fromItem)
+        val toSection = pinSection(toItem)
+        if (fromSection != toSection) return
+        val start = minOf(fromIndex, toIndex)
+        val end = maxOf(fromIndex, toIndex)
+        if (groupItems.subList(start, end + 1).any { item ->
+            item.rowPlacement == HomeCatalogRowPlacement.PINNED_POSITION || pinSection(item) != fromSection
+        }) return
+
+        val reorderedGroup = groupItems.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        val otherItems = allItems.filter { it.enabled != visible }
+        val orderedItems = if (visible) reorderedGroup + otherItems else otherItems + reorderedGroup
+        persistVisibleOrder(orderedItems.map { it.key })
+        enforcePinnedCollectionsAtTop()
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+        HomeCatalogSettingsSyncService.triggerPush()
     }
 
     fun moveByIndex(fromIndex: Int, toIndex: Int) {
