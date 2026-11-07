@@ -28,6 +28,7 @@ internal class DeadLinkStartupMonitor(
     private val sourceDiscoveryLoading: () -> Boolean = { false },
     private val onDeadLink: (StreamItem, String) -> Unit = { _, _ -> },
     private val preserveCandidateOrder: () -> Boolean = { false },
+    private val requestedQualityHeight: () -> Int? = { null },
 ) {
     private val log = Logger.withTag("DeadLinkStartupMonitor")
     private var timer: Job? = null
@@ -41,6 +42,7 @@ internal class DeadLinkStartupMonitor(
     private var buffering = false
     private var awaitingActivation = false
     private var exhausted = false
+    private var fatalFailureInProgress = false
     private var closed = false
 
     fun resetForContent() {
@@ -55,6 +57,7 @@ internal class DeadLinkStartupMonitor(
         buffering = false
         awaitingActivation = false
         exhausted = false
+        fatalFailureInProgress = false
     }
 
     /**
@@ -69,7 +72,10 @@ internal class DeadLinkStartupMonitor(
         val key = identityKeyOverride ?: stream.playerSourceIdentityKey() ?: return
         currentStream = stream
         if (preserveCandidateOrder() && fallbackQualityHeight == null) {
-            fallbackQualityHeight = QualityFirstAutoPlayPolicy.detectQualityHeight(stream)
+            // The user's explicit semi-auto selection is authoritative even when
+            // the selected stream's filename/title does not expose its resolution.
+            fallbackQualityHeight = requestedQualityHeight()
+                ?: QualityFirstAutoPlayPolicy.detectQualityHeight(stream)
         }
         if (!timeoutEnabled()) {
             cancelTimer()
@@ -84,6 +90,7 @@ internal class DeadLinkStartupMonitor(
         }
 
         if (currentKey == key) {
+            if (fatalFailureInProgress) return
             if (awaitingActivation) {
                 // The player has now accepted this candidate. Start its full
                 // startup window from activation rather than from dispatch.
@@ -108,6 +115,7 @@ internal class DeadLinkStartupMonitor(
         buffering = false
         awaitingActivation = false
         exhausted = false
+        fatalFailureInProgress = false
         if (timeoutEnabled()) armTimeout(key, generation)
     }
 
@@ -121,6 +129,7 @@ internal class DeadLinkStartupMonitor(
         buffering = false
         awaitingActivation = false
         exhausted = false
+        fatalFailureInProgress = false
     }
 
     fun playbackStateChanged(
@@ -157,8 +166,33 @@ internal class DeadLinkStartupMonitor(
         if (isPlaying) {
             playbackStarted = true
             awaitingActivation = false
+            fatalFailureInProgress = false
             cancelTimer()
             log.d { "Playback confirmed started; startup fallback disabled for $key" }
+        }
+    }
+
+    /**
+     * A terminal player/resolver error is stronger evidence than a startup timeout.
+     * Advance immediately, but use the same generation-guarded discovery and
+     * candidate activation path so stale errors cannot switch a newer source.
+     */
+    fun playbackFailed(
+        stream: StreamItem?,
+        identityKeyOverride: String? = null,
+    ) {
+        if (closed || !timeoutEnabled() || exhausted || fatalFailureInProgress) return
+        val key = identityKeyOverride ?: stream?.playerSourceIdentityKey() ?: return
+        if (key != currentKey) return
+
+        fatalFailureInProgress = true
+        playbackStarted = false
+        buffering = false
+        cancelTimer()
+        generation++
+        val expectedGeneration = generation
+        scope.launch {
+            findAndActivateFallback(key, expectedGeneration)
         }
     }
 
@@ -253,8 +287,6 @@ internal class DeadLinkStartupMonitor(
                         QualityFirstAutoPlayPolicy.detectQualityHeight(it)?.let { height ->
                             height < currentTierHeight
                         } == true
-                    } ?: eligibleCandidates.firstOrNull {
-                        QualityFirstAutoPlayPolicy.detectQualityHeight(it) == null
                     }
                 }
             } else if (semiAuto) {
@@ -281,6 +313,7 @@ internal class DeadLinkStartupMonitor(
                 buffering = false
                 awaitingActivation = true
                 exhausted = false
+                fatalFailureInProgress = false
                 timer = null
                 armTimeout(nextKey, generation)
                 log.i {

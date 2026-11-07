@@ -848,6 +848,76 @@ class DeadLinkStartupMonitorTest {
         monitor.close()
     }
 
+    @Test
+    fun fatalPlaybackErrorAdvancesImmediatelyAfterPlaybackStarted() = runTest {
+        val current = stream("Current playing source", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Fallback source", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 30 },
+            candidates = { listOf(current, next) },
+            onFallback = fallbacks::add,
+        )
+
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false)
+        monitor.playbackFailed(current)
+        runCurrent()
+
+        assertEquals(listOf(next), fallbacks)
+        monitor.close()
+    }
+
+    @Test
+    fun staleFatalPlaybackErrorCannotSwitchTheNewlySelectedSource() = runTest {
+        val first = stream("Old source", "addon:first", "https://media.example/first.mp4")
+        val second = stream("Current source", "addon:second", "https://media.example/second.mp4")
+        val third = stream("Next source", "addon:third", "https://media.example/third.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 30 },
+            candidates = { listOf(first, second, third) },
+            onFallback = fallbacks::add,
+        )
+
+        monitor.sourceSelected(first)
+        runCurrent()
+        monitor.sourceSelected(second)
+        runCurrent()
+        monitor.playbackFailed(first)
+        runCurrent()
+
+        assertTrue(fallbacks.isEmpty())
+        monitor.close()
+    }
+
+    @Test
+    fun explicitSemiAutoQualityIsUsedWhenSelectedSourceHasNoQualityMetadata() = runTest {
+        val selected = stream("Unclassified selected source", "addon:selected", "https://media.example/unknown.mp4")
+        val lower720 = stream("720p fallback", "plugin:lower", "https://media.example/720.mp4")
+        val higher2160 = stream("2160p above selection", "addon:higher", "https://media.example/2160.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 5 },
+            candidates = { listOf(selected, higher2160, lower720) },
+            onFallback = fallbacks::add,
+            preserveCandidateOrder = { true },
+            requestedQualityHeight = { 1080 },
+        )
+
+        monitor.sourceSelected(selected)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(listOf(lower720), fallbacks)
+        monitor.close()
+    }
+
     private fun stream(name: String, addonId: String, url: String) =
         StreamItem(name = name, url = url, addonName = name, addonId = addonId)
 
@@ -860,6 +930,8 @@ class DeadLinkStartupMonitorTest {
         sourceDiscoveryLoading: () -> Boolean = { false },
         onDeadLink: (StreamItem, String) -> Unit = { _, _ -> },
         timeoutEnabled: () -> Boolean = { true },
+        preserveCandidateOrder: () -> Boolean = { false },
+        requestedQualityHeight: () -> Int? = { null },
     ) = DeadLinkStartupMonitor(
         scope = scope,
         timeoutSeconds = timeoutSeconds,
@@ -869,5 +941,7 @@ class DeadLinkStartupMonitorTest {
         onExhausted = onExhausted,
         sourceDiscoveryLoading = sourceDiscoveryLoading,
         onDeadLink = onDeadLink,
+        preserveCandidateOrder = preserveCandidateOrder,
+        requestedQualityHeight = requestedQualityHeight,
     )
 }
