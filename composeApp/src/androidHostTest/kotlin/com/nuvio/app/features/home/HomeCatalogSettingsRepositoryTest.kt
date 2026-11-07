@@ -66,6 +66,50 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
+    fun mergedRowBlendSelectionPersistsAcrossCreateEditAndReload() {
+        val catalogs = listOf(addon(listOf("popular", "latest")))
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+
+        val eligibleKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys()
+        assertEquals(setOf("test:movie:popular", "test:movie:latest"), eligibleKeys)
+
+        val createdId = HomeCatalogSettingsRepository.createMergedRow(
+            title = "Combined",
+            sourceKeys = eligibleKeys.toList(),
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED,
+        )
+        assertNotNull(createdId)
+        val rowId = requireNotNull(createdId)
+        assertEquals(
+            MergedHomeRowBlendMode.RATING_WEIGHTED,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+
+        assertTrue(
+            HomeCatalogSettingsRepository.updateMergedRow(
+                id = rowId,
+                title = "Combined edited",
+                sourceKeys = eligibleKeys.toList(),
+                displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
+                deduplicate = true,
+                blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            ),
+        )
+        assertEquals(
+            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+
+        HomeCatalogSettingsRepository.clearLocalState()
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+        assertEquals(
+            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+    }
+
+    @Test
     fun unchangedCatalogsDoNotRewriteSettings() {
         val addons = listOf(addon())
         HomeCatalogSettingsRepository.syncCatalogs(addons)
