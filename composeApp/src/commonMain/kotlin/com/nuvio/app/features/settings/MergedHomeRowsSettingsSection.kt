@@ -142,7 +142,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
             row = editingRow,
             sourceRows = sourceRows,
             onDismiss = { showEditor = false },
-            onSave = { title, keys, mode, type, blend, deduplicate, hideIncluded ->
+            onSave = { title, keys, mode, type, blend, deduplicate, hideIncluded, hidePosterless ->
                 val saved = if (editingRow == null) {
                     HomeCatalogSettingsRepository.createMergedRow(
                         title = title,
@@ -152,6 +152,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         contentType = type,
                         blendMode = blend,
                         hideIncludedRows = hideIncluded,
+                        hideTitlesWithoutPosters = hidePosterless,
                     ) != null
                 } else {
                     HomeCatalogSettingsRepository.updateMergedRow(
@@ -163,6 +164,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         contentType = type,
                         blendMode = blend,
                         hideIncludedRows = hideIncluded,
+                        hideTitlesWithoutPosters = hidePosterless,
                     )
                 }
                 if (saved) showEditor = false
@@ -202,6 +204,7 @@ private fun MergedHomeRowEditorDialog(
         MergedHomeRowBlendMode,
         Boolean,
         Boolean,
+        Boolean,
     ) -> Boolean,
 ) {
     var title by remember(row?.id) { mutableStateOf(row?.title.orEmpty()) }
@@ -231,6 +234,7 @@ private fun MergedHomeRowEditorDialog(
     }
     var deduplicate by remember(row?.id) { mutableStateOf(row?.deduplicate ?: true) }
     var hideIncluded by remember(row?.id) { mutableStateOf(row?.hideIncludedRows ?: false) }
+    var hidePosterless by remember(row?.id) { mutableStateOf(row?.hideTitlesWithoutPosters ?: false) }
     var validationError by remember(row?.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -318,6 +322,10 @@ private fun MergedHomeRowEditorDialog(
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
                     Text("Hide included source rows from Home")
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hidePosterless, onCheckedChange = { hidePosterless = it })
+                    Text("Hide titles without posters")
+                }
                 validationError?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }
         },
@@ -331,7 +339,7 @@ private fun MergedHomeRowEditorDialog(
                     else -> null
                 }
                 if (validationError == null) {
-                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, contentType, blendMode, deduplicate, hideIncluded)) {
+                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, contentType, blendMode, deduplicate, hideIncluded, hidePosterless)) {
                         onDismiss()
                     } else {
                         validationError = "The selected source catalogs are no longer available."

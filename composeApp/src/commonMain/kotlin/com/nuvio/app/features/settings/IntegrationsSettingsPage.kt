@@ -2,7 +2,6 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudQueue
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.foundation.lazy.LazyListScope
@@ -85,7 +84,7 @@ internal fun LazyListScope.integrationsContent(
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_discord_rpc),
                         description = stringResource(Res.string.settings_integrations_discord_description),
-                        icon = Icons.Rounded.Forum,
+                        iconPainter = integrationLogoPainter(IntegrationLogo.Discord),
                         isTablet = isTablet,
                         onClick = onDiscordClick,
                     )
@@ -95,6 +94,7 @@ internal fun LazyListScope.integrationsContent(
                     SettingsNavigationRow(
                         title = stringResource(Res.string.settings_telegram_title),
                         description = stringResource(Res.string.settings_telegram_description),
+                        iconPainter = integrationLogoPainter(IntegrationLogo.Telegram),
                         isTablet = isTablet,
                         onClick = onTelegramClick,
                     )

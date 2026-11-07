@@ -477,7 +477,7 @@ object HomeRepository {
                     blendMode = row.resolvedBlendMode(),
                     sortMode = MergedHomeRowSortMode.OFF,
                     contentType = contentType,
-                    hideTitlesWithoutPosters = false,
+                    hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                 )
                 val hasMore = sourceSections.any(HomeCatalogSection::hasMore)
                 if (mergedItems.isEmpty() && !hasMore) return@mapNotNull null
@@ -488,7 +488,7 @@ object HomeRepository {
                             val sourceItems = filterMergedHomeItems(
                                 items = source.items,
                                 contentType = contentType,
-                                hideTitlesWithoutPosters = false,
+                                hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                             )
                             add(
                                 HomeCatalogTab(
@@ -507,7 +507,7 @@ object HomeRepository {
                         deduplicate = row.deduplicate,
                         blendMode = row.resolvedBlendMode(),
                         sortMode = MergedHomeRowSortMode.OFF,
-                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters,
+                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                         hasMore = hasMore,
                         maxItems = HOME_MERGED_ROW_ITEM_LIMIT,
                     )
