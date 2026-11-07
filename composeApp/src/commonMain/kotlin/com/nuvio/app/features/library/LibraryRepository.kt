@@ -429,6 +429,7 @@ object LibraryRepository {
         item: LibraryItem,
         status: com.nuvio.app.features.tracking.TrackingListStatus,
         providerId: TrackingProviderId,
+        confirmedRemovalProviders: Set<TrackingProviderId> = emptySet(),
     ): TrackingMembershipApplyResult {
         ensureLoaded()
         require(!ServerItemRef.isServerId(item.id)) {
@@ -459,7 +460,7 @@ object LibraryRepository {
         return applyMembershipChanges(
             item = item,
             desiredMembership = desiredMembership,
-            confirmedRemovalProviders = emptySet(),
+            confirmedRemovalProviders = confirmedRemovalProviders,
             targetProviderIds = setOf(providerId),
             updateLocal = false,
         )
