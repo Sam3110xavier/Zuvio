@@ -538,7 +538,7 @@ object HomeRepository {
             if (preference?.enabled == false) return@mapNotNull null
             section.copy(
                 items = section.items.reapplyCustomPosterUrls(posterPattern),
-            ).withReleaseFilter().withGlobalPosterFilter().copy(
+            ).withReleaseFilter().copy(
                 title = preference?.customTitle?.takeIf { it.isNotBlank() } ?: section.title,
             )
         }
