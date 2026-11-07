@@ -716,9 +716,11 @@ private data class HeroPageLayer(
     val itemIndex: Int,
 )
 
-private fun heroArtworkUrl(item: MetaPreview, source: HomeHeroArtworkSource): String? = when (source) {
-    HomeHeroArtworkSource.POSTER -> item.poster ?: item.banner
-    HomeHeroArtworkSource.BACKDROP -> item.banner ?: item.poster
+internal fun heroArtworkUrl(item: MetaPreview, source: HomeHeroArtworkSource): String? = when (source) {
+    HomeHeroArtworkSource.POSTER -> item.poster ?: item.landscapePoster ?: item.banner
+    // Some catalog providers populate landscapePoster without banner/background.
+    // Prefer the explicit wide artwork before falling back to a portrait poster.
+    HomeHeroArtworkSource.BACKDROP -> item.banner ?: item.landscapePoster ?: item.poster
 }
 
 private fun heroPageOffset(

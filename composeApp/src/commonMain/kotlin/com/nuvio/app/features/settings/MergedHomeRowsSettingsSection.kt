@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -85,8 +84,9 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
     }
 
     state.mergedRows.sortedBy { it.order }.forEach { row ->
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 4.dp),
+        SettingsGroup(
+            isTablet = isTablet,
+            modifier = Modifier.padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
