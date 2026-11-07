@@ -83,6 +83,7 @@ import com.nuvio.app.core.ui.PrefetchArtworkDominantColors
 import com.nuvio.app.core.ui.focusedAlignment
 import com.nuvio.app.core.ui.rememberBackdropFocusState
 import com.nuvio.app.core.ui.heroStretchHeight
+import com.nuvio.app.core.ui.isLandscapeLogo
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.ScreenActivityEffect
 import com.nuvio.app.core.ui.heroStretchZoom
@@ -824,6 +825,12 @@ private fun HeroContentBlock(
                     },
                 alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
+                onSuccess = { state ->
+                    logoLoadError = !isLandscapeLogo(
+                        width = state.result.image.width,
+                        height = state.result.image.height,
+                    )
+                },
                 onError = { logoLoadError = true },
             )
         } else {

@@ -41,13 +41,11 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
     var editingRow by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
-    val sourceRows = remember(state.items) {
-        state.items.filter { item ->
-            item.addonId != null &&
-                !item.addonId.startsWith("cloudstream:") &&
-                !item.isCollection &&
-                !item.isMergedRow
-        }
+    val eligibleSourceKeys = remember(state.items) {
+        HomeCatalogSettingsRepository.mergedRowSourceKeys()
+    }
+    val sourceRows = remember(state.items, eligibleSourceKeys) {
+        state.items.filter { item -> item.key in eligibleSourceKeys }
     }
 
     SettingsSection(
