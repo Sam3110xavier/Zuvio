@@ -75,6 +75,46 @@ class PartyStreamTest {
     }
 
     @Test
+    fun guestsWaitWhenTheHostLeavesEvenIfNoStreamWasShared() {
+        assertTrue(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = true,
+                hasSharedBefore = false,
+                sharingEnabled = false,
+            ),
+        )
+        assertFalse(
+            shouldWaitForPartyHostShare(
+                isHost = true,
+                hostUnavailable = true,
+                hasSharedBefore = true,
+                sharingEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun guestsStopAfterAPreviouslySharedStreamIsWithdrawn() {
+        assertTrue(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = false,
+                hasSharedBefore = true,
+                sharingEnabled = false,
+            ),
+        )
+        assertFalse(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = false,
+                hasSharedBefore = false,
+                sharingEnabled = false,
+            ),
+        )
+    }
+
+    @Test
     fun guestFollowsSharedUrlOnlyForTheMatchingPartyMedia() {
         assertTrue(
             shouldFollowSharedPartyStream(
