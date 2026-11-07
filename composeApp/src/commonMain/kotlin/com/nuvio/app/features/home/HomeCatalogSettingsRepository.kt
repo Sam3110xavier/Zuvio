@@ -619,11 +619,12 @@ object HomeCatalogSettingsRepository {
     ): String? {
         ensureLoaded()
         val availableSourceKeys = eligibleMergedRowSourceKeys()
-        val validSources = sourceKeys.distinct()
-            .filter { it in availableSourceKeys }
-            .take(MAX_MERGED_HOME_ROW_SOURCES)
+        val requestedSources = sourceKeys.distinct()
+        if (requestedSources.size !in 2..MAX_MERGED_HOME_ROW_SOURCES) return null
+        if (requestedSources.any { it !in availableSourceKeys }) return null
+        val validSources = requestedSources
         val safeTitle = title.trim()
-        if (safeTitle.isBlank() || validSources.size < 2) return null
+        if (safeTitle.isBlank()) return null
 
         var id: String
         do {
@@ -673,11 +674,12 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         val existing = mergedRows.firstOrNull { it.id == id } ?: return false
         val availableSourceKeys = eligibleMergedRowSourceKeys()
-        val validSources = sourceKeys.distinct()
-            .filter { it in availableSourceKeys }
-            .take(MAX_MERGED_HOME_ROW_SOURCES)
+        val requestedSources = sourceKeys.distinct()
+        if (requestedSources.size !in 2..MAX_MERGED_HOME_ROW_SOURCES) return false
+        if (requestedSources.any { it !in availableSourceKeys }) return false
+        val validSources = requestedSources
         val safeTitle = title.trim()
-        if (safeTitle.isBlank() || validSources.size < 2) return false
+        if (safeTitle.isBlank()) return false
         val updated = existing.copy(
             title = safeTitle,
             sourceKeys = validSources,

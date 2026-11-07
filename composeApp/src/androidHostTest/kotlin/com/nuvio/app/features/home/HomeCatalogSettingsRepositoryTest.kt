@@ -110,6 +110,48 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
+    fun mergedRowsRejectMoreThanTheMaximumSourcesInsteadOfSilentlyTruncating() {
+        val catalogIds = (1..10).map { "catalog-$it" }
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(catalogIds)))
+        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Too many",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
+
+        val allowedKeys = sourceKeys.take(MAX_MERGED_HOME_ROW_SOURCES)
+        val createdId = HomeCatalogSettingsRepository.createMergedRow(
+            title = "Within limit",
+            sourceKeys = allowedKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        )
+        assertNotNull(createdId)
+        val before = HomeCatalogSettingsRepository.uiState.value.mergedRows.single()
+
+        assertTrue(!HomeCatalogSettingsRepository.updateMergedRow(
+            id = requireNotNull(createdId),
+            title = "Should not update",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
+            deduplicate = true,
+        ))
+        assertEquals(before, HomeCatalogSettingsRepository.uiState.value.mergedRows.single())
+    }
+
+    @Test
+    fun mergedRowsRejectUnavailableSourcesWithoutDroppingThemSilently() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
+        val available = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Missing source",
+            sourceKeys = available + "missing:catalog",
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
+    }
+
+    @Test
     fun unchangedCatalogsDoNotRewriteSettings() {
         val addons = listOf(addon())
         HomeCatalogSettingsRepository.syncCatalogs(addons)

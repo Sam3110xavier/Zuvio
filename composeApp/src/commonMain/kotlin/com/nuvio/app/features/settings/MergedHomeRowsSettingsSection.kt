@@ -99,6 +99,14 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         "${row.sourceKeys.size} source catalogs · ${row.resolvedDisplayMode().name.lowercase().replace('_', ' ')}",
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     )
+                    val sourceLabels = row.sourceKeys.map { key ->
+                        sourceRows.firstOrNull { it.key == key }?.displayTitle ?: "Unavailable: $key"
+                    }
+                    Text(
+                        sourceLabels.joinToString(" · "),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Switch(
                     checked = HomeCatalogSettingsRepository.mergedRowEnabled(row.id),
@@ -198,9 +206,12 @@ private fun MergedHomeRowEditorDialog(
 ) {
     var title by remember(row?.id) { mutableStateOf(row?.title.orEmpty()) }
     val availableSourceKeys = remember(sourceRows) { sourceRows.mapTo(mutableSetOf()) { it.key } }
-    var selectedKeys by remember(row?.id, availableSourceKeys) {
-        mutableStateOf(row?.sourceKeys?.filter { it in availableSourceKeys }?.toSet().orEmpty())
+    // Keep unavailable keys in the draft so editing a row never silently drops them.
+    var selectedKeys by remember(row?.id) {
+        mutableStateOf(row?.sourceKeys?.toSet().orEmpty())
     }
+    val unavailableSourceKeys = selectedKeys.filterNot { it in availableSourceKeys }.sorted()
+    val validSelectedCount = selectedKeys.count { it in availableSourceKeys }
     var displayMode by remember(row?.id) {
         mutableStateOf(row?.resolvedDisplayMode() ?: MergedHomeRowDisplayMode.SOURCE_TABS)
     }
@@ -208,7 +219,15 @@ private fun MergedHomeRowEditorDialog(
         mutableStateOf(row?.resolvedContentType() ?: MergedHomeRowContentType.ALL)
     }
     var blendMode by remember(row?.id) {
-        mutableStateOf(row?.resolvedBlendMode() ?: MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY)
+        mutableStateOf(
+            row?.resolvedBlendMode()
+                ?.takeIf {
+                    it == MergedHomeRowBlendMode.INTERLEAVE ||
+                        it == MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY ||
+                        it == MergedHomeRowBlendMode.FRESHNESS_WEIGHTED
+                }
+                ?: MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY,
+        )
     }
     var deduplicate by remember(row?.id) { mutableStateOf(row?.deduplicate ?: true) }
     var hideIncluded by remember(row?.id) { mutableStateOf(row?.hideIncludedRows ?: false) }
@@ -255,19 +274,27 @@ private fun MergedHomeRowEditorDialog(
                 MergedChoiceRow("Freshness weighted", blendMode == MergedHomeRowBlendMode.FRESHNESS_WEIGHTED) {
                     blendMode = MergedHomeRowBlendMode.FRESHNESS_WEIGHTED
                 }
-                MergedChoiceRow("Popularity weighted", blendMode == MergedHomeRowBlendMode.POPULARITY_WEIGHTED) {
-                    blendMode = MergedHomeRowBlendMode.POPULARITY_WEIGHTED
+                Text(
+                    "Source catalogs ($validSelectedCount/$MAX_MERGED_HOME_ROW_SOURCES selected)",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+                )
+                unavailableSourceKeys.forEach { key ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Unavailable source",
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                            )
+                            Text(key, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { selectedKeys = selectedKeys - key }) {
+                            Text("Remove")
+                        }
+                    }
                 }
-                MergedChoiceRow("Rating weighted", blendMode == MergedHomeRowBlendMode.RATING_WEIGHTED) {
-                    blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED
-                }
-                MergedChoiceRow("Provider priority", blendMode == MergedHomeRowBlendMode.PROVIDER_PRIORITY) {
-                    blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY
-                }
-                MergedChoiceRow("Random", blendMode == MergedHomeRowBlendMode.RANDOM) {
-                    blendMode = MergedHomeRowBlendMode.RANDOM
-                }
-                Text("Source catalogs (up to $MAX_MERGED_HOME_ROW_SOURCES)", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                 sourceRows.forEach { item ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
@@ -298,11 +325,13 @@ private fun MergedHomeRowEditorDialog(
             Button(onClick = {
                 validationError = when {
                     title.isBlank() -> "Enter a title."
-                    selectedKeys.size < 2 -> "Select at least two source catalogs."
+                    validSelectedCount < 2 -> "Select at least two available source catalogs."
+                    validSelectedCount > MAX_MERGED_HOME_ROW_SOURCES -> "Select no more than $MAX_MERGED_HOME_ROW_SOURCES source catalogs."
+                    unavailableSourceKeys.isNotEmpty() -> "Remove unavailable sources before saving."
                     else -> null
                 }
                 if (validationError == null) {
-                    if (onSave(title, selectedKeys.toList(), displayMode, contentType, blendMode, deduplicate, hideIncluded)) {
+                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, contentType, blendMode, deduplicate, hideIncluded)) {
                         onDismiss()
                     } else {
                         validationError = "The selected source catalogs are no longer available."
