@@ -254,8 +254,20 @@ private fun MergedHomeRowEditorDialog(
                 MergedChoiceRow("Smart freshness and popularity", blendMode == MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY) {
                     blendMode = MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY
                 }
+                MergedChoiceRow("Freshness weighted", blendMode == MergedHomeRowBlendMode.FRESHNESS_WEIGHTED) {
+                    blendMode = MergedHomeRowBlendMode.FRESHNESS_WEIGHTED
+                }
+                MergedChoiceRow("Popularity weighted", blendMode == MergedHomeRowBlendMode.POPULARITY_WEIGHTED) {
+                    blendMode = MergedHomeRowBlendMode.POPULARITY_WEIGHTED
+                }
+                MergedChoiceRow("Rating weighted", blendMode == MergedHomeRowBlendMode.RATING_WEIGHTED) {
+                    blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED
+                }
                 MergedChoiceRow("Provider priority", blendMode == MergedHomeRowBlendMode.PROVIDER_PRIORITY) {
                     blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY
+                }
+                MergedChoiceRow("Random", blendMode == MergedHomeRowBlendMode.RANDOM) {
+                    blendMode = MergedHomeRowBlendMode.RANDOM
                 }
                 Text("Source catalogs (up to $MAX_MERGED_HOME_ROW_SOURCES)", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                 sourceRows.forEach { item ->
