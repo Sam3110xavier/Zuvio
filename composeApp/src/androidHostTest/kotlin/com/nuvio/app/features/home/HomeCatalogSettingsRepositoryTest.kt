@@ -111,7 +111,7 @@ class HomeCatalogSettingsRepositoryTest {
 
     @Test
     fun mergedRowsRejectMoreThanTheMaximumSourcesInsteadOfSilentlyTruncating() {
-        val catalogIds = (1..10).map { "catalog-$it" }
+        val catalogIds = (1..14).map { "catalog-$it" }
         HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(catalogIds)))
         val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
 
