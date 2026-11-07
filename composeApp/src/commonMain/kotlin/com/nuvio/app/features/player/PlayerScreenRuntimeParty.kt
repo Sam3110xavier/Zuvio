@@ -278,8 +278,17 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         onDispose { source?.setSystemControlHandler(null) }
     }
 
-    LaunchedEffect(sharing, sharedStream) {
-        if (sharing) PartyRepository.shareStream(sharedStream)
+    LaunchedEffect(sharing, sharedStream, partyState.party?.media?.key, key) {
+        if (
+            shouldShareHostStreamForMedia(
+                isHost = partyState.party?.isHost == true,
+                sharingEnabled = sharing,
+                partyMediaKey = partyState.party?.media?.key,
+                localMediaKey = key,
+            )
+        ) {
+            PartyRepository.shareStream(sharedStream)
+        }
     }
 
     // "Share my stream" is a host opt-in. A missing stream while enabled means the current
