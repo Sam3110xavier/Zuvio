@@ -426,10 +426,18 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
                 playerReady = initialLoadCompleted,
             )
         ) {
-            PartyRepository.publishMedia(
-                currentPartyMedia(),
-                positionMs = currentPlaybackPositionMs(),
-            )
+            if (sharing) {
+                PartyRepository.publishMediaAndShare(
+                    media = currentPartyMedia(),
+                    positionMs = currentPlaybackPositionMs(),
+                    stream = sharedStream,
+                )
+            } else {
+                PartyRepository.publishMedia(
+                    currentPartyMedia(),
+                    positionMs = currentPlaybackPositionMs(),
+                )
+            }
         }
     }
 
