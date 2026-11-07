@@ -36,12 +36,17 @@ internal fun buildSimklApiUrl(
 
 internal fun simklRequestHeaders(
     accessToken: String? = null,
-    contentTypeJson: Boolean = false,
+    contentType: String? = null,
 ): Map<String, String> = buildMap {
     put("User-Agent", "${SimklConfig.APP_NAME}/$simklAppVersion")
     put("Accept", "application/json")
     accessToken?.trim()?.takeIf(String::isNotBlank)?.let { token ->
         put("Authorization", "Bearer $token")
     }
-    if (contentTypeJson) put("Content-Type", "application/json")
+    contentType?.let { put("Content-Type", it) }
 }
+
+internal fun simklFormBody(fields: Map<String, String>): String =
+    fields.entries.joinToString("&") { (key, value) ->
+        "${key.encodeURLParameter()}=${value.encodeURLParameter()}"
+    }
