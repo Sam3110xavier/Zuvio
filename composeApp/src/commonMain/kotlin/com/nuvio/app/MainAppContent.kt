@@ -1171,7 +1171,7 @@ internal fun MainAppContent(
             )
         }
 
-        fun openPartyMedia(media: PartyMedia) {
+        fun launchPartyMedia(media: PartyMedia, manualSelection: Boolean) {
             if (navController.currentRoute is PlayerRoute) navController.popBackStack()
             val resumePositionMs = PartyRepository.playback.value
                 ?.takeIf { it.mediaKey == null || it.mediaKey == media.key }
@@ -1192,10 +1192,14 @@ internal fun MainAppContent(
                 pauseDescription = null,
                 resumePositionMs = resumePositionMs,
                 resumeProgressFraction = null,
-                manualSelection = true,
+                manualSelection = manualSelection,
                 startFromBeginning = resumePositionMs == null,
             )
         }
+
+        fun openPartyMedia(media: PartyMedia) = launchPartyMedia(media, manualSelection = true)
+
+        fun followPartyMedia(media: PartyMedia) = launchPartyMedia(media, manualSelection = false)
 
         val onPlay: ContentPlayAction =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
@@ -1896,6 +1900,7 @@ internal fun MainAppContent(
                             launchExternalPlayer = launchExternalPlayer,
                             openExternalStreamUrl = ::openExternalStreamUrl,
                             onOpenPartyMedia = ::openPartyMedia,
+                            onFollowPartyMedia = ::followPartyMedia,
                         )
                     }
                     }
@@ -2079,6 +2084,7 @@ internal fun MainAppContent(
                     launchExternalPlayer = launchExternalPlayer,
                     openExternalStreamUrl = ::openExternalStreamUrl,
                     onOpenPartyMedia = ::openPartyMedia,
+                            onFollowPartyMedia = ::followPartyMedia,
                     onBackOverride = {
                         if (navController.currentRoute == route) {
                             navController.popBackStack(expectedRoute = route)
