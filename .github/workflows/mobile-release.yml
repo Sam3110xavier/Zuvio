@@ -64,7 +64,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
       RELEASE_KEYSTORE_BASE64: ${{ secrets.NUVIO_RELEASE_KEYSTORE_BASE64 }}
-      CONTRIBUTIONS_URL: https://api.github.com/repos/luqmanfadlli/NuvioMobile-Enhanced/contributors?per_page=100
+      CONTRIBUTIONS_URL: https://api.github.com/repos/${{ github.repository }}/contributors?per_page=100
 
     steps:
       - name: Check out full history
@@ -213,7 +213,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.prepare.outputs.tag }}
       RELEASE_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
       RELEASE_KEYSTORE_BASE64: ${{ secrets.NUVIO_RELEASE_KEYSTORE_BASE64 }}
-      CONTRIBUTIONS_URL: https://api.github.com/repos/luqmanfadlli/NuvioMobile-Enhanced/contributors?per_page=100
+      CONTRIBUTIONS_URL: https://api.github.com/repos/${{ github.repository }}/contributors?per_page=100
 
     steps:
       - name: Check out source
