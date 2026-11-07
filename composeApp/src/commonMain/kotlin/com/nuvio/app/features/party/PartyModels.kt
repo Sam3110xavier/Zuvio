@@ -98,6 +98,18 @@ internal fun shouldFollowSharedPartyStream(
         stream.url != activeSourceUrl
 }
 
+/**
+ * Guests must stop when the host leaves or when a previously shared source is withdrawn.
+ * A host that has never shared anything does not interrupt independent guest playback.
+ */
+internal fun shouldWaitForPartyHostShare(
+    isHost: Boolean,
+    hostUnavailable: Boolean,
+    hasSharedBefore: Boolean,
+    sharingEnabled: Boolean,
+): Boolean =
+    !isHost && (hostUnavailable || (hasSharedBefore && !sharingEnabled))
+
 private val SHAREABLE_URL = Regex("^https?://(?!localhost|127\\.|0\\.0\\.0\\.0|\\[::1])[^\\s/]+", RegexOption.IGNORE_CASE)
 
 internal fun partyMediaKey(metaType: String, metaId: String, season: Int?, episode: Int?): String =
