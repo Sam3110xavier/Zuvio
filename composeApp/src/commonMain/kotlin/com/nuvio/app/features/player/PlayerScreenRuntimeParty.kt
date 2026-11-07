@@ -67,6 +67,7 @@ import com.nuvio.app.features.party.PartySync
 import com.nuvio.app.features.party.UnreadBadge
 import com.nuvio.app.features.party.messageRes
 import com.nuvio.app.features.party.partyMediaKey
+import com.nuvio.app.features.party.shouldPublishHostPartyMedia
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
@@ -399,6 +400,27 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         )
         activeInitialPositionMs = targetPositionMs
         activeInitialProgressFraction = null
+    }
+
+    // A host opening another title gets a new player runtime. The old runtime cannot
+    // publish the new media across that navigation boundary, so announce it when the
+    // replacement player's initial source is ready. With sharing enabled, the stream
+    // effect above then publishes the exact source for the new media to every guest.
+    LaunchedEffect(partyId, key, partyState.party?.isHost, initialLoadCompleted) {
+        val party = PartyRepository.state.value.party ?: return@LaunchedEffect
+        if (
+            shouldPublishHostPartyMedia(
+                isHost = party.isHost,
+                partyMediaKey = party.media.key,
+                localMediaKey = key,
+                playerReady = initialLoadCompleted,
+            )
+        ) {
+            PartyRepository.publishMedia(
+                currentPartyMedia(),
+                positionMs = currentPlaybackPositionMs(),
+            )
+        }
     }
 
     LaunchedEffect(key) {

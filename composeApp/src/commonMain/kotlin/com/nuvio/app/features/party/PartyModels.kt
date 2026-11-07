@@ -110,6 +110,14 @@ internal fun shouldWaitForPartyHostShare(
 ): Boolean =
     !isHost && (hostUnavailable || (hasSharedBefore && !sharingEnabled))
 
+/** A replacement host player must announce its media before its source can be shared. */
+internal fun shouldPublishHostPartyMedia(
+    isHost: Boolean,
+    partyMediaKey: String,
+    localMediaKey: String,
+    playerReady: Boolean,
+): Boolean = isHost && playerReady && partyMediaKey != localMediaKey
+
 private val SHAREABLE_URL = Regex("^https?://(?!localhost|127\\.|0\\.0\\.0\\.0|\\[::1])[^\\s/]+", RegexOption.IGNORE_CASE)
 
 internal fun partyMediaKey(metaType: String, metaId: String, season: Int?, episode: Int?): String =

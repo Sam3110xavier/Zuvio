@@ -177,4 +177,13 @@ class PartyStreamTest {
             ),
         )
     }
+
+    @Test
+    fun hostPublishesNewMediaAfterReplacementPlayerIsReady() {
+        assertTrue(shouldPublishHostPartyMedia(true, "movie|old||", "movie|new||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(false, "movie|old||", "movie|new||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(true, "movie|same||", "movie|same||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(true, "movie|old||", "movie|new||", playerReady = false))
+    }
+
 }
