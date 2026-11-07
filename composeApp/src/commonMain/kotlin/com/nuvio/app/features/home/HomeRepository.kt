@@ -345,10 +345,32 @@ object HomeRepository {
     private fun applySnapshot(snapshot: HomeSnapshot) {
         if (snapshot.sections.isEmpty()) return
         cachedSections = snapshot.sections.toMap()
+        val hidePosterlessTitles = HomeCatalogSettingsRepository.snapshot().hideMergedTitlesWithoutPosters
+        val visibleSections = snapshot.sections.mapNotNull { (_, section) ->
+            val visibleItems = if (hidePosterlessTitles) {
+                filterMergedHomeItems(
+                    items = section.items,
+                    contentType = MergedHomeRowContentType.ALL,
+                    hideTitlesWithoutPosters = true,
+                )
+            } else {
+                section.items
+            }
+            section.copy(items = visibleItems).takeIf { it.items.isNotEmpty() || it.hasMore }
+        }
+        val visibleHeroItems = if (hidePosterlessTitles) {
+            filterMergedHomeItems(
+                items = snapshot.heroItems,
+                contentType = MergedHomeRowContentType.ALL,
+                hideTitlesWithoutPosters = true,
+            )
+        } else {
+            snapshot.heroItems
+        }
         _uiState.value = HomeUiState(
             isLoading = true,
-            heroItems = snapshot.heroItems,
-            sections = snapshot.sections.map { (_, section) -> section },
+            heroItems = visibleHeroItems,
+            sections = visibleSections,
         )
     }
 
