@@ -2276,17 +2276,37 @@ internal fun MainAppContent(
                                             label = "Mark as Dropped",
                                             onSelected = {
                                                 coroutineScope.launch {
-                                                    runCatching {
+                                                    val updateStatus: suspend (Set<TrackingProviderId>) -> TrackingMembershipApplyResult = { confirmedProviders ->
                                                         LibraryRepository.moveToStatus(
                                                             item = item,
                                                             status = TrackingListStatus.DROPPED,
                                                             providerId = providerId,
-                                                        )
-                                                    }.onFailure { error ->
-                                                        NuvioToastController.show(
-                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                            confirmedRemovalProviders = confirmedProviders,
                                                         )
                                                     }
+                                                    executeTrackingMembershipOperation(
+                                                        operation = { updateStatus(emptySet()) },
+                                                        onSuccess = { result ->
+                                                            if (result.requiresRemovalConfirmation) {
+                                                                pendingTrackingRemoval = PendingTrackingMembershipRemoval(
+                                                                    itemTitle = item.name,
+                                                                    confirmations = result.requiredRemovalConfirmations,
+                                                                    retry = updateStatus,
+                                                                    onApplied = {},
+                                                                    onFailure = { error ->
+                                                                        NuvioToastController.show(
+                                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                                        )
+                                                                    },
+                                                                )
+                                                            }
+                                                        },
+                                                        onFailure = { error ->
+                                                            NuvioToastController.show(
+                                                                error.message ?: trackingListsUpdateFailedMessage,
+                                                            )
+                                                        },
+                                                    )
                                                 }
                                             },
                                         ),
@@ -2299,17 +2319,37 @@ internal fun MainAppContent(
                                             label = "Mark as On Hold",
                                             onSelected = {
                                                 coroutineScope.launch {
-                                                    runCatching {
+                                                    val updateStatus: suspend (Set<TrackingProviderId>) -> TrackingMembershipApplyResult = { confirmedProviders ->
                                                         LibraryRepository.moveToStatus(
                                                             item = item,
                                                             status = TrackingListStatus.ON_HOLD,
                                                             providerId = providerId,
-                                                        )
-                                                    }.onFailure { error ->
-                                                        NuvioToastController.show(
-                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                            confirmedRemovalProviders = confirmedProviders,
                                                         )
                                                     }
+                                                    executeTrackingMembershipOperation(
+                                                        operation = { updateStatus(emptySet()) },
+                                                        onSuccess = { result ->
+                                                            if (result.requiresRemovalConfirmation) {
+                                                                pendingTrackingRemoval = PendingTrackingMembershipRemoval(
+                                                                    itemTitle = item.name,
+                                                                    confirmations = result.requiredRemovalConfirmations,
+                                                                    retry = updateStatus,
+                                                                    onApplied = {},
+                                                                    onFailure = { error ->
+                                                                        NuvioToastController.show(
+                                                                            error.message ?: trackingListsUpdateFailedMessage,
+                                                                        )
+                                                                    },
+                                                                )
+                                                            }
+                                                        },
+                                                        onFailure = { error ->
+                                                            NuvioToastController.show(
+                                                                error.message ?: trackingListsUpdateFailedMessage,
+                                                            )
+                                                        },
+                                                    )
                                                 }
                                             },
                                         ),
