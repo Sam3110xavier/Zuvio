@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -84,7 +85,7 @@ private fun HomeCatalogRowSectionContent(
     onPosterLongClick: ((MetaPreview) -> Unit)?,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
-    var selectedTabKey by remember(section.key) { mutableStateOf("all") }
+    var selectedTabKey by rememberSaveable(section.key) { mutableStateOf("all") }
     val selectedTab = section.sourceTabs.firstOrNull { it.key == selectedTabKey }
         ?: section.sourceTabs.firstOrNull()
     val previewEntryKeys = remember(entries) { entries.mapTo(hashSetOf()) { it.stableKey() } }

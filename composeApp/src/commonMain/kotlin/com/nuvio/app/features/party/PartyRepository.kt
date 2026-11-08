@@ -75,6 +75,9 @@ object PartyRepository {
     private val _hostSharingEnabled = MutableStateFlow(false)
     val hostSharingEnabled: StateFlow<Boolean> = _hostSharingEnabled.asStateFlow()
 
+    private val _hostUnavailable = MutableStateFlow(false)
+    val hostUnavailable: StateFlow<Boolean> = _hostUnavailable.asStateFlow()
+
     private val _enabled = MutableStateFlow(true)
     val available: StateFlow<Boolean> = combine(ServerConfigurationRepository.active, _enabled) { server, enabled ->
         server.capabilities.watchParty && enabled
@@ -91,6 +94,7 @@ object PartyRepository {
     private val ignoredWaiting = mutableSetOf<String>()
     private var rejoining = false
     private var hostShareAnnouncementSent = false
+    private var hostMediaUpdatePending = false
 
     init {
         scope.launch {
@@ -194,7 +198,7 @@ object PartyRepository {
     fun shareStream(stream: PartyStream?) {
         scope.launch {
             val party = _state.value.party ?: return@launch
-            if (!party.isHost || !party.sharing) return@launch
+            if (hostMediaUpdatePending || !party.isHost || !party.sharing) return@launch
             if (stream == _sharedStream.value && hostShareAnnouncementSent) return@launch
             sendStream(stream, sharingEnabled = true)
         }
@@ -220,6 +224,52 @@ object PartyRepository {
             persistJob?.cancel()
             val snapshot = runRemote { PartyApi.update(party.id, deviceId(), media, next) }
             snapshot?.let(::applySnapshot)
+        }
+    }
+
+    /**
+     * Publish a new host media identity first, then announce its exact stream. Keeping both
+     * operations in one coroutine prevents guests receiving a stream for media the server
+     * has not accepted yet.
+     */
+    fun publishMediaAndShare(media: PartyMedia, positionMs: Long, stream: PartyStream?) {
+        scope.launch {
+            val party = _state.value.party ?: return@launch
+            if (!party.isHost || !party.sharing) return@launch
+            if (media == party.media) {
+                sendStream(stream?.takeIf { it.mediaKey == media.key }, sharingEnabled = true)
+                return@launch
+            }
+
+            hostMediaUpdatePending = true
+            try {
+                val sameContent = media.key == party.media.key
+                updateParty { it.copy(media = media) }
+                val next = if (sameContent) {
+                    _playback.value
+                } else {
+                    nextPlayback(
+                        party,
+                        paused = false,
+                        positionMs = positionMs,
+                        rate = 1f,
+                        waiting = false,
+                        mediaKey = media.key,
+                        at = clock.nowMs(),
+                    ).also { _playback.value = it }
+                }
+                persistJob?.cancel()
+                val snapshot = runRemote { PartyApi.update(party.id, deviceId(), media, next) }
+                    ?: return@launch
+                if (snapshot.party?.media?.key != media.key) return@launch
+                applySnapshot(snapshot)
+                val updatedParty = _state.value.party
+                if (updatedParty?.isHost == true && updatedParty.sharing && updatedParty.media.key == media.key) {
+                    sendStream(stream?.takeIf { it.mediaKey == media.key }, sharingEnabled = true)
+                }
+            } finally {
+                hostMediaUpdatePending = false
+            }
         }
     }
 
@@ -280,6 +330,7 @@ object PartyRepository {
         channel = partyChannel
         hostShareAnnouncementSent = false
         _hostSharingEnabled.value = party.isHost && party.sharing
+        _hostUnavailable.value = false
         localPresence = null
         ignoredWaiting.clear()
         waitStartedAt = null
@@ -315,6 +366,7 @@ object PartyRepository {
         _playback.value = null
         _sharedStream.value = null
         _hostSharingEnabled.value = false
+        _hostUnavailable.value = false
         hostShareAnnouncementSent = false
         _state.value = PartyUiState()
         PartyChat.stop()
@@ -396,8 +448,7 @@ object PartyRepository {
                 // Older clients omitted the sharing flag; infer it from their stream payload.
                 val announcedSharing = (payload["sharing"] as? JsonPrimitive)?.booleanOrNull
                     ?: (streamElement != null && streamElement !is JsonNull)
-                _hostSharingEnabled.value = announcedSharing
-                _sharedStream.value = if (announcedSharing) {
+                val announcedStream = if (announcedSharing) {
                     streamElement
                         ?.takeIf { it !is JsonNull }
                         ?.let { decode(it, PartyStream.serializer()) }
@@ -405,6 +456,11 @@ object PartyRepository {
                 } else {
                     null
                 }
+                if (announcedSharing && announcedStream != null) {
+                    _hostUnavailable.value = false
+                }
+                _hostSharingEnabled.value = announcedSharing
+                _sharedStream.value = announcedStream
             }
             "chat" -> PartyChat.receive(payload)
         }
@@ -450,6 +506,7 @@ object PartyRepository {
         if (memberId == party.hostMemberId) {
             _sharedStream.value = null
             _hostSharingEnabled.value = false
+            _hostUnavailable.value = true
         }
         updateParty { current ->
             current.copy(
@@ -486,6 +543,16 @@ object PartyRepository {
             else -> return
         }
         val info = snapshot.party ?: return
+        val previousHostMemberId = _state.value.party?.hostMemberId
+        if (
+            previousHostMemberId != null &&
+            info.hostMemberId != null &&
+            previousHostMemberId != info.hostMemberId
+        ) {
+            _sharedStream.value = null
+            _hostSharingEnabled.value = false
+            _hostUnavailable.value = true
+        }
         updateParty { current ->
             current.copy(
                 members = snapshot.members,

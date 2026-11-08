@@ -24,6 +24,7 @@ fun PlayerScreen(
     onOpenExternalUrl: ((String) -> Unit)? = null,
     onOpenMetaDetails: ((com.nuvio.app.features.home.MetaPreview) -> Unit)? = null,
     onOpenPartyMedia: (PartyMedia) -> Unit = {},
+    onFollowPartyMedia: (PartyMedia) -> Unit = onOpenPartyMedia,
     modifier: Modifier = Modifier,
     logo: String? = null,
     poster: String? = null,
@@ -93,6 +94,7 @@ fun PlayerScreen(
             launchId = launchId,
             sourceFilename = sourceFilename,
             onOpenPartyMedia = onOpenPartyMedia,
+            onFollowPartyMedia = onFollowPartyMedia,
             stream = stream,
             semiAutoSelectedQuality = semiAutoSelectedQuality,
         )

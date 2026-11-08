@@ -155,7 +155,8 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             },
             onFallback = { next ->
                 val sourceName = "${next.addonName} · ${next.streamLabel}"
-                deadLinkStatusMessage = "Switching source · $sourceName"
+                errorMessage = null
+                deadLinkStatusMessage = "Trying next source · $sourceName"
                 Logger.withTag("DeadLinkFallback").i { "Fallback triggered to source: $sourceName (addonId=${next.addonId})" }
                 switchToSource(next)
             },
@@ -166,11 +167,12 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             sourceDiscoveryLoading = { PlayerStreamsRepository.isSourceDiscoveryLoading() },
             onDeadLink = { failed, stableIdentityKey ->
                 PlayerStreamsRepository.pruneDeadSource(failed, stableIdentityKey)
-                deadLinkStatusMessage = "Skipping unavailable source · ${failed.addonName} · ${failed.streamLabel}"
+                deadLinkStatusMessage = "Unavailable · ${failed.addonName} · ${failed.streamLabel}"
             },
             // Semi-auto candidates are already ranked by quality tier and provider preference.
             // Preserve that order during dead-link recovery instead of re-sorting by add-on type.
             preserveCandidateOrder = { args.semiAutoSelectedQuality != null },
+            requestedQualityHeight = { args.semiAutoSelectedQuality?.targetHeight },
         )
     }
     DisposableEffect(deadLinkMonitor) { onDispose { deadLinkMonitor.close() } }
@@ -209,6 +211,12 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             playbackSnapshot.isLoading,
             activeSourceIdentityKey,
         )
+    }
+
+    LaunchedEffect(errorMessage, activeStream, activeSourceIdentityKey) {
+        if (errorMessage != null) {
+            deadLinkMonitor.playbackFailed(activeStream, activeSourceIdentityKey)
+        }
     }
 
     val deadLinkSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()

@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -41,13 +40,11 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
     var editingRow by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
-    val sourceRows = remember(state.items) {
-        state.items.filter { item ->
-            item.addonId != null &&
-                !item.addonId.startsWith("cloudstream:") &&
-                !item.isCollection &&
-                !item.isMergedRow
-        }
+    val eligibleSourceKeys = remember(state.items) {
+        HomeCatalogSettingsRepository.mergedRowSourceKeys()
+    }
+    val sourceRows = remember(state.items, eligibleSourceKeys) {
+        state.items.filter { item -> item.key in eligibleSourceKeys }
     }
 
     SettingsSection(
@@ -87,8 +84,9 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
     }
 
     state.mergedRows.sortedBy { it.order }.forEach { row ->
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 4.dp),
+        SettingsGroup(
+            isTablet = isTablet,
+            modifier = Modifier.padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -100,6 +98,14 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                     Text(
                         "${row.sourceKeys.size} source catalogs · ${row.resolvedDisplayMode().name.lowercase().replace('_', ' ')}",
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
+                    val sourceLabels = row.sourceKeys.map { key ->
+                        sourceRows.firstOrNull { it.key == key }?.displayTitle ?: "Unavailable: $key"
+                    }
+                    Text(
+                        sourceLabels.joinToString(" · "),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(
@@ -136,7 +142,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
             row = editingRow,
             sourceRows = sourceRows,
             onDismiss = { showEditor = false },
-            onSave = { title, keys, mode, type, blend, deduplicate, hideIncluded ->
+            onSave = { title, keys, mode, type, blend, deduplicate, hideIncluded, hidePosterless ->
                 val saved = if (editingRow == null) {
                     HomeCatalogSettingsRepository.createMergedRow(
                         title = title,
@@ -146,6 +152,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         contentType = type,
                         blendMode = blend,
                         hideIncludedRows = hideIncluded,
+                        hideTitlesWithoutPosters = hidePosterless,
                     ) != null
                 } else {
                     HomeCatalogSettingsRepository.updateMergedRow(
@@ -157,6 +164,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         contentType = type,
                         blendMode = blend,
                         hideIncludedRows = hideIncluded,
+                        hideTitlesWithoutPosters = hidePosterless,
                     )
                 }
                 if (saved) showEditor = false
@@ -196,13 +204,17 @@ private fun MergedHomeRowEditorDialog(
         MergedHomeRowBlendMode,
         Boolean,
         Boolean,
+        Boolean,
     ) -> Boolean,
 ) {
     var title by remember(row?.id) { mutableStateOf(row?.title.orEmpty()) }
     val availableSourceKeys = remember(sourceRows) { sourceRows.mapTo(mutableSetOf()) { it.key } }
-    var selectedKeys by remember(row?.id, availableSourceKeys) {
-        mutableStateOf(row?.sourceKeys?.filter { it in availableSourceKeys }?.toSet().orEmpty())
+    // Keep unavailable keys in the draft so editing a row never silently drops them.
+    var selectedKeys by remember(row?.id) {
+        mutableStateOf(row?.sourceKeys?.toSet().orEmpty())
     }
+    val unavailableSourceKeys = selectedKeys.filterNot { it in availableSourceKeys }.sorted()
+    val validSelectedCount = selectedKeys.count { it in availableSourceKeys }
     var displayMode by remember(row?.id) {
         mutableStateOf(row?.resolvedDisplayMode() ?: MergedHomeRowDisplayMode.SOURCE_TABS)
     }
@@ -210,10 +222,19 @@ private fun MergedHomeRowEditorDialog(
         mutableStateOf(row?.resolvedContentType() ?: MergedHomeRowContentType.ALL)
     }
     var blendMode by remember(row?.id) {
-        mutableStateOf(row?.resolvedBlendMode() ?: MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY)
+        mutableStateOf(
+            row?.resolvedBlendMode()
+                ?.takeIf {
+                    it == MergedHomeRowBlendMode.INTERLEAVE ||
+                        it == MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY ||
+                        it == MergedHomeRowBlendMode.FRESHNESS_WEIGHTED
+                }
+                ?: MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY,
+        )
     }
     var deduplicate by remember(row?.id) { mutableStateOf(row?.deduplicate ?: true) }
     var hideIncluded by remember(row?.id) { mutableStateOf(row?.hideIncludedRows ?: false) }
+    var hidePosterless by remember(row?.id) { mutableStateOf(row?.hideTitlesWithoutPosters ?: false) }
     var validationError by remember(row?.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -254,10 +275,30 @@ private fun MergedHomeRowEditorDialog(
                 MergedChoiceRow("Smart freshness and popularity", blendMode == MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY) {
                     blendMode = MergedHomeRowBlendMode.SMART_FRESHNESS_POPULARITY
                 }
-                MergedChoiceRow("Provider priority", blendMode == MergedHomeRowBlendMode.PROVIDER_PRIORITY) {
-                    blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY
+                MergedChoiceRow("Freshness weighted", blendMode == MergedHomeRowBlendMode.FRESHNESS_WEIGHTED) {
+                    blendMode = MergedHomeRowBlendMode.FRESHNESS_WEIGHTED
                 }
-                Text("Source catalogs (up to $MAX_MERGED_HOME_ROW_SOURCES)", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                Text(
+                    "Source catalogs ($validSelectedCount/$MAX_MERGED_HOME_ROW_SOURCES selected)",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+                )
+                unavailableSourceKeys.forEach { key ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Unavailable source",
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                            )
+                            Text(key, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { selectedKeys = selectedKeys - key }) {
+                            Text("Remove")
+                        }
+                    }
+                }
                 sourceRows.forEach { item ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
@@ -281,6 +322,10 @@ private fun MergedHomeRowEditorDialog(
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
                     Text("Hide included source rows from Home")
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hidePosterless, onCheckedChange = { hidePosterless = it })
+                    Text("Hide titles without posters")
+                }
                 validationError?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }
         },
@@ -288,11 +333,13 @@ private fun MergedHomeRowEditorDialog(
             Button(onClick = {
                 validationError = when {
                     title.isBlank() -> "Enter a title."
-                    selectedKeys.size < 2 -> "Select at least two source catalogs."
+                    validSelectedCount < 2 -> "Select at least two available source catalogs."
+                    validSelectedCount > MAX_MERGED_HOME_ROW_SOURCES -> "Select no more than $MAX_MERGED_HOME_ROW_SOURCES source catalogs."
+                    unavailableSourceKeys.isNotEmpty() -> "Remove unavailable sources before saving."
                     else -> null
                 }
                 if (validationError == null) {
-                    if (onSave(title, selectedKeys.toList(), displayMode, contentType, blendMode, deduplicate, hideIncluded)) {
+                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, contentType, blendMode, deduplicate, hideIncluded, hidePosterless)) {
                         onDismiss()
                     } else {
                         validationError = "The selected source catalogs are no longer available."

@@ -377,6 +377,23 @@ object HomeCatalogSettingsRepository {
         HomeRepository.applyCurrentSettings()
     }
 
+    /**
+     * Canonical source list shared by the editor and save validation. This prevents the
+     * dialog from offering a catalog that create/update would subsequently reject.
+     */
+    internal fun mergedRowSourceKeys(): Set<String> {
+        ensureLoaded()
+        return eligibleMergedRowSourceKeys()
+    }
+
+    private fun eligibleMergedRowSourceKeys(): Set<String> =
+        definitions.asSequence()
+            .filter { definition ->
+                definition.serverConnectionId == null &&
+                    !ServerCatalog.isServerKey(definition.key)
+            }
+            .mapTo(linkedSetOf()) { it.key }
+
     fun resolveMergedHomeRow(id: String): ResolvedMergedHomeRow? {
         ensureLoaded()
         val row = mergedRows.firstOrNull { it.id == id } ?: return null
@@ -601,15 +618,13 @@ object HomeCatalogSettingsRepository {
         hideTitlesWithoutPosters: Boolean = false,
     ): String? {
         ensureLoaded()
-        val validSources = sourceKeys.distinct().filter { key ->
-            definitions.any { definition ->
-                definition.key == key &&
-                    definition.serverConnectionId == null &&
-                    !ServerCatalog.isServerKey(definition.key)
-            }
-        }.take(MAX_MERGED_HOME_ROW_SOURCES)
+        val availableSourceKeys = eligibleMergedRowSourceKeys()
+        val requestedSources = sourceKeys.distinct()
+        if (requestedSources.size !in 2..MAX_MERGED_HOME_ROW_SOURCES) return null
+        if (requestedSources.any { it !in availableSourceKeys }) return null
+        val validSources = requestedSources
         val safeTitle = title.trim()
-        if (safeTitle.isBlank() || validSources.size < 2) return null
+        if (safeTitle.isBlank()) return null
 
         var id: String
         do {
@@ -658,15 +673,13 @@ object HomeCatalogSettingsRepository {
     ): Boolean {
         ensureLoaded()
         val existing = mergedRows.firstOrNull { it.id == id } ?: return false
-        val validSources = sourceKeys.distinct().filter { key ->
-            definitions.any { definition ->
-                definition.key == key &&
-                    definition.serverConnectionId == null &&
-                    !ServerCatalog.isServerKey(definition.key)
-            }
-        }.take(MAX_MERGED_HOME_ROW_SOURCES)
+        val availableSourceKeys = eligibleMergedRowSourceKeys()
+        val requestedSources = sourceKeys.distinct()
+        if (requestedSources.size !in 2..MAX_MERGED_HOME_ROW_SOURCES) return false
+        if (requestedSources.any { it !in availableSourceKeys }) return false
+        val validSources = requestedSources
         val safeTitle = title.trim()
-        if (safeTitle.isBlank() || validSources.size < 2) return false
+        if (safeTitle.isBlank()) return false
         val updated = existing.copy(
             title = safeTitle,
             sourceKeys = validSources,

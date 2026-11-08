@@ -62,10 +62,13 @@ import com.nuvio.app.features.party.PartySource
 import com.nuvio.app.features.party.PartyStream
 import com.nuvio.app.features.party.isShareableStreamUrl
 import com.nuvio.app.features.party.shouldFollowSharedPartyStream
+import com.nuvio.app.features.party.shouldWaitForPartyHostShare
 import com.nuvio.app.features.party.PartySync
 import com.nuvio.app.features.party.UnreadBadge
 import com.nuvio.app.features.party.messageRes
 import com.nuvio.app.features.party.partyMediaKey
+import com.nuvio.app.features.party.shouldPublishHostPartyMedia
+import com.nuvio.app.features.party.shouldShareHostStreamForMedia
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
@@ -223,25 +226,11 @@ private fun PlayerScreenRuntime.applyPartyPaused(paused: Boolean, force: Boolean
 }
 
 private fun PlayerScreenRuntime.handlePartyMediaChange(media: PartyMedia) {
-    if (media.key == partyKey) return
-    val season = media.season
-    val episode = media.episode
-    if (media.metaId == parentMetaId && isSeries && season != null && episode != null) {
-        val next = nextEpisodeInfo
-        if (next != null && next.hasAired && next.season == season && next.episode == episode) {
-            playNextEpisode()
-            return
-        }
-        val video = playerMetaVideos.firstOrNull { it.season == season && it.episode == episode }
-        if (video != null) {
-            episodeStreamsPanelState = EpisodeStreamsPanelState(showStreams = true, selectedEpisode = video)
-            showEpisodesPanel = true
-            showPartyPanel = false
-            return
-        }
-    }
+    val party = PartyRepository.state.value.party ?: return
+    if (party.isHost || media.key == partyKey || media.key != party.media.key) return
     showPartyChat = false
-    showPartyPanel = true
+    showPartyPanel = false
+    onFollowPartyMedia(media)
 }
 
 @Composable
@@ -250,7 +239,9 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
     val partyState by PartyRepository.state.collectAsState()
     val remoteSharedStream by PartyRepository.sharedStream.collectAsState()
     val hostSharingEnabled by PartyRepository.hostSharingEnabled.collectAsState()
+    val hostUnavailable by PartyRepository.hostUnavailable.collectAsState()
     val partyId = partyState.party?.id
+    var hostSharingWasActive by remember(partyId, partyKey) { mutableStateOf(false) }
     var lastFollowedSharedStream by remember(partyId) { mutableStateOf<PartyStream?>(null) }
     val key = partyKey
     var waitingForSharedSource by remember(partyId, key) { mutableStateOf(false) }
@@ -287,8 +278,17 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         onDispose { source?.setSystemControlHandler(null) }
     }
 
-    LaunchedEffect(sharing, sharedStream) {
-        if (sharing) PartyRepository.shareStream(sharedStream)
+    LaunchedEffect(sharing, sharedStream, partyState.party?.media?.key, key) {
+        if (
+            shouldShareHostStreamForMedia(
+                isHost = partyState.party?.isHost == true,
+                sharingEnabled = sharing,
+                partyMediaKey = partyState.party?.media?.key,
+                localMediaKey = key,
+            )
+        ) {
+            PartyRepository.shareStream(sharedStream)
+        }
     }
 
     // "Share my stream" is a host opt-in. A missing stream while enabled means the current
@@ -299,10 +299,12 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         partyState.party?.isHost,
         partyState.party?.media?.key,
         hostSharingEnabled,
+        hostUnavailable,
         remoteSharedStream,
         activeSourceUrl,
     ) {
         val party = PartyRepository.state.value.party ?: return@LaunchedEffect
+        if (!party.isHost && hostSharingEnabled) hostSharingWasActive = true
         if (party.isHost) {
             // Host ownership can change when the previous host leaves. Do not carry the
             // guest-only unavailable-source pause into the new host role.
@@ -318,20 +320,31 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
             lastFollowedSharedStream = null
             return@LaunchedEffect
         }
+
+        if (
+            shouldWaitForPartyHostShare(
+                isHost = party.isHost,
+                hostUnavailable = hostUnavailable,
+                hasSharedBefore = hostSharingWasActive,
+                sharingEnabled = hostSharingEnabled,
+            )
+        ) {
+            lastFollowedSharedStream = null
+            if (!waitingForSharedSource) {
+                waitingForSharedSource = true
+                partyBehind = false
+                partyBehindMs = null
+                clearPartyNudge()
+                playerController?.pause()
+                shouldPlay = false
+            }
+            return@LaunchedEffect
+        }
         if (party.media.key != key) return@LaunchedEffect
 
         val incoming = remoteSharedStream
         if (!hostSharingEnabled) {
             lastFollowedSharedStream = null
-            if (waitingForSharedSource) {
-                waitingForSharedSource = false
-                val playback = PartyRepository.playback.value?.takeIf { it.mediaKey == key }
-                if (playback != null) {
-                    val target = PartySync.expectedPositionMs(playback, PartyRepository.nowMs(), playbackSnapshot.durationMs)
-                    if (!playback.paused) playerController?.seekTo(target)
-                    applyPartyPaused(playback.paused, force = true)
-                }
-            }
             return@LaunchedEffect
         }
 
@@ -397,6 +410,35 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         )
         activeInitialPositionMs = targetPositionMs
         activeInitialProgressFraction = null
+    }
+
+    // A host opening another title gets a new player runtime. The old runtime cannot
+    // publish the new media across that navigation boundary, so announce it when the
+    // replacement player's initial source is ready. With sharing enabled, the stream
+    // effect above then publishes the exact source for the new media to every guest.
+    LaunchedEffect(partyId, key, partyState.party?.isHost, initialLoadCompleted) {
+        val party = PartyRepository.state.value.party ?: return@LaunchedEffect
+        if (
+            shouldPublishHostPartyMedia(
+                isHost = party.isHost,
+                partyMediaKey = party.media.key,
+                localMediaKey = key,
+                playerReady = initialLoadCompleted,
+            )
+        ) {
+            if (sharing) {
+                PartyRepository.publishMediaAndShare(
+                    media = currentPartyMedia(),
+                    positionMs = currentPlaybackPositionMs(),
+                    stream = sharedStream,
+                )
+            } else {
+                PartyRepository.publishMedia(
+                    currentPartyMedia(),
+                    positionMs = currentPlaybackPositionMs(),
+                )
+            }
+        }
     }
 
     LaunchedEffect(key) {

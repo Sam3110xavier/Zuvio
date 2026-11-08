@@ -345,10 +345,32 @@ object HomeRepository {
     private fun applySnapshot(snapshot: HomeSnapshot) {
         if (snapshot.sections.isEmpty()) return
         cachedSections = snapshot.sections.toMap()
+        val hidePosterlessTitles = HomeCatalogSettingsRepository.snapshot().hideMergedTitlesWithoutPosters
+        val visibleSections = snapshot.sections.mapNotNull { (_, section) ->
+            val visibleItems = if (hidePosterlessTitles) {
+                filterMergedHomeItems(
+                    items = section.items,
+                    contentType = MergedHomeRowContentType.ALL,
+                    hideTitlesWithoutPosters = true,
+                )
+            } else {
+                section.items
+            }
+            section.copy(items = visibleItems).takeIf { it.items.isNotEmpty() || it.hasMore }
+        }
+        val visibleHeroItems = if (hidePosterlessTitles) {
+            filterMergedHomeItems(
+                items = snapshot.heroItems,
+                contentType = MergedHomeRowContentType.ALL,
+                hideTitlesWithoutPosters = true,
+            )
+        } else {
+            snapshot.heroItems
+        }
         _uiState.value = HomeUiState(
             isLoading = true,
-            heroItems = snapshot.heroItems,
-            sections = snapshot.sections.map { (_, section) -> section },
+            heroItems = visibleHeroItems,
+            sections = visibleSections,
         )
     }
 
@@ -408,6 +430,7 @@ object HomeRepository {
                 val section = cachedSections[definition.cacheKey]
                     ?.withPosterOverlay()
                     ?.withReleaseFilter()
+                    ?.withGlobalPosterFilter()
                     ?: return@mapNotNull null
                 if (section.items.isEmpty()) return@mapNotNull null
                 val customTitle = preference?.customTitle.orEmpty()
@@ -454,7 +477,7 @@ object HomeRepository {
                     blendMode = row.resolvedBlendMode(),
                     sortMode = MergedHomeRowSortMode.OFF,
                     contentType = contentType,
-                    hideTitlesWithoutPosters = false,
+                    hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                 )
                 val hasMore = sourceSections.any(HomeCatalogSection::hasMore)
                 if (mergedItems.isEmpty() && !hasMore) return@mapNotNull null
@@ -465,7 +488,7 @@ object HomeRepository {
                             val sourceItems = filterMergedHomeItems(
                                 items = source.items,
                                 contentType = contentType,
-                                hideTitlesWithoutPosters = false,
+                                hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                             )
                             add(
                                 HomeCatalogTab(
@@ -484,7 +507,7 @@ object HomeRepository {
                         deduplicate = row.deduplicate,
                         blendMode = row.resolvedBlendMode(),
                         sortMode = MergedHomeRowSortMode.OFF,
-                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters,
+                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
                         hasMore = hasMore,
                         maxItems = HOME_MERGED_ROW_ITEM_LIMIT,
                     )
@@ -530,7 +553,11 @@ object HomeRepository {
             currentDefinitions
                 .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
                 .mapNotNull { definition -> cachedSections[definition.cacheKey] }
-                .map { section -> section.withPosterOverlay().withReleaseFilter() }
+                .map { section ->
+                    section.withPosterOverlay()
+                        .withReleaseFilter()
+                        .withGlobalPosterFilter()
+                }
                 .flatMap { section -> section.items }
                 .distinctBy { item -> "${item.type}:${item.id}" }
                 .shuffled(heroRandom)
@@ -540,7 +567,7 @@ object HomeRepository {
         }
         lastPublishedCatalogHeroEmpty = snapshot.heroEnabled && catalogHeroItems.isEmpty()
         val visibleHeroItems = _uiState.value.heroItems
-        val heroItems = if (snapshot.heroEnabled) {
+        val selectedHeroItems = if (snapshot.heroEnabled) {
             if (
                 keepVisibleHeroWhilePending &&
                 visibleHeroItems.isNotEmpty() &&
@@ -552,6 +579,15 @@ object HomeRepository {
             }
         } else {
             emptyList()
+        }
+        val heroItems = if (snapshot.hideMergedTitlesWithoutPosters) {
+            filterMergedHomeItems(
+                items = selectedHeroItems,
+                contentType = MergedHomeRowContentType.ALL,
+                hideTitlesWithoutPosters = true,
+            )
+        } else {
+            selectedHeroItems
         }
 
         _uiState.value = HomeUiState(

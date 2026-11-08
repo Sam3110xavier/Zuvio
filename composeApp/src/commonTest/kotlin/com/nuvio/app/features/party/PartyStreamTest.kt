@@ -75,6 +75,46 @@ class PartyStreamTest {
     }
 
     @Test
+    fun guestsWaitWhenTheHostLeavesEvenIfNoStreamWasShared() {
+        assertTrue(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = true,
+                hasSharedBefore = false,
+                sharingEnabled = false,
+            ),
+        )
+        assertFalse(
+            shouldWaitForPartyHostShare(
+                isHost = true,
+                hostUnavailable = true,
+                hasSharedBefore = true,
+                sharingEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun guestsStopAfterAPreviouslySharedStreamIsWithdrawn() {
+        assertTrue(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = false,
+                hasSharedBefore = true,
+                sharingEnabled = false,
+            ),
+        )
+        assertFalse(
+            shouldWaitForPartyHostShare(
+                isHost = false,
+                hostUnavailable = false,
+                hasSharedBefore = false,
+                sharingEnabled = false,
+            ),
+        )
+    }
+
+    @Test
     fun guestFollowsSharedUrlOnlyForTheMatchingPartyMedia() {
         assertTrue(
             shouldFollowSharedPartyStream(
@@ -137,4 +177,22 @@ class PartyStreamTest {
             ),
         )
     }
+
+    @Test
+    fun hostPublishesNewMediaAfterReplacementPlayerIsReady() {
+        assertTrue(shouldPublishHostPartyMedia(true, "movie|old||", "movie|new||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(false, "movie|old||", "movie|new||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(true, "movie|same||", "movie|same||", playerReady = true))
+        assertFalse(shouldPublishHostPartyMedia(true, "movie|old||", "movie|new||", playerReady = false))
+    }
+
+
+    @Test
+    fun hostStreamWaitsForPartyMediaToMatch() {
+        assertTrue(shouldShareHostStreamForMedia(true, true, "movie|new||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(true, true, "movie|old||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(false, true, "movie|new||", "movie|new||"))
+        assertFalse(shouldShareHostStreamForMedia(true, false, "movie|new||", "movie|new||"))
+    }
+
 }

@@ -66,6 +66,92 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
+    fun mergedRowBlendSelectionPersistsAcrossCreateEditAndReload() {
+        val catalogs = listOf(addon(listOf("popular", "latest")))
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+
+        val eligibleKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys()
+        assertEquals(setOf("test:movie:popular", "test:movie:latest"), eligibleKeys)
+
+        val createdId = HomeCatalogSettingsRepository.createMergedRow(
+            title = "Combined",
+            sourceKeys = eligibleKeys.toList(),
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED,
+        )
+        assertNotNull(createdId)
+        val rowId = requireNotNull(createdId)
+        assertEquals(
+            MergedHomeRowBlendMode.RATING_WEIGHTED,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+
+        assertTrue(
+            HomeCatalogSettingsRepository.updateMergedRow(
+                id = rowId,
+                title = "Combined edited",
+                sourceKeys = eligibleKeys.toList(),
+                displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
+                deduplicate = true,
+                blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            ),
+        )
+        assertEquals(
+            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+
+        HomeCatalogSettingsRepository.clearLocalState()
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+        assertEquals(
+            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        )
+    }
+
+    @Test
+    fun mergedRowsRejectMoreThanTheMaximumSourcesInsteadOfSilentlyTruncating() {
+        val catalogIds = (1..14).map { "catalog-$it" }
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(catalogIds)))
+        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Too many",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
+
+        val allowedKeys = sourceKeys.take(MAX_MERGED_HOME_ROW_SOURCES)
+        val createdId = HomeCatalogSettingsRepository.createMergedRow(
+            title = "Within limit",
+            sourceKeys = allowedKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        )
+        assertNotNull(createdId)
+        val before = HomeCatalogSettingsRepository.uiState.value.mergedRows.single()
+
+        assertTrue(!HomeCatalogSettingsRepository.updateMergedRow(
+            id = requireNotNull(createdId),
+            title = "Should not update",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
+            deduplicate = true,
+        ))
+        assertEquals(before, HomeCatalogSettingsRepository.uiState.value.mergedRows.single())
+    }
+
+    @Test
+    fun mergedRowsRejectUnavailableSourcesWithoutDroppingThemSilently() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
+        val available = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Missing source",
+            sourceKeys = available + "missing:catalog",
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
+    }
+
+    @Test
     fun unchangedCatalogsDoNotRewriteSettings() {
         val addons = listOf(addon())
         HomeCatalogSettingsRepository.syncCatalogs(addons)
