@@ -308,7 +308,6 @@ fun ProfileEditScreen(
                     }
                 }
             }
-        }
 
         item {
             NuvioSurfaceCard {
