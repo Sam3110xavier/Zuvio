@@ -956,12 +956,12 @@ fun HomeScreen(
     val hasRenderableHomeRows = homeUiState.sections.isNotEmpty() || hasRenderableCollectionRows
     val showHeroSlot = shouldShowHomeHeroSlot(
         heroEnabled = homeSettingsUiState.heroEnabled,
-        hasHeroItems = homeUiState.heroItems.isNotEmpty(),
+        hasHeroItems = homeHeroState.items.isNotEmpty(),
         isResolvingHeroSources = isResolvingHeroSources,
         hasRenderableHomeRows = hasRenderableHomeRows,
     )
     val showHeroSkeleton = showHeroSlot &&
-        homeUiState.heroItems.isEmpty() &&
+        homeHeroState.items.isEmpty() &&
         isResolvingHeroSources
     val isInitialHomeContentLoading = shouldShowInitialHomeLoading(
         hasRenderableHomeRows = hasRenderableHomeRows,
@@ -1057,7 +1057,7 @@ fun HomeScreen(
                                     heroStyle = if (netflixStyleEnabled) HomeHeroStyle.FULL_BLEED else homeSettingsUiState.heroStyle,
                                 )
 
-                                homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
+                                homeHeroState.items.isNotEmpty() -> HomeHeroSection(
                                     items = homeHeroState.items,
                                     modifier = Modifier,
                                     viewportHeight = maxHeight,
