@@ -200,8 +200,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playbackSnapshot.isPlaying,
         playbackSnapshot.isLoading,
         playbackSnapshot.isEnded,
-        playbackSnapshot.positionMs,
-        isScrubbingTimeline,
         playbackSnapshotKey,
         activePlaybackKey,
     ) {
@@ -215,8 +213,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             playbackSnapshot.isLoading,
             activeSourceIdentityKey,
             isEnded = playbackSnapshot.isEnded,
-            positionMs = playbackSnapshot.positionMs,
-            isSeeking = isScrubbingTimeline,
         )
     }
 

@@ -640,44 +640,29 @@ class DeadLinkStartupMonitorTest {
     }
 
     @Test
-    fun seekInducedBufferingAfterFirstFrameDoesNotTriggerFallback() = runTest {
+    fun startupBufferingBeforeStablePlaybackCanTriggerFallback() = runTest {
         val current = stream("Current dead link", "addon:current", "https://media.example/current.mp4")
         val next = stream("Next source", "addon:next", "https://media.example/next.mp4")
         val fallbacks = mutableListOf<StreamItem>()
         val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
         monitor.sourceSelected(current)
         runCurrent()
-        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
-        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true, positionMs = 30_000)
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false)
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true)
         advanceTimeBy(30_000)
         runCurrent()
         assertTrue(fallbacks.isEmpty())
         monitor.close()
     }
 
-
-    @Test
-    fun shortTimelineSeekBufferingDoesNotTriggerFallback() = runTest {
-        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
-        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
-        val fallbacks = mutableListOf<StreamItem>()
-        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
-        monitor.sourceSelected(current)
-        runCurrent()
-        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 10_000)
-        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true, positionMs = 11_000, isSeeking = true)
-        advanceTimeBy(30_000)
-        runCurrent()
-        assertTrue(fallbacks.isEmpty())
-        monitor.close()
-    }
 
     @Test
     fun settingsChangeDoesNotRearmWatchdogForHealthyPlaybackDuringStabilityWindow() = runTest {
         val current = stream("Current", "addon:current", "https://media.example/current.mp4")
         val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val afterNext = stream("After next", "addon:after", "https://media.example/after.mp4")
         val fallbacks = mutableListOf<StreamItem>()
-        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next, afterNext) }, onFallback = fallbacks::add)
         monitor.sourceSelected(current)
         runCurrent()
         monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
@@ -948,6 +933,29 @@ class DeadLinkStartupMonitorTest {
         runCurrent()
 
         assertEquals(listOf(lower720), fallbacks)
+        monitor.close()
+    }
+
+    @Test
+    fun stablePlaybackIgnoresLaterBufferingAndFatalErrorsUntilSourceChanges() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false)
+        advanceTimeBy(25_000)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true)
+        monitor.playbackFailed(current)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        monitor.sourceSelected(next)
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(listOf(afterNext), fallbacks)
         monitor.close()
     }
 
