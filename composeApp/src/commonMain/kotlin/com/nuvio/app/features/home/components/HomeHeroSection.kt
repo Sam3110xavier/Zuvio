@@ -33,12 +33,20 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RectangleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -205,6 +213,7 @@ internal fun HomeHeroSection(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    netflixStyleEnabled: Boolean = false,
     listState: LazyListState? = null,
     stretchPx: () -> Float = { 0f },
     trailerPlaybackEnabled: Boolean = false,
@@ -213,6 +222,10 @@ internal fun HomeHeroSection(
     showImdbRating: Boolean = true,
     showMdbListRatings: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)? = null,
+    onItemLongClick: ((MetaPreview) -> Unit)? = null,
+    onSearchClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
+    onProfileClick: (() -> Unit)? = null,
     onActiveArtworkChange: ((String?) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -267,10 +280,10 @@ internal fun HomeHeroSection(
     } else {
         Modifier
     }
-    val heroShape = if (isCardStyle) {
-        RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
-    } else {
-        RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
+    val heroShape = when {
+        netflixStyleEnabled -> RectangleShape
+        isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
+        else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
     }
 
     Column(
@@ -293,16 +306,22 @@ internal fun HomeHeroSection(
                 viewportHeightDp = viewportHeight?.value,
                 mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             )
-            val layout = if (isCardStyle) {
-                baseLayout.copy(
+            val layout = when {
+                netflixStyleEnabled -> baseLayout.copy(
+                    heroHeight = viewportHeight
+                        ?.let { (it * 0.68f).coerceIn(340.dp, 720.dp) }
+                        ?: baseLayout.heroHeight,
+                    bottomFadeHeight = maxOf(baseLayout.bottomFadeHeight, 220.dp),
+                    contentVerticalPadding = maxOf(baseLayout.contentVerticalPadding, 22.dp),
+                )
+                isCardStyle -> baseLayout.copy(
                     heroHeight = cardHeroHeight(
                         maxWidth = maxWidth,
                         viewportHeight = viewportHeight,
                         isTablet = baseLayout.isTablet,
                     ),
                 )
-            } else {
-                baseLayout
+                else -> baseLayout
             }
             val effectiveArtworkSource = when {
                 !isCardStyle -> HomeHeroArtworkSource.BACKDROP
@@ -540,7 +559,7 @@ internal fun HomeHeroSection(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .drawBehind {
-                                    val fade = heroFadeColorState?.value ?: themeBackground
+                                    val fade = if (netflixStyleEnabled) Color.Black else heroFadeColorState?.value ?: themeBackground
                                     drawRect(
                                         Brush.verticalGradient(
                                             colors = listOf(
@@ -560,11 +579,27 @@ internal fun HomeHeroSection(
                                 .height(layout.bottomFadeHeight)
                                 .align(Alignment.BottomCenter)
                                 .drawBehind {
-                                    val fade = heroFadeColorState?.value ?: themeBackground
+                                    val fade = if (netflixStyleEnabled) Color.Black else heroFadeColorState?.value ?: themeBackground
                                     drawRect(Brush.verticalGradient(colors = listOf(fade.copy(alpha = 0f), fade)))
                                 },
                         )
                     }
+
+                        if (netflixStyleEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .align(Alignment.TopCenter)
+                                    .drawBehind {
+                                        drawRect(
+                                            Brush.verticalGradient(
+                                                colors = listOf(Color.Black.copy(alpha = 0.58f), Color.Transparent),
+                                            ),
+                                        )
+                                    },
+                            )
+                        }
 
                     if (isCardStyle) {
                         Box(
@@ -594,7 +629,7 @@ internal fun HomeHeroSection(
                                     },
                                 )
                                 .padding(vertical = layout.contentVerticalPadding),
-                            horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
+                            horizontalAlignment = if (layout.isTablet || showNetflixActions) Alignment.Start else Alignment.CenterHorizontally,
                         ) {
                             Box(
                                 modifier = Modifier
@@ -618,7 +653,9 @@ internal fun HomeHeroSection(
                                             layout = layout,
                                             showImdbRating = showImdbRating,
                                             showMdbListRatings = showMdbListRatings,
+                                            showNetflixActions = netflixStyleEnabled,
                                             onItemClick = onItemClick,
+                                            onItemLongClick = onItemLongClick,
                                         )
                                     }
                                     }
@@ -643,7 +680,7 @@ internal fun HomeHeroSection(
                                 .align(Alignment.TopEnd)
                                 .padding(
                                     top = statusBarTopPadding + 12.dp,
-                                    end = if (layout.isTablet) 32.dp else 18.dp,
+                                    end = if (netflixStyleEnabled) 180.dp else if (layout.isTablet) 32.dp else 18.dp,
                                 )
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.35f))
@@ -663,6 +700,20 @@ internal fun HomeHeroSection(
                             )
                         }
                     }
+
+                    if (netflixStyleEnabled) {
+                        NetflixHomeTopBar(
+                            onSearchClick = onSearchClick,
+                            onDownloadsClick = onDownloadsClick,
+                            onProfileClick = onProfileClick,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 28.dp),
+                        )
+                    }
+
                 }
             }
         }
@@ -797,12 +848,55 @@ internal fun HomeHeroReservedSpace(
 }
 
 @Composable
+private fun NetflixHomeTopBar(
+    onSearchClick: () -> Unit,
+    onDownloadsClick: () -> Unit,
+    onProfileClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "N",
+            style = MaterialTheme.typography.displayMedium.copy(
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Black,
+                lineHeight = 42.sp,
+            ),
+            color = Color(0xFFE50914),
+        )
+        Text(
+            text = "Home",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = Color.White,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        IconButton(onClick = onSearchClick) {
+            Icon(Icons.Rounded.Search, contentDescription = "Search", tint = Color.White)
+        }
+        IconButton(onClick = onDownloadsClick) {
+            Icon(Icons.Rounded.Download, contentDescription = "Downloads", tint = Color.White)
+        }
+        if (onProfileClick != null) {
+            IconButton(onClick = onProfileClick) {
+                Icon(Icons.Rounded.Person, contentDescription = "Profile", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
 private fun HeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
     showImdbRating: Boolean,
     showMdbListRatings: Boolean,
+    showNetflixActions: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)?,
+    onItemLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
     var logoLoadError by remember(item.type, item.id, item.logo) {
         mutableStateOf(false)
@@ -813,7 +907,7 @@ private fun HeroContentBlock(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
-        horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
+        horizontalAlignment = if (layout.isTablet || showNetflixActions) Alignment.Start else Alignment.CenterHorizontally,
     ) {
         if (logoUrl != null && !logoLoadError) {
             AsyncImage(
@@ -825,7 +919,7 @@ private fun HeroContentBlock(
                     .clickable(enabled = onItemClick != null) {
                         onItemClick?.invoke(item)
                     },
-                alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
+                alignment = if (layout.isTablet || showNetflixActions) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
                     logoLoadError = !isLandscapeLogo(
@@ -850,7 +944,7 @@ private fun HeroContentBlock(
                 },
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Black,
-                textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+                textAlign = if (layout.isTablet || showNetflixActions) TextAlign.Start else TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -889,6 +983,7 @@ private fun HeroContentBlock(
             isTablet = layout.isTablet,
             showImdbRating = showImdbRating,
             showMdbListRatings = showMdbListRatings,
+            forceStartAlignment = showNetflixActions,
         )
 
         if (synopsis != null) {
@@ -898,10 +993,38 @@ private fun HeroContentBlock(
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+                textAlign = if (layout.isTablet || showNetflixActions) TextAlign.Start else TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (showNetflixActions) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { onItemClick?.invoke(item) },
+                    enabled = onItemClick != null,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        disabledContainerColor = Color.White.copy(alpha = 0.35f),
+                        disabledContentColor = Color.Black.copy(alpha = 0.55f),
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("▶  Play")
+                }
+                OutlinedButton(
+                    onClick = { onItemLongClick?.invoke(item) },
+                    enabled = onItemLongClick != null,
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("＋  My List")
+                }
+            }
         }
     }
 }
