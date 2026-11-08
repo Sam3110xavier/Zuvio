@@ -100,7 +100,7 @@ internal class DeadLinkStartupMonitor(
                 armTimeout(key, generation)
                 return
             }
-            if (playbackStarted || timer?.isActive == true) return
+            if (playbackStarted || stabilityJob?.isActive == true || timer?.isActive == true) return
             if (exhausted) return
             generation++
             armTimeout(key, generation)
@@ -201,6 +201,7 @@ internal class DeadLinkStartupMonitor(
         val key = currentKey ?: return
         if (!timeoutEnabled()) {
             cancelTimer()
+            cancelStabilityJob()
             generation++
             return
         }

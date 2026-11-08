@@ -87,14 +87,15 @@ private fun rememberNetworkCondition(): NetworkCondition {
 internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     val networkCondition = rememberNetworkCondition()
     val partyState by PartyRepository.state.collectAsStateWithLifecycle()
+    val hostSharingEnabled by PartyRepository.hostSharingEnabled.collectAsStateWithLifecycle()
     val deadLinkScope = rememberCoroutineScope()
     val deadLinkMonitor = remember(deadLinkScope) {
         DeadLinkStartupMonitor(
             scope = deadLinkScope,
             timeoutSeconds = { PlayerSettingsRepository.uiState.value.deadLinkTimeoutSeconds },
             timeoutEnabled = {
-                val guestFollowingHost = PartyRepository.state.value.party?.isHost == false
-                PlayerSettingsRepository.uiState.value.deadLinkTimeoutEnabled && !guestFollowingHost
+                val guestFollowingSharedStream = PartyRepository.state.value.party?.isHost == false && PartyRepository.hostSharingEnabled.value
+                PlayerSettingsRepository.uiState.value.deadLinkTimeoutEnabled && !guestFollowingSharedStream
             },
             candidateStreams = {
                 val videoId = activeVideoId
@@ -198,6 +199,8 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         activeSourceIdentityKey,
         playbackSnapshot.isPlaying,
         playbackSnapshot.isLoading,
+        playbackSnapshot.isEnded,
+        playbackSnapshot.positionMs,
         playbackSnapshotKey,
         activePlaybackKey,
     ) {
@@ -210,6 +213,8 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             playbackSnapshot.isPlaying,
             playbackSnapshot.isLoading,
             activeSourceIdentityKey,
+            isEnded = playbackSnapshot.isEnded,
+            positionMs = playbackSnapshot.positionMs,
         )
     }
 
@@ -226,8 +231,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         partyState.party?.id,
         partyState.party?.memberId,
         partyState.party?.isHost,
+        hostSharingEnabled,
     ) {
-        // Guests follow the host's source and must not independently fail over.
+        // Guests following the host's shared stream must not independently fail over.
         deadLinkMonitor.settingsChanged()
     }
     val currentFeedback = liveGestureFeedback ?: gestureFeedback

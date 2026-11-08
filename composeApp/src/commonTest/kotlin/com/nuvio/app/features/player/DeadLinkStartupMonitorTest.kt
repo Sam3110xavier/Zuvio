@@ -640,18 +640,18 @@ class DeadLinkStartupMonitorTest {
     }
 
     @Test
-    fun bufferingAfterInitialPlaybackRearmsDeadLinkDeadline() = runTest {
+    fun seekInducedBufferingAfterFirstFrameDoesNotTriggerFallback() = runTest {
         val current = stream("Current dead link", "addon:current", "https://media.example/current.mp4")
         val next = stream("Next source", "addon:next", "https://media.example/next.mp4")
         val fallbacks = mutableListOf<StreamItem>()
         val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
         monitor.sourceSelected(current)
         runCurrent()
-        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false)
-        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true)
-        advanceTimeBy(5_000)
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true, positionMs = 30_000)
+        advanceTimeBy(30_000)
         runCurrent()
-        assertEquals(listOf(next), fallbacks)
+        assertTrue(fallbacks.isEmpty())
         monitor.close()
     }
 
@@ -915,6 +915,32 @@ class DeadLinkStartupMonitorTest {
         runCurrent()
 
         assertEquals(listOf(lower720), fallbacks)
+        monitor.close()
+    }
+
+    @Test
+    fun monitorRestsAfterTwentyFiveSecondsOfStablePlayback() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 5 },
+            candidates = { listOf(current, next) },
+            onFallback = fallbacks::add,
+        )
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
+        advanceTimeBy(24_999)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        advanceTimeBy(1)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true, positionMs = 2_000)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
         monitor.close()
     }
 
