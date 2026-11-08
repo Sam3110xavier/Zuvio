@@ -1341,8 +1341,8 @@ fun MetaDetailsScreen(
                                                     }
                                                 } else {
                                                     null
-                                                netflixStyleEnabled = netflixStyleEnabled,
                                                 },
+                                                netflixStyleEnabled = netflixStyleEnabled,
                                             )
                                         } else {
                                             DetailHero(
