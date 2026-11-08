@@ -187,7 +187,7 @@ internal class DeadLinkStartupMonitor(
                 startStabilityWindow(key)
                 log.d { "First frame confirmed; observing source for stability window ($STABILITY_WINDOW_MS ms): $key" }
             } else if (!playbackStarted && stabilityJob?.isActive != true) {
-                // Resume the stability window after a pause or a seek.
+                // Resume the stability window after playback resumes.
                 cancelTimer()
                 startStabilityWindow(key)
             } else if (playbackStarted) {

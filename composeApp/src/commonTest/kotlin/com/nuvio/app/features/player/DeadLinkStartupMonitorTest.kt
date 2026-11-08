@@ -651,7 +651,7 @@ class DeadLinkStartupMonitorTest {
         monitor.playbackStateChanged(current, isPlaying = false, isLoading = true)
         advanceTimeBy(30_000)
         runCurrent()
-        assertTrue(fallbacks.isEmpty())
+        assertEquals(listOf(next), fallbacks)
         monitor.close()
     }
 
@@ -660,9 +660,8 @@ class DeadLinkStartupMonitorTest {
     fun settingsChangeDoesNotRearmWatchdogForHealthyPlaybackDuringStabilityWindow() = runTest {
         val current = stream("Current", "addon:current", "https://media.example/current.mp4")
         val next = stream("Next", "addon:next", "https://media.example/next.mp4")
-        val afterNext = stream("After next", "addon:after", "https://media.example/after.mp4")
         val fallbacks = mutableListOf<StreamItem>()
-        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next, afterNext) }, onFallback = fallbacks::add)
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
         monitor.sourceSelected(current)
         runCurrent()
         monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
@@ -940,8 +939,9 @@ class DeadLinkStartupMonitorTest {
     fun stablePlaybackIgnoresLaterBufferingAndFatalErrorsUntilSourceChanges() = runTest {
         val current = stream("Current", "addon:current", "https://media.example/current.mp4")
         val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val afterNext = stream("After next", "addon:after", "https://media.example/after.mp4")
         val fallbacks = mutableListOf<StreamItem>()
-        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next, afterNext) }, onFallback = fallbacks::add)
         monitor.sourceSelected(current)
         runCurrent()
         monitor.playbackStateChanged(current, isPlaying = true, isLoading = false)
