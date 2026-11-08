@@ -238,11 +238,9 @@ fun ProfileEditScreen(
                         )
                     }
                 }
-            }
         }
 
-        if (true) {
-            item {
+        item {
                 NuvioSurfaceCard {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
@@ -269,11 +267,9 @@ fun ProfileEditScreen(
                         )
                     }
                 }
-            }
         }
 
-        if (canChooseBackground) {
-            item {
+        item {
                 NuvioSurfaceCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
