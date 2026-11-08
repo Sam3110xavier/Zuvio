@@ -944,6 +944,47 @@ class DeadLinkStartupMonitorTest {
         monitor.close()
     }
 
+    @Test
+    fun manualPauseDoesNotTriggerDeadLinkFallback() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 5 },
+            candidates = { listOf(current, next) },
+            onFallback = fallbacks::add,
+        )
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 10_000)
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = false, positionMs = 10_000)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        monitor.close()
+    }
+
+    @Test
+    fun endedPlaybackInvalidatesPendingDeadLinkWatchdog() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(
+            scope = backgroundScope,
+            timeoutSeconds = { 5 },
+            candidates = { listOf(current, next) },
+            onFallback = fallbacks::add,
+        )
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = false, isEnded = true)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        monitor.close()
+    }
+
     private fun stream(name: String, addonId: String, url: String) =
         StreamItem(name = name, url = url, addonName = name, addonId = addonId)
 
