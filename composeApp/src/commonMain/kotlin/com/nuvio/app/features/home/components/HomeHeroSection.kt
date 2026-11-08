@@ -93,7 +93,6 @@ import com.nuvio.app.core.ui.PrefetchArtworkDominantColors
 import com.nuvio.app.core.ui.focusedAlignment
 import com.nuvio.app.core.ui.rememberBackdropFocusState
 import com.nuvio.app.core.ui.heroStretchHeight
-import com.nuvio.app.core.ui.isLandscapeLogo
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.ScreenActivityEffect
 import com.nuvio.app.core.ui.heroStretchZoom
@@ -137,6 +136,7 @@ private const val MOBILE_PORTRAIT_HERO_WIDTH_RATIO = 1.5f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
 private const val TABLET_LANDSCAPE_HERO_HEIGHT_MULTIPLIER = 1.5f
+private const val HERO_TITLE_LOGO_MIN_ASPECT_RATIO = 1.8f
 
 internal object HomeHeroTrailerPlaybackController {
     private var stopCallback: (() -> Unit)? = null
@@ -928,10 +928,10 @@ private fun HeroContentBlock(
                 alignment = if (layout.isTablet || showNetflixActions) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
-                    logoIsLandscape = isLandscapeLogo(
-                        width = state.result.image.width,
-                        height = state.result.image.height,
-                    )
+                    val imageWidth = state.result.image.width
+                    val imageHeight = state.result.image.height
+                    logoIsLandscape = imageHeight > 0 &&
+                        imageWidth.toFloat() / imageHeight.toFloat() >= HERO_TITLE_LOGO_MIN_ASPECT_RATIO
                 },
                 onError = { logoIsLandscape = false },
             )
