@@ -3455,6 +3455,7 @@ private fun Format.transferFunctionForPlaybackInfo(): String =
 
 private fun Format.colorPrimariesForPlaybackInfo(): String =
     when (colorInfo?.colorSpace) {
+        C.COLOR_SPACE_DISPLAY_P3 -> "display-p3"
         C.COLOR_SPACE_BT2020 -> "bt.2020"
         C.COLOR_SPACE_BT709 -> "bt.709"
         C.COLOR_SPACE_BT601 -> "bt.601"

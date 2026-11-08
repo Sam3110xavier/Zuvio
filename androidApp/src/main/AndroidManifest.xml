@@ -30,6 +30,7 @@
             android:exported="true"
             android:name="com.nuvio.app.MainActivity"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:colorMode="wideColorGamut"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.Nuvio.Splash" />
 
