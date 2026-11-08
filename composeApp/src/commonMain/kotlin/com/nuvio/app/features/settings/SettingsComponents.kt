@@ -366,6 +366,7 @@ internal fun SettingsSwitchRow(
     enabled: Boolean = true,
     isTablet: Boolean,
     horizontalPadding: Dp = if (isTablet) 20.dp else 16.dp,
+    leadingContent: (@Composable RowScope.() -> Unit)? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -379,6 +380,8 @@ internal fun SettingsSwitchRow(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leadingContent?.invoke(this)
+        if (leadingContent != null) Spacer(modifier = Modifier.width(12.dp))
         Column(
             modifier = Modifier
                 .weight(1f)

@@ -116,6 +116,14 @@ internal fun LazyListScope.appearanceSettingsContent(
                     description = "Use a Netflix-inspired Home and Details layout. Turn off to restore the standard Zuvio interface.",
                     checked = posterCardStyle.netflixStyleEnabled,
                     isTablet = isTablet,
+                    leadingContent = {
+                        Text(
+                            text = "N",
+                            color = androidx.compose.ui.graphics.Color(0xFFE50914),
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Black,
+                        )
+                    },
                     onCheckedChange = PosterCardStyleRepository::setNetflixStyleEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
