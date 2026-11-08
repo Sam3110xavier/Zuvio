@@ -977,7 +977,7 @@ fun HomeScreen(
             if (!netflixStyleEnabled) {
                 posterCardStyle
             } else {
-                val widthDp = maxOf(posterCardStyle.widthDp, 142)
+                val widthDp = maxOf(posterCardStyle.widthDp, 155)
                 posterCardStyle.copy(
                     widthDp = widthDp,
                     heightDp = (widthDp * 3) / 2,
