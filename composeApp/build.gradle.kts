@@ -534,6 +534,9 @@ kotlin {
                 implementation(libs.sentry.android)
                 implementation(libs.play.services.cast.framework)
                 implementation(libs.androidx.mediarouter)
+                // Keep the complete Media3 runtime on one version. The prebuilt
+                // lib-exoplayer/lib-ui AARs are excluded below to avoid mixing versions.
+                implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.exoplayer.dash)
                 implementation(libs.androidx.media3.exoplayer.smoothstreaming)
@@ -547,8 +550,21 @@ kotlin {
                 implementation(libs.androidx.media3.common)
                 implementation(libs.androidx.media3.container)
                 implementation(libs.androidx.media3.extractor)
+                implementation(libs.androidx.media3.ui)
                 implementation(libs.mpv.android.lib)
-                implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
+                // Keep only custom decoder extensions and the Nuvio native engine.
+                // Standard ExoPlayer core/UI are supplied by the aligned Maven Media3 stack.
+                implementation(
+                    fileTree(
+                        mapOf(
+                            "dir" to "libs",
+                            "include" to listOf(
+                                "lib-decoder-*-release.aar",
+                                "lib-nuvio-engine-android-*.aar",
+                            ),
+                        ),
+                    ),
+                )
                 if (androidDistribution == "full") {
                     implementation("com.github.capullo-tech:lib-tdlib-android:11850efeb5791d4fd386c0eeec1ebce4c5080435")
                     implementation("io.ktor:ktor-server-core:${libs.versions.ktor.get()}")
@@ -655,7 +671,5 @@ configurations.matching { it.name == "iosMainImplementation" }.configureEach {
     project.dependencies.add(name, libs.ktor.client.darwin)
 }
 
-configurations.all {
-    exclude(group = "androidx.media3", module = "media3-exoplayer")
-    exclude(group = "androidx.media3", module = "media3-ui")
-}
+// Media3 core and UI must resolve from the same version catalog pin as
+// HLS/DASH/RTSP, datasource, extractor and decoder modules.
