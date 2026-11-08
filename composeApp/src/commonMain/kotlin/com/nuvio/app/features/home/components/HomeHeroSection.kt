@@ -898,8 +898,8 @@ private fun HeroContentBlock(
     onItemClick: ((MetaPreview) -> Unit)?,
     onItemLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    var logoLoadError by remember(item.type, item.id, item.logo) {
-        mutableStateOf(false)
+    var logoIsLandscape by remember(item.type, item.id, item.logo) {
+        mutableStateOf<Boolean?>(null)
     }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
 
@@ -909,25 +909,31 @@ private fun HeroContentBlock(
             .animateContentSize(),
         horizontalAlignment = if (layout.isTablet || showNetflixActions) Alignment.Start else Alignment.CenterHorizontally,
     ) {
-        if (logoUrl != null && !logoLoadError) {
+        if (logoUrl != null && logoIsLandscape != false) {
             AsyncImage(
                 model = logoUrl,
                 contentDescription = item.name,
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
                     .aspectRatio(2.6f)
-                    .clickable(enabled = onItemClick != null) {
+                    .graphicsLayer {
+                        // Keep unvalidated artwork invisible until its intrinsic dimensions
+                        // confirm it is a wide title logo; this prevents a portrait poster
+                        // flashing in the logo slot while Coil finishes decoding it.
+                        alpha = if (logoIsLandscape == true) 1f else 0f
+                    }
+                    .clickable(enabled = onItemClick != null && logoIsLandscape == true) {
                         onItemClick?.invoke(item)
                     },
                 alignment = if (layout.isTablet || showNetflixActions) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
-                    logoLoadError = !isLandscapeLogo(
+                    logoIsLandscape = isLandscapeLogo(
                         width = state.result.image.width,
                         height = state.result.image.height,
                     )
                 },
-                onError = { logoLoadError = true },
+                onError = { logoIsLandscape = false },
             )
         } else {
             Text(
