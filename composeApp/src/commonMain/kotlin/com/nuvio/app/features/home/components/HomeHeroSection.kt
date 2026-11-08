@@ -3,6 +3,7 @@ package com.nuvio.app.features.home.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.MutatePriority
@@ -117,6 +118,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
@@ -860,14 +862,11 @@ private fun NetflixHomeTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = "N",
-            style = MaterialTheme.typography.displayMedium.copy(
-                fontSize = 42.sp,
-                fontWeight = FontWeight.Black,
-                lineHeight = 42.sp,
-            ),
-            color = Color(0xFFE50914),
+        Image(
+            painter = painterResource(Res.drawable.app_icon_original),
+            contentDescription = "Nuvio",
+            modifier = Modifier.size(36.dp),
+            contentScale = ContentScale.Fit,
         )
         Text(
             text = "Home",
