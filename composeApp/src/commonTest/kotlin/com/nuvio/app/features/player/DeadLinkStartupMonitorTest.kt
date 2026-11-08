@@ -657,6 +657,39 @@ class DeadLinkStartupMonitorTest {
 
 
     @Test
+    fun shortTimelineSeekBufferingDoesNotTriggerFallback() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 10_000)
+        monitor.playbackStateChanged(current, isPlaying = false, isLoading = true, positionMs = 11_000, isSeeking = true)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        monitor.close()
+    }
+
+    @Test
+    fun settingsChangeDoesNotRearmWatchdogForHealthyPlaybackDuringStabilityWindow() = runTest {
+        val current = stream("Current", "addon:current", "https://media.example/current.mp4")
+        val next = stream("Next", "addon:next", "https://media.example/next.mp4")
+        val fallbacks = mutableListOf<StreamItem>()
+        val monitor = newMonitor(scope = backgroundScope, timeoutSeconds = { 5 }, candidates = { listOf(current, next) }, onFallback = fallbacks::add)
+        monitor.sourceSelected(current)
+        runCurrent()
+        monitor.playbackStateChanged(current, isPlaying = true, isLoading = false, positionMs = 1_000)
+        advanceTimeBy(2_000)
+        monitor.settingsChanged()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fallbacks.isEmpty())
+        monitor.close()
+    }
+
+    @Test
     fun fallbackChecksDistinctLinksFromTheSameAddonIndividuallyBeforePlugins() = runTest {
         val first = stream("4K BluRay", "addon:one", "https://media.example/4k.mkv")
         val second = stream("1080p BluRay", "addon:one", "https://media.example/1080.mkv")

@@ -154,6 +154,7 @@ internal class DeadLinkStartupMonitor(
         identityKeyOverride: String? = null,
         isEnded: Boolean = false,
         positionMs: Long = 0L,
+        isSeeking: Boolean = false,
     ) {
         if (closed) return
         val key = identityKeyOverride ?: stream?.playerSourceIdentityKey() ?: return
@@ -169,7 +170,7 @@ internal class DeadLinkStartupMonitor(
         }
         val previousPosition = lastPositionMs
         lastPositionMs = positionMs
-        val seekJump = previousPosition != null && kotlin.math.abs(positionMs - previousPosition) >= SEEK_POSITION_JUMP_MS
+        val seekJump = isSeeking || (previousPosition != null && kotlin.math.abs(positionMs - previousPosition) >= SEEK_POSITION_JUMP_MS)
 
         if (isLoading) {
             // A seek changes the playhead before ExoPlayer reports BUFFERING.
@@ -251,7 +252,10 @@ internal class DeadLinkStartupMonitor(
             generation++
             return
         }
-        if (playbackStarted && !buffering) return
+        // A settings/share toggle must not restart the startup watchdog for a source
+        // that has already rendered a frame. Only an actual in-progress startup or
+        // rebuffer should be timed again.
+        if ((playbackStarted || firstFrameSeen) && !buffering) return
         cancelTimer()
         generation++
         exhausted = false
