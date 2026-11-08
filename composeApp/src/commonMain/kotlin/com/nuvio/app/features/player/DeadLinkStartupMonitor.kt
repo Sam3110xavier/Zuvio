@@ -32,6 +32,9 @@ internal class DeadLinkStartupMonitor(
 ) {
     private val log = Logger.withTag("DeadLinkStartupMonitor")
     private var timer: Job? = null
+    private var stabilityJob: Job? = null
+    private var firstFrameSeen = false
+    private var lastPositionMs: Long? = null
     private var generation = 0L
     private var currentKey: String? = null
     private val attemptedKeys = linkedSetOf<String>()
@@ -48,6 +51,9 @@ internal class DeadLinkStartupMonitor(
     fun resetForContent() {
         generation++
         cancelTimer()
+        cancelStabilityJob()
+        firstFrameSeen = false
+        lastPositionMs = null
         currentKey = null
         attemptedKeys.clear()
         deadMarkedKeys.clear()
@@ -79,6 +85,9 @@ internal class DeadLinkStartupMonitor(
         }
         if (!timeoutEnabled()) {
             cancelTimer()
+            cancelStabilityJob()
+            firstFrameSeen = false
+            lastPositionMs = null
             generation++
             currentKey = key
             attemptedKeys += key
@@ -108,6 +117,9 @@ internal class DeadLinkStartupMonitor(
         }
 
         cancelTimer()
+        cancelStabilityJob()
+        firstFrameSeen = false
+        lastPositionMs = null
         generation++
         currentKey = key
         attemptedKeys += key
@@ -123,6 +135,9 @@ internal class DeadLinkStartupMonitor(
     fun sourceCleared() {
         generation++
         cancelTimer()
+        cancelStabilityJob()
+        firstFrameSeen = false
+        lastPositionMs = null
         currentKey = null
         currentStream = null
         playbackStarted = false
@@ -137,26 +152,43 @@ internal class DeadLinkStartupMonitor(
         isPlaying: Boolean,
         isLoading: Boolean,
         identityKeyOverride: String? = null,
+        isEnded: Boolean = false,
+        positionMs: Long = 0L,
     ) {
         if (closed) return
         val key = identityKeyOverride ?: stream?.playerSourceIdentityKey() ?: return
         if (key != currentKey) return
+        if (isEnded) {
+            cancelTimer()
+            cancelStabilityJob()
+            generation++
+            buffering = false
+            playbackStarted = true
+            log.d { "Playback ended; dead-link monitoring stopped for $key" }
+            return
+        }
+        val previousPosition = lastPositionMs
+        lastPositionMs = positionMs
+        val seekJump = previousPosition != null && kotlin.math.abs(positionMs - previousPosition) >= SEEK_POSITION_JUMP_MS
 
-        // Some player engines report playWhenReady/isPlaying intent while the
-        // media is still buffering. Loading must take precedence or the dead-link
-        // watchdog gets cancelled for precisely the streams it needs to recover.
         if (isLoading) {
+            // A seek changes the playhead before ExoPlayer reports BUFFERING.
+            // Do not classify that user-requested rebuffer as a dead source.
+            if (seekJump) {
+                buffering = false
+                cancelTimer()
+                cancelStabilityJob()
+                log.d { "Ignoring seek-induced buffering for $key" }
+                return
+            }
             if (!buffering) {
-                // Record buffering even while fallback is suppressed (for example, while a
-                // guest follows the host's shared source). If fallback is later re-enabled,
-                // settingsChanged() can then re-arm the watchdog for this still-loading source.
                 buffering = true
-                playbackStarted = false
                 generation++
                 cancelTimer()
+                cancelStabilityJob()
                 if (timeoutEnabled()) {
                     armTimeout(key, generation)
-                    log.w { "Playback is still loading; dead-link deadline armed for $key (isPlaying=$isPlaying)" }
+                    log.w { "Source is buffering; dead-link deadline armed for $key (isPlaying=$isPlaying)" }
                 }
             }
             return
@@ -164,11 +196,24 @@ internal class DeadLinkStartupMonitor(
 
         buffering = false
         if (isPlaying) {
-            playbackStarted = true
             awaitingActivation = false
             fatalFailureInProgress = false
+            if (!firstFrameSeen) {
+                firstFrameSeen = true
+                cancelTimer()
+                startStabilityWindow(key)
+                log.d { "First frame confirmed; observing source for stability window ($STABILITY_WINDOW_MS ms): $key" }
+            } else if (!playbackStarted && stabilityJob?.isActive != true) {
+                // Resume the stability window after a pause or a seek.
+                cancelTimer()
+                startStabilityWindow(key)
+            } else if (playbackStarted) {
+                cancelTimer()
+            }
+        } else if (firstFrameSeen) {
+            // A manual pause must not be interpreted as a failed source.
             cancelTimer()
-            log.d { "Playback confirmed started; startup fallback disabled for $key" }
+            cancelStabilityJob()
         }
     }
 
@@ -186,6 +231,7 @@ internal class DeadLinkStartupMonitor(
         if (key != currentKey) return
 
         fatalFailureInProgress = true
+        cancelStabilityJob()
         playbackStarted = false
         buffering = false
         cancelTimer()
@@ -216,6 +262,23 @@ internal class DeadLinkStartupMonitor(
         closed = true
         generation++
         cancelTimer()
+        cancelStabilityJob()
+    }
+
+    private fun cancelStabilityJob() {
+        stabilityJob?.cancel()
+        stabilityJob = null
+    }
+
+    private fun startStabilityWindow(key: String) {
+        cancelStabilityJob()
+        stabilityJob = scope.launch {
+            delay(STABILITY_WINDOW_MS)
+            if (closed || currentKey != key || buffering || fatalFailureInProgress) return@launch
+            playbackStarted = true
+            cancelTimer()
+            log.i { "Source stable for ${STABILITY_WINDOW_MS}ms; monitoring rests until source changes: $key" }
+        }
     }
 
     private fun cancelTimer() {
@@ -311,6 +374,9 @@ internal class DeadLinkStartupMonitor(
                 }
                 generation++
                 playbackStarted = false
+                firstFrameSeen = false
+                lastPositionMs = null
+                cancelStabilityJob()
                 buffering = false
                 awaitingActivation = true
                 exhausted = false
@@ -349,5 +415,7 @@ internal class DeadLinkStartupMonitor(
 
     private companion object {
         const val CANDIDATE_POLL_INTERVAL_MS = 300L
+        const val STABILITY_WINDOW_MS = 25_000L
+        const val SEEK_POSITION_JUMP_MS = 5_000L
     }
 }
