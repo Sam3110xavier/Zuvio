@@ -40,12 +40,14 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
     var editingRow by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf<MergedHomeRowDefinition?>(null) }
+    var rowsExpanded by remember { mutableStateOf(false) }
     val eligibleSourceKeys = remember(state.items) {
         HomeCatalogSettingsRepository.mergedRowSourceKeys()
     }
     val sourceRows = remember(state.items, eligibleSourceKeys) {
         state.items.filter { item -> item.key in eligibleSourceKeys }
     }
+    val mergedRows = state.mergedRows.sortedBy { it.order }
 
     SettingsSection(
         title = "Merged home rows",
@@ -58,78 +60,98 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
             )
             SettingsGroupDivider(isTablet = isTablet)
-            SettingsSwitchRow(
-                title = "Hide merged titles without posters",
-                description = "Apply this filter to merged rows and their source tabs.",
-                checked = state.hideMergedTitlesWithoutPosters,
-                isTablet = isTablet,
-                onCheckedChange = HomeCatalogSettingsRepository::setHideMergedTitlesWithoutPosters,
-            )
-            SettingsGroupDivider(isTablet = isTablet)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                Button(
-                    onClick = {
-                        editingRow = null
-                        showEditor = true
-                    },
-                    enabled = sourceRows.size >= 2,
-                ) {
-                    Text("Create merged row")
-                }
-            }
-        }
-    }
-
-    state.mergedRows.sortedBy { it.order }.forEach { row ->
-        SettingsGroup(
-            isTablet = isTablet,
-            modifier = Modifier.padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(row.title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                     Text(
-                        "${row.sourceKeys.size} source catalogs · ${row.resolvedDisplayMode().name.lowercase().replace('_', ' ')}",
-                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        "Your merged rows",
+                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                     )
-                    val sourceLabels = row.sourceKeys.map { key ->
-                        sourceRows.firstOrNull { it.key == key }?.displayTitle ?: "Unavailable: $key"
-                    }
                     Text(
-                        sourceLabels.joinToString(" · "),
+                        "${mergedRows.size} configured",
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(
-                    checked = HomeCatalogSettingsRepository.mergedRowEnabled(row.id),
-                    onCheckedChange = { HomeCatalogSettingsRepository.setEnabled(mergedHomeRowKey(row.id), it) },
-                )
+                TextButton(onClick = { rowsExpanded = !rowsExpanded }) {
+                    Text(if (rowsExpanded) "Collapse" else "Open")
+                }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = {
-                    HomeCatalogSettingsRepository.duplicateMergedRow(row.id)
-                }) { Text("Duplicate") }
-                TextButton(onClick = {
-                    editingRow = row
-                    showEditor = true
-                }) { Text("Edit") }
-                TextButton(onClick = { showDelete = row }) { Text("Delete") }
+            if (rowsExpanded) {
+                SettingsGroupDivider(isTablet = isTablet)
+                if (mergedRows.isEmpty()) {
+                    Text(
+                        "No merged rows yet. Create one to combine two or more catalogs.",
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    mergedRows.forEachIndexed { index, row ->
+                        if (index > 0) SettingsGroupDivider(isTablet = isTablet)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(row.title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "${row.sourceKeys.size} source catalogs · ${row.resolvedDisplayMode().name.lowercase().replace('_', ' ')}",
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                )
+                                val sourceLabels = row.sourceKeys.map { key ->
+                                    sourceRows.firstOrNull { it.key == key }?.displayTitle ?: "Unavailable: $key"
+                                }
+                                Text(
+                                    sourceLabels.joinToString(" · "),
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = HomeCatalogSettingsRepository.mergedRowEnabled(row.id),
+                                onCheckedChange = { HomeCatalogSettingsRepository.setEnabled(mergedHomeRowKey(row.id), it) },
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(onClick = { HomeCatalogSettingsRepository.duplicateMergedRow(row.id) }) {
+                                Text("Duplicate")
+                            }
+                            TextButton(onClick = {
+                                editingRow = row
+                                showEditor = true
+                            }) { Text("Edit") }
+                            TextButton(onClick = { showDelete = row }) { Text("Delete") }
+                        }
+                    }
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Button(
+                        onClick = {
+                            editingRow = null
+                            showEditor = true
+                        },
+                        enabled = sourceRows.size >= 2,
+                    ) {
+                        Text("Create merged row")
+                    }
+                }
             }
         }
     }
 
-    if (sourceRows.isEmpty()) {
+    if (sourceRows.isEmpty() && rowsExpanded) {
         Text(
             "Enable at least two add-on catalog rows to create a merged row.",
             modifier = Modifier.padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 8.dp),
@@ -321,10 +343,6 @@ private fun MergedHomeRowEditorDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
                     Text("Hide included source rows from Home")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = hidePosterless, onCheckedChange = { hidePosterless = it })
-                    Text("Hide titles without posters")
                 }
                 validationError?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }

@@ -477,7 +477,7 @@ object HomeRepository {
                     blendMode = row.resolvedBlendMode(),
                     sortMode = MergedHomeRowSortMode.OFF,
                     contentType = contentType,
-                    hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                    hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters,
                 )
                 val hasMore = sourceSections.any(HomeCatalogSection::hasMore)
                 if (mergedItems.isEmpty() && !hasMore) return@mapNotNull null
@@ -488,7 +488,7 @@ object HomeRepository {
                             val sourceItems = filterMergedHomeItems(
                                 items = source.items,
                                 contentType = contentType,
-                                hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                                hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters,
                             )
                             add(
                                 HomeCatalogTab(
@@ -507,7 +507,7 @@ object HomeRepository {
                         deduplicate = row.deduplicate,
                         blendMode = row.resolvedBlendMode(),
                         sortMode = MergedHomeRowSortMode.OFF,
-                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters,
                         hasMore = hasMore,
                         maxItems = HOME_MERGED_ROW_ITEM_LIMIT,
                     )
@@ -538,7 +538,7 @@ object HomeRepository {
             if (preference?.enabled == false) return@mapNotNull null
             section.copy(
                 items = section.items.reapplyCustomPosterUrls(posterPattern),
-            ).withReleaseFilter().copy(
+            ).withReleaseFilter().withGlobalPosterFilter().copy(
                 title = preference?.customTitle?.takeIf { it.isNotBlank() } ?: section.title,
             )
         }
