@@ -4,7 +4,7 @@ package com.nuvio.app.features.autosync
 
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
-import androidx.media3.common.util.Consumer
+import java.util.function.Consumer
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.SubtitleParser
 import com.nuvio.tv.libass.media.AssHandler

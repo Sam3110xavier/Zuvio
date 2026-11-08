@@ -560,7 +560,8 @@ private fun ExoPlayerSurface(
         )
             .setExtensionRendererMode(effectiveDecoderPriority)
             .setEnableDecoderFallback(true)
-            .setMapDV7ToHevc(playerSettings.mapDV7ToHevc)
+        // Media3 1.12.0-alpha02 no longer exposes the legacy setMapDV7ToHevc hook.
+        // Keep decoder fallback enabled; profile-7 remapping must be handled by codec selection.
 
         val trackSelector = DefaultTrackSelector(context).apply {
             var parameters = buildUponParameters()
