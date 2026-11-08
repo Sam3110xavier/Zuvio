@@ -238,6 +238,7 @@ fun ProfileEditScreen(
                         )
                     }
                 }
+            }
         }
 
         item {
