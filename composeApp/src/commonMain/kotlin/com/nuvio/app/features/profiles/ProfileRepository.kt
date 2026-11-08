@@ -236,6 +236,8 @@ object ProfileRepository {
         avatarColorHex: String,
         avatarId: String? = null,
         avatarUrl: String? = null,
+        profileBackgroundId: String? = null,
+        profileBackgroundUrl: String? = null,
         usesPrimaryAddons: Boolean = false,
     ) {
         val existing = _state.value.profiles
@@ -260,6 +262,8 @@ object ProfileRepository {
             usesPrimaryAddons = usesPrimaryAddons,
             avatarId = avatarId,
             avatarUrl = avatarUrl,
+            profileBackgroundId = profileBackgroundId,
+            profileBackgroundUrl = profileBackgroundUrl,
         )
 
         pushProfiles(allPayloads)
