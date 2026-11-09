@@ -177,7 +177,16 @@ private fun BackdropArtwork(
                 },
             ),
     ) {
-        val imageUrl = meta.background ?: meta.poster
+        val backdropCandidates = remember(meta.id, meta.background, meta.poster) {
+            listOfNotNull(
+                meta.background?.trim()?.takeIf(String::isNotBlank),
+                meta.poster?.trim()?.takeIf(String::isNotBlank),
+            ).distinct()
+        }
+        var backdropCandidateIndex by remember(meta.id, meta.background, meta.poster) {
+            mutableStateOf(0)
+        }
+        val imageUrl = backdropCandidates.getOrNull(backdropCandidateIndex)
         if (imageUrl != null) {
             AsyncImage(
                 model = imageUrl,
@@ -187,6 +196,11 @@ private fun BackdropArtwork(
                 contentScale = ContentScale.Crop,
                 onSuccess = { state ->
                     onBackdropLoaded(state.painter, loadedBackdropImageBitmap(state.result))
+                },
+                onError = {
+                    if (backdropCandidateIndex < backdropCandidates.lastIndex) {
+                        backdropCandidateIndex += 1
+                    }
                 },
             )
         } else {

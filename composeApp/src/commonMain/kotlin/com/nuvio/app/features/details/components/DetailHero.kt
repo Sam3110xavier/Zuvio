@@ -131,7 +131,16 @@ fun DetailHero(
                         .fillMaxSize()
                         .then(if (cinematicBackground) Modifier.featherArtwork() else Modifier),
                 ) {
-                    val imageUrl = meta.background ?: meta.poster
+                    val backdropCandidates = remember(meta.id, meta.background, meta.poster) {
+                        listOfNotNull(
+                            meta.background?.trim()?.takeIf(String::isNotBlank),
+                            meta.poster?.trim()?.takeIf(String::isNotBlank),
+                        ).distinct()
+                    }
+                    var backdropCandidateIndex by remember(meta.id, meta.background, meta.poster) {
+                        mutableStateOf(0)
+                    }
+                    val imageUrl = backdropCandidates.getOrNull(backdropCandidateIndex)
                     if (imageUrl != null) {
                         val backdropFocus = rememberBackdropFocusState(imageUrl)
                         AsyncImage(
@@ -163,7 +172,14 @@ fun DetailHero(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surface),
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            MaterialTheme.colorScheme.background,
+                                        ),
+                                    ),
+                                ),
                         )
                     }
                     if (netflixStyleEnabled) {
