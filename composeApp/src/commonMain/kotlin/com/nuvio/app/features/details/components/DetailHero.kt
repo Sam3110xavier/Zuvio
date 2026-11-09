@@ -167,6 +167,11 @@ fun DetailHero(
                                     loadedBackdropImageBitmap(state.result),
                                 )
                             },
+                            onError = {
+                                if (backdropCandidateIndex < backdropCandidates.lastIndex) {
+                                    backdropCandidateIndex += 1
+                                }
+                            },
                         )
                     } else {
                         Box(
