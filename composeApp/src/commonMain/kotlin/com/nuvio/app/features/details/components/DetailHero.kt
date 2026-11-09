@@ -131,16 +131,7 @@ fun DetailHero(
                         .fillMaxSize()
                         .then(if (cinematicBackground) Modifier.featherArtwork() else Modifier),
                 ) {
-                    val backdropCandidates = remember(meta.id, meta.background, meta.poster) {
-                        listOfNotNull(
-                            meta.background?.trim()?.takeIf(String::isNotBlank),
-                            meta.poster?.trim()?.takeIf(String::isNotBlank),
-                        ).distinct()
-                    }
-                    var backdropCandidateIndex by remember(meta.id, meta.background, meta.poster) {
-                        mutableStateOf(0)
-                    }
-                    val imageUrl = backdropCandidates.getOrNull(backdropCandidateIndex)
+                    val imageUrl = meta.background?.trim()?.takeIf(String::isNotBlank)
                     if (imageUrl != null) {
                         val backdropFocus = rememberBackdropFocusState(imageUrl)
                         AsyncImage(
@@ -166,11 +157,6 @@ fun DetailHero(
                                     state.painter,
                                     loadedBackdropImageBitmap(state.result),
                                 )
-                            },
-                            onError = {
-                                if (backdropCandidateIndex < backdropCandidates.lastIndex) {
-                                    backdropCandidateIndex += 1
-                                }
                             },
                         )
                     } else {
@@ -305,6 +291,17 @@ fun DetailHero(
                                 .height(if (isTablet) 72.dp else 80.dp),
                             alignment = if (netflixStyleEnabled) Alignment.CenterStart else Alignment.Center,
                             contentScale = ContentScale.Fit,
+                            onSuccess = { state ->
+                                val imageSize = state.painter.intrinsicSize
+                                if (
+                                    imageSize.width > 0f &&
+                                    imageSize.height > 0f &&
+                                    imageSize.width / imageSize.height < 1.25f
+                                ) {
+                                    // Portrait artwork belongs in poster cards, not the hero logo slot.
+                                    logoLoadError = true
+                                }
+                            },
                             onError = { logoLoadError = true },
                         )
                     } else {
