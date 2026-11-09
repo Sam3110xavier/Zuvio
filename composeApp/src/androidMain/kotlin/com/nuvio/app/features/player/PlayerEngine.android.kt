@@ -133,6 +133,41 @@ import java.util.concurrent.atomic.AtomicReference
 private const val TAG = "NuvioPlayer"
 private const val PLAYER_DIAGNOSTIC_TAG = "NuvioPlayerDiag"
 
+/**
+ * Applies the optional Nuvio-patched Dolby Vision Profile 7 mapping API when available.
+ * Stock Media3 does not expose setMapDV7ToHevc, so this must not be a compile-time call.
+ */
+private fun DefaultRenderersFactory.setMapDV7ToHevcCompat(
+    enabled: Boolean,
+): DefaultRenderersFactory {
+    val setter = javaClass.methods.firstOrNull { method ->
+        method.name == "setMapDV7ToHevc" &&
+            method.parameterCount == 1 &&
+            method.parameterTypes[0] == Boolean::class.javaPrimitiveType
+    }
+    if (setter == null) {
+        if (enabled) {
+            Log.w(
+                PLAYER_DIAGNOSTIC_TAG,
+                "DV7-to-HEVC mapping was requested, but this Media3 build does not expose " +
+                    "the Nuvio setMapDV7ToHevc extension; the setting is ignored.",
+            )
+        }
+        return this
+    }
+
+    return try {
+        setter.invoke(this, enabled)
+        this
+    } catch (error: Exception) {
+        Log.w(
+            PLAYER_DIAGNOSTIC_TAG,
+            "Could not apply the Nuvio DV7-to-HEVC mapping extension: ${error.javaClass.simpleName}",
+        )
+        this
+    }
+}
+
 private class PlaybackDiagnostics {
     var prepareStartedAtMs: Long = 0L
     var attempt: Int = 0
@@ -560,8 +595,7 @@ private fun ExoPlayerSurface(
         )
             .setExtensionRendererMode(effectiveDecoderPriority)
             .setEnableDecoderFallback(true)
-        // Media3 1.12.0-alpha02 no longer exposes the legacy setMapDV7ToHevc hook.
-        // Keep decoder fallback enabled; profile-7 remapping must be handled by codec selection.
+            .setMapDV7ToHevcCompat(playerSettings.mapDV7ToHevc)
 
         val trackSelector = DefaultTrackSelector(context).apply {
             var parameters = buildUponParameters()
