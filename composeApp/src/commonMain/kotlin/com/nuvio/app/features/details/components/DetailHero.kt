@@ -131,7 +131,7 @@ fun DetailHero(
                         .fillMaxSize()
                         .then(if (cinematicBackground) Modifier.featherArtwork() else Modifier),
                 ) {
-                    val imageUrl = meta.background?.trim()?.takeIf(String::isNotBlank)
+                    val imageUrl = meta.background ?: meta.poster
                     if (imageUrl != null) {
                         val backdropFocus = rememberBackdropFocusState(imageUrl)
                         AsyncImage(
@@ -163,14 +163,7 @@ fun DetailHero(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                            MaterialTheme.colorScheme.background,
-                                        ),
-                                    ),
-                                ),
+                                .background(MaterialTheme.colorScheme.surface),
                         )
                     }
                     if (netflixStyleEnabled) {
@@ -291,17 +284,6 @@ fun DetailHero(
                                 .height(if (isTablet) 72.dp else 80.dp),
                             alignment = if (netflixStyleEnabled) Alignment.CenterStart else Alignment.Center,
                             contentScale = ContentScale.Fit,
-                            onSuccess = { state ->
-                                val imageSize = state.painter.intrinsicSize
-                                if (
-                                    imageSize.width > 0f &&
-                                    imageSize.height > 0f &&
-                                    imageSize.width / imageSize.height < 1.25f
-                                ) {
-                                    // Portrait artwork belongs in poster cards, not the hero logo slot.
-                                    logoLoadError = true
-                                }
-                            },
                             onError = { logoLoadError = true },
                         )
                     } else {

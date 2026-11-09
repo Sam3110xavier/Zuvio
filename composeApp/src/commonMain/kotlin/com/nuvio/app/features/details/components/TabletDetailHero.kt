@@ -177,7 +177,7 @@ private fun BackdropArtwork(
                 },
             ),
     ) {
-        val imageUrl = meta.background?.trim()?.takeIf(String::isNotBlank)
+        val imageUrl = meta.background ?: meta.poster
         if (imageUrl != null) {
             AsyncImage(
                 model = imageUrl,
@@ -350,17 +350,6 @@ fun TabletDetailHero(
                         .height(120.dp),
                     alignment = Alignment.CenterStart,
                     contentScale = ContentScale.Fit,
-                    onSuccess = { state ->
-                        val imageSize = state.painter.intrinsicSize
-                        if (
-                            imageSize.width > 0f &&
-                            imageSize.height > 0f &&
-                            imageSize.width / imageSize.height < 1.25f
-                        ) {
-                            // Portrait artwork belongs in poster cards, not the hero logo slot.
-                            logoLoadError = true
-                        }
-                    },
                     onError = { logoLoadError = true },
                 )
             } else {
