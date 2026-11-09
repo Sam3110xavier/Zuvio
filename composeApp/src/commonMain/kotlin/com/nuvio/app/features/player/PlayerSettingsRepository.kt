@@ -72,6 +72,8 @@ data class PlayerSettingsUiState(
     val androidLibmpvVideoOutput: AndroidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext,
     val androidLibmpvHardwareDecodingEnabled: Boolean = true,
     val androidLibmpvYuv420pEnabled: Boolean = false,
+    val androidAnimeUpscaleEnabled: Boolean = false,
+    val androidAnimeLineSharpenEnabled: Boolean = false,
     val androidExoChaptersEnabled: Boolean = false,
     val rememberAudioDelayPerDevice: Boolean = true,
     val persistAudioAmplification: Boolean = false,
@@ -188,6 +190,8 @@ object PlayerSettingsRepository {
     private var androidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext
     private var androidLibmpvHardwareDecodingEnabled = true
     private var androidLibmpvYuv420pEnabled = false
+    private var androidAnimeUpscaleEnabled = false
+    private var androidAnimeLineSharpenEnabled = false
     private var androidExoChaptersEnabled = false
     private var rememberAudioDelayPerDevice = true
     private var persistAudioAmplification = false
@@ -309,6 +313,8 @@ object PlayerSettingsRepository {
         androidLibmpvVideoOutput = AndroidLibmpvVideoOutput.GpuNext
         androidLibmpvHardwareDecodingEnabled = true
         androidLibmpvYuv420pEnabled = false
+        androidAnimeUpscaleEnabled = false
+        androidAnimeLineSharpenEnabled = false
         androidExoChaptersEnabled = false
         rememberAudioDelayPerDevice = true
         persistAudioAmplification = false
@@ -460,6 +466,8 @@ object PlayerSettingsRepository {
             ?: AndroidLibmpvVideoOutput.GpuNext
         androidLibmpvHardwareDecodingEnabled = PlayerSettingsStorage.loadAndroidLibmpvHardwareDecodingEnabled() ?: true
         androidLibmpvYuv420pEnabled = PlayerSettingsStorage.loadAndroidLibmpvYuv420pEnabled() ?: false
+        androidAnimeUpscaleEnabled = PlayerSettingsStorage.loadAndroidAnimeUpscaleEnabled() ?: false
+        androidAnimeLineSharpenEnabled = PlayerSettingsStorage.loadAndroidAnimeLineSharpenEnabled() ?: false
         androidExoChaptersEnabled = PlayerSettingsStorage.loadAndroidExoChaptersEnabled() ?: false
         rememberAudioDelayPerDevice = PlayerSettingsStorage.loadRememberAudioDelayPerDevice() ?: true
         persistAudioAmplification = PlayerSettingsStorage.loadPersistAudioAmplification() ?: false
@@ -912,6 +920,22 @@ object PlayerSettingsRepository {
         androidLibmpvYuv420pEnabled = enabled
         publish()
         PlayerSettingsStorage.saveAndroidLibmpvYuv420pEnabled(enabled)
+    }
+
+    fun setAndroidAnimeUpscaleEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (androidAnimeUpscaleEnabled == enabled) return
+        androidAnimeUpscaleEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAndroidAnimeUpscaleEnabled(enabled)
+    }
+
+    fun setAndroidAnimeLineSharpenEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (androidAnimeLineSharpenEnabled == enabled) return
+        androidAnimeLineSharpenEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveAndroidAnimeLineSharpenEnabled(enabled)
     }
 
     fun setAndroidExoChaptersEnabled(enabled: Boolean) {
@@ -1575,6 +1599,8 @@ object PlayerSettingsRepository {
             androidLibmpvVideoOutput = androidLibmpvVideoOutput,
             androidLibmpvHardwareDecodingEnabled = androidLibmpvHardwareDecodingEnabled,
             androidLibmpvYuv420pEnabled = androidLibmpvYuv420pEnabled,
+            androidAnimeUpscaleEnabled = androidAnimeUpscaleEnabled,
+            androidAnimeLineSharpenEnabled = androidAnimeLineSharpenEnabled,
             androidExoChaptersEnabled = androidExoChaptersEnabled,
             rememberAudioDelayPerDevice = rememberAudioDelayPerDevice,
             persistAudioAmplification = persistAudioAmplification,
