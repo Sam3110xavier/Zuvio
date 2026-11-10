@@ -87,6 +87,24 @@ class SupabaseLibrarySyncAdapterTest {
     }
 
     @Test
+    fun `delta push and pull preserve local watch status`() {
+        val item = LibraryItem(
+            id = "tt789",
+            type = "movie",
+            name = "Film",
+            localStatus = com.nuvio.app.features.library.LocalLibraryStatus.ON_HOLD.storageKey,
+            savedAtEpochMs = 3L,
+        )
+        val payload = json.parseToJsonElement(json.encodeToString(item.toSyncItem())).jsonObject
+        val eventJson = payload.toMutableMap().apply {
+            put("event_id", kotlinx.serialization.json.JsonPrimitive(9L))
+            put("operation", kotlinx.serialization.json.JsonPrimitive("upsert"))
+        }
+        val event = json.decodeFromString<LibraryDeltaSyncItem>(kotlinx.serialization.json.JsonObject(eventJson).toString())
+        assertEquals(item.localStatus, event.toLibraryItem().localStatus)
+    }
+
+    @Test
     fun `older snapshot and delta payloads without logos still decode`() {
         val snapshot = json.decodeFromString<LibrarySyncItem>(
             """{"content_id":"tt123","content_type":"movie"}""",
