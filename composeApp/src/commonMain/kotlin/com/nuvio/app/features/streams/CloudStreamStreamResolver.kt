@@ -62,11 +62,14 @@ internal fun buildCloudStreamSearchRequest(
         null
     }
     val episodeTitle = episodeDetails?.title?.takeIf(String::isNotBlank)
-    val externalId = episodeDetails?.imdbId
-        ?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
-        ?: details?.imdbId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
-        ?: parentMetaId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
-        ?: videoId.takeIf { it.matches(Regex("tt\\d{7,10}")) }
+    val imdbIdPattern = Regex("tt\\d{5,12}", RegexOption.IGNORE_CASE)
+    val externalId = episodeDetails?.imdbId?.trim()?.takeIf(imdbIdPattern::matches)
+        ?: details?.imdbId?.trim()?.takeIf(imdbIdPattern::matches)
+        ?: parentMetaId?.trim()?.takeIf(imdbIdPattern::matches)
+        ?: videoId.trim().takeIf(imdbIdPattern::matches)
+    val aliases = listOfNotNull(searchTitle?.trim(), details?.name?.trim())
+        .filter(String::isNotBlank)
+        .distinct()
     return CloudStreamSearchRequest(
         title = title,
         type = type,
@@ -75,6 +78,7 @@ internal fun buildCloudStreamSearchRequest(
         episode = episode,
         episodeTitle = episodeTitle,
         externalId = externalId,
+        aliases = aliases,
     )
 }
 
