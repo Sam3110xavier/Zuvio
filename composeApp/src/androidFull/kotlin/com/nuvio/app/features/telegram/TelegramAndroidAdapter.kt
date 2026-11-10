@@ -383,7 +383,12 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                     val oldestId = page.messages.minOf { it.id }
                     mediaIndex.upsert(page.messages.mapNotNull(::extractCandidate).map(::toIndexedMedia))
                     if (oldestId <= 0L || oldestId == cursor) {
-                        mediaIndex.setCursor(chatId, -1L)
+                        // TDLib may return a short page before the end of history. Never mark
+                        // the channel complete unless a subsequent request explicitly returns empty.
+                        hasPendingChannels = true
+                        _snapshot.value = _snapshot.value.copy(
+                            indexStatus = "Paused safely: Telegram returned no older page for channel " + chatId,
+                        )
                         finished = true
                     } else {
                         cursor = oldestId
