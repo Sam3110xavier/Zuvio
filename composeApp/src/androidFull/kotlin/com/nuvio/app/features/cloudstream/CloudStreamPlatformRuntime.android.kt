@@ -724,7 +724,7 @@ private class AndroidDexCloudStreamProvider(
 
         private const val DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000L
         private const val DEFAULT_LOAD_TIMEOUT_MS = 30_000L
-        private const val DEFAULT_LINK_TIMEOUT_MS = 60_000L
+        private const val DEFAULT_LINK_TIMEOUT_MS = 120_000L
     }
 }
 

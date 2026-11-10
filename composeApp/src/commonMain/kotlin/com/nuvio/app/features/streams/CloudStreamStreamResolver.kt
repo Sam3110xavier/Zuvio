@@ -3,7 +3,17 @@ package com.nuvio.app.features.streams
 import com.nuvio.app.features.cloudstream.CloudStreamPluginItem
 import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.cloudstream.CloudStreamSearchItem
+import com.nuvio.app.features.cloudstream.CloudStreamSearchRouteIndex
 import com.nuvio.app.features.cloudstream.CloudStreamTvType
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import com.nuvio.app.features.cloudstream.sha256Hex
 import com.nuvio.app.features.cloudstream.toStreamItem
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -19,6 +29,7 @@ internal data class CloudStreamSearchRequest(
     val episodeTitle: String? = null,
     val externalId: String? = null,
     val tmdbId: String? = null,
+    val genres: List<String> = emptyList(),
 )
 
 internal data class CloudStreamProviderTarget(
@@ -48,16 +59,17 @@ internal fun buildCloudStreamSearchRequest(
     season: Int?,
     episode: Int?,
     searchTitle: String?,
-): CloudStreamSearchRequest {
-    @Suppress("UNUSED_VARIABLE")
-    val ignoredParentType = parentMetaType
-    val details = MetaDetailsRepository.peek(type, parentMetaId ?: videoId)
+): CloudStreamSearchRequest? {
+    val metaLookupType = parentMetaType?.trim()?.takeIf(String::isNotBlank) ?: type
+    val metaLookupId = parentMetaId?.trim()?.takeIf(String::isNotBlank) ?: videoId
+    val details = MetaDetailsRepository.peek(metaLookupType, metaLookupId)
         ?: MetaDetailsRepository.peek(type, videoId)
     val title = searchTitle?.trim()?.takeIf(String::isNotBlank)
         ?: details?.name?.trim()?.takeIf(String::isNotBlank)
-        ?: videoId
+        ?: return null
     val year = details?.releaseInfo
         ?.let { Regex("\\b(19\\d{2}|20\\d{2})\\b").find(it)?.value?.toIntOrNull() }
+        ?: cloudStreamYear(title)
     val episodeDetails = if (episode != null) {
         details?.videos?.firstOrNull { it.season == season && it.episode == episode }
     } else {
@@ -88,6 +100,7 @@ internal fun buildCloudStreamSearchRequest(
         externalId = externalId,
         tmdbId = tmdbId,
         aliases = aliases,
+        genres = details?.genres.orEmpty(),
     )
 }
 
@@ -118,53 +131,82 @@ private fun cloudStreamTmdbId(value: String?): String? {
 
 internal fun cloudStreamProviderGroupsForRequest(
     type: String,
-    request: CloudStreamSearchRequest,
+    request: CloudStreamSearchRequest?,
 ): List<CloudStreamProviderGroup> {
     val state = CloudStreamRepository.uiState.value
-    val providers = state.plugins
+    val repositoryNames = state.repositories.associate { it.manifest.sourceUrl to it.manifest.name }
+    return state.plugins
         .asSequence()
         .filter { it.enabled && it.isRunnable }
-        .filter { providerSupportsType(it, type.ifBlank { request.type }) }
+        .filter { providerSupportsType(it, type.ifBlank { request?.type ?: type }, request?.genres.orEmpty()) }
+        .distinctBy { it.metadata.id.value }
         .map { item ->
-            CloudStreamProviderTarget(
-                id = item.metadata.id.value,
-                name = item.metadata.name,
-            ) to item
+            val provider = CloudStreamProviderTarget(item.metadata.id.value, item.metadata.name)
+            val repositoryUrl = item.metadata.repositoryManifestUrl
+            val grouped = state.groupStreamsByRepository
+            CloudStreamProviderGroup(
+                // Shared addonId lets StreamsRepository aggregate providers from one repository,
+                // while each provider still gets an independent timeout and completion event.
+                addonId = if (grouped) {
+                    "cloudstream-repository:${sha256Hex(repositoryUrl.encodeToByteArray()).take(16)}"
+                } else {
+                    cloudStreamAddonId(provider.id)
+                },
+                addonName = if (grouped) {
+                    repositoryNames[repositoryUrl]?.takeIf(String::isNotBlank) ?: provider.name
+                } else {
+                    provider.name
+                },
+                providers = listOf(provider),
+            )
         }
+        .sortedWith(
+            compareBy<CloudStreamProviderGroup> { it.addonName.lowercase() }
+                .thenBy { it.providers.first().name.lowercase() },
+        )
         .toList()
-    if (providers.isEmpty()) return emptyList()
+}
 
-    if (!state.groupStreamsByRepository) {
-        return providers.map { (target, _) ->
-            CloudStreamProviderGroup(
-                addonId = cloudStreamAddonId(target.id),
-                addonName = target.name,
-                providers = listOf(target),
-            )
+internal fun cloudStreamTypesSupportRequest(
+    supportedTypes: Set<CloudStreamTvType>,
+    type: String,
+    genres: List<String>,
+): Boolean {
+    if (supportedTypes.isEmpty() || CloudStreamTvType.Other in supportedTypes) return true
+    val normalizedGenres = genres.map { it.trim().lowercase() }.toSet()
+    val anime = "anime" in normalizedGenres
+    val animation = normalizedGenres.any { it in setOf("animation", "animasyon") }
+    val documentary = normalizedGenres.any { it in setOf("documentary", "belgesel") }
+
+    return when (normalizeCloudStreamType(type)) {
+        "movie" -> when {
+            anime -> supportedTypes.any { it == CloudStreamTvType.AnimeMovie || it == CloudStreamTvType.Movie }
+            animation -> supportedTypes.any {
+                it == CloudStreamTvType.AnimeMovie || it == CloudStreamTvType.Cartoon || it == CloudStreamTvType.Movie
+            }
+            documentary -> supportedTypes.any { it == CloudStreamTvType.Documentary || it == CloudStreamTvType.Movie }
+            else -> supportedTypes.any { it.nuvioType == "movie" }
         }
+        "series" -> when {
+            anime -> supportedTypes.any {
+                it == CloudStreamTvType.Anime || it == CloudStreamTvType.Ova || it == CloudStreamTvType.TvSeries
+            }
+            animation -> supportedTypes.any {
+                it == CloudStreamTvType.Anime || it == CloudStreamTvType.Ova ||
+                    it == CloudStreamTvType.Cartoon || it == CloudStreamTvType.TvSeries
+            }
+            else -> supportedTypes.any { it.nuvioType == "series" }
+        }
+        "live" -> supportedTypes.any { it.nuvioType == "live" }
+        else -> supportedTypes.any { it.nuvioType == normalizeCloudStreamType(type) }
     }
-
-    val repositoryNames = state.repositories.associate { it.manifest.sourceUrl to it.manifest.name }
-    return providers
-        .groupBy { (_, item) -> item.metadata.repositoryManifestUrl }
-        .map { (repositoryUrl, entries) ->
-            val name = repositoryNames[repositoryUrl]
-                ?.takeIf(String::isNotBlank)
-                ?: entries.first().second.metadata.name
-            CloudStreamProviderGroup(
-                addonId = "cloudstream-repository:${sha256Hex(repositoryUrl.encodeToByteArray()).take(16)}",
-                addonName = name,
-                providers = entries.map { it.first },
-            )
-        }
-        .sortedBy { it.addonName.lowercase() }
 }
 
-private fun providerSupportsType(item: CloudStreamPluginItem, type: String): Boolean {
-    val requested = normalizeCloudStreamType(type)
-    val supported = item.metadata.tvTypes
-    return supported.isEmpty() || supported.any { it == CloudStreamTvType.Other || it.nuvioType == requested }
-}
+private fun providerSupportsType(
+    item: CloudStreamPluginItem,
+    type: String,
+    genres: List<String>,
+): Boolean = cloudStreamTypesSupportRequest(item.metadata.tvTypes.toSet(), type, genres)
 
 private fun normalizeCloudStreamType(type: String): String = when (type.trim().lowercase()) {
     "tv", "show", "series" -> "series"
@@ -173,155 +215,194 @@ private fun normalizeCloudStreamType(type: String): String = when (type.trim().l
     else -> type.trim().lowercase()
 }
 
+private val cloudStreamProviderScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+private const val CLOUDSTREAM_PROVIDER_STREAM_TIMEOUT_MS = 120_000L
+
 internal suspend fun resolveCloudStreamProviderStreams(
     providerGroup: CloudStreamProviderGroup,
+    request: CloudStreamSearchRequest?,
+): CloudStreamProviderStreams {
+    val searchRequest = request?.takeIf { it.title.isNotBlank() }
+        ?: return CloudStreamProviderStreams(
+            streams = emptyList(),
+            error = "CloudStream search title is unavailable",
+        )
+    if (providerGroup.providers.isEmpty()) {
+        return CloudStreamProviderStreams(
+            streams = emptyList(),
+            error = "No enabled, compatible CloudStream providers are available",
+        )
+    }
+
+    // Third-party providers can block or ignore cancellation. Isolate each provider
+    // so a hung extension cannot hold the stream collector waiting for completions.
+    val providerTasks = providerGroup.providers.map { provider ->
+        provider to cloudStreamProviderScope.async {
+            resolveSingleCloudStreamProvider(provider, searchRequest)
+        }
+    }
+    val results = mutableListOf<CloudStreamProviderStreams>()
+    try {
+        providerTasks.forEach { (provider, task) ->
+            val result = try {
+                withTimeoutOrNull(CLOUDSTREAM_PROVIDER_STREAM_TIMEOUT_MS) { task.await() }
+                    ?: CloudStreamProviderStreams(
+                        emptyList(),
+                        "CloudStream provider timed out after ${CLOUDSTREAM_PROVIDER_STREAM_TIMEOUT_MS / 1000}s",
+                    )
+            } catch (timeout: TimeoutCancellationException) {
+                if (!currentCoroutineContext().isActive) throw timeout
+                CloudStreamProviderStreams(emptyList(), "CloudStream provider ${provider.name} timed out")
+            } catch (cancelled: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw cancelled
+                CloudStreamProviderStreams(
+                    emptyList(),
+                    cancelled.message ?: "CloudStream provider ${provider.name} was cancelled unexpectedly",
+                )
+            } finally {
+                if (!task.isCompleted) task.cancel()
+            }
+            results += result
+        }
+    } finally {
+        providerTasks.forEach { (_, task) -> if (!task.isCompleted) task.cancel() }
+    }
+    return CloudStreamProviderStreams(
+        streams = results.flatMap { it.streams }.distinctBy(::cloudStreamStreamIdentity),
+        error = results.firstNotNullOfOrNull { it.error?.takeIf(String::isNotBlank) },
+    )
+}
+
+private suspend fun resolveSingleCloudStreamProvider(
+    provider: CloudStreamProviderTarget,
     request: CloudStreamSearchRequest,
 ): CloudStreamProviderStreams {
-    val streams = mutableListOf<StreamItem>()
     var firstError: String? = null
-    var attemptedProviders = 0
     var matchedTitles = 0
     var attemptedExtractors = 0
 
-    for (provider in providerGroup.providers) {
-        attemptedProviders++
+    fun rememberError(error: Throwable?, fallback: String) {
+        if (firstError == null) firstError = error?.message?.takeIf(String::isNotBlank) ?: fallback
+    }
 
-        // TmdbProvider extensions accept TMDB IDs directly and often do not implement search().
-        // Use this path first; the Android runtime falls back to the standard TMDB URL form.
-        val tmdbLookup = request.tmdbId?.let { tmdbId ->
-            runCatchingUnlessCancelled {
-                CloudStreamRepository.loadByExternalId(
-                    provider.id,
-                    "nuvio-tmdb:$tmdbId:${if (normalizeCloudStreamType(request.type) == "movie") "movie" else "tv"}",
-                )
-            }
+    suspend fun resolveMatch(
+        item: CloudStreamSearchItem,
+        allowProviderRankedFallback: Boolean,
+    ): List<StreamItem>? {
+        val loadedResult = runCatchingUnlessCancelled { CloudStreamRepository.load(provider.id, item.data) }
+        val loaded = loadedResult.getOrNull()?.getOrNull()
+        if (loaded == null) {
+            if (firstError == null) firstError = loadedResult.exceptionOrNull()?.message
+                ?: loadedResult.getOrNull()?.exceptionOrNull()?.message
+                ?: "CloudStream title lookup failed"
+            return null
         }
-        if (tmdbLookup?.isFailure == true && firstError == null) {
-            firstError = tmdbLookup.exceptionOrNull()?.message ?: "CloudStream TMDB lookup failed"
+        if (!loaded.matchesCloudStreamRequest(request, item, allowProviderRankedFallback)) return null
+        val linkData = loaded.linkDataForCloudStreamRequest(request) ?: run {
+            rememberError(null, "CloudStream episode not found")
+            return null
         }
-        val tmdbLoaded = tmdbLookup?.getOrNull()?.getOrNull()
-        if (tmdbLoaded != null && tmdbLoaded.matchesCloudStreamTmdbRequest(request)) {
-            val linkData = tmdbLoaded.linkDataForCloudStreamRequest(request)
-            if (linkData != null) {
-                attemptedExtractors++
-                val linkResult = runCatchingUnlessCancelled {
-                    CloudStreamRepository.loadLinks(provider.id, linkData)
-                }
-                val links = linkResult.getOrNull()?.getOrNull()
-                if (!links.isNullOrEmpty()) {
-                    streams += links.map { it.toStreamItem(provider.id, provider.name) }
-                    continue
-                }
-                if (firstError == null) {
-                    firstError = linkResult.exceptionOrNull()?.message
-                        ?: linkResult.getOrNull()?.exceptionOrNull()?.message
-                        ?: "CloudStream TMDB match returned no playable links"
-                }
-            }
+        attemptedExtractors++
+        val linksResult = runCatchingUnlessCancelled { CloudStreamRepository.loadLinks(provider.id, linkData) }
+        val links = linksResult.getOrNull()?.getOrNull()
+        if (links.isNullOrEmpty()) {
+            if (firstError == null) firstError = linksResult.exceptionOrNull()?.message
+                ?: linksResult.getOrNull()?.exceptionOrNull()?.message
+                ?: "CloudStream provider returned no playable links"
+            return null
         }
+        return links.map { it.toStreamItem(provider.id, provider.name) }
+            .distinctBy(::cloudStreamStreamIdentity)
+    }
 
-        // Prefer a provider's external-ID lookup when metadata supplies a valid IMDb ID.
-        // This avoids depending on localized title search for providers that implement sync lookup.
-        val externalLookup = request.externalId?.let { externalId ->
-            runCatchingUnlessCancelled {
-                CloudStreamRepository.loadByExternalId(provider.id, externalId)
-            }
+    // First try cached provider URLs collected from CloudStream catalogue search.
+    val cachedRoutes = CloudStreamSearchRouteIndex.find(
+        providerId = provider.id,
+        titles = listOf(request.title) + request.aliases,
+        type = request.type,
+        year = request.year,
+    )
+    for (route in cachedRoutes) {
+        resolveMatch(route, allowProviderRankedFallback = false)?.let {
+            return CloudStreamProviderStreams(it)
         }
-        if (externalLookup?.isFailure == true && firstError == null) {
-            firstError = externalLookup.exceptionOrNull()?.message ?: "CloudStream external-ID lookup failed"
-        }
-        val externalLoaded = externalLookup?.getOrNull()?.getOrNull()
-        if (externalLoaded != null && externalLoaded.matchesCloudStreamExternalIdRequest(request)) {
-            val linkData = externalLoaded.linkDataForCloudStreamRequest(request)
-            if (linkData != null) {
-                attemptedExtractors++
-                val linkResult = runCatchingUnlessCancelled {
-                    CloudStreamRepository.loadLinks(provider.id, linkData)
-                }
-                val links = linkResult.getOrNull()?.getOrNull()
-                if (links.isNullOrEmpty()) {
-                    val message = linkResult.exceptionOrNull()?.message
-                        ?: linkResult.getOrNull()?.exceptionOrNull()?.message
-                        ?: "CloudStream external-ID match returned no playable links"
-                    if (firstError == null) firstError = message
-                } else {
-                    streams += links.map { it.toStreamItem(provider.id, provider.name) }
-                    continue
-                }
-            }
-        }
+    }
 
-        // Search every known title variant. A provider may index the localized title
-        // while the metadata source supplies the international title (or vice versa).
-        val searchResults = mutableListOf<Result<List<CloudStreamSearchItem>>>()
-        (listOf(request.title) + request.aliases)
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
-            .forEach { query ->
-                val searchAttempt = runCatchingUnlessCancelled {
-                    CloudStreamRepository.search(query, provider.id)
-                }
-                if (searchAttempt.isFailure) {
-                    if (firstError == null) {
-                        firstError = searchAttempt.exceptionOrNull()?.message ?: "CloudStream search failed"
-                    }
-                } else {
-                    searchResults += searchAttempt.getOrNull().orEmpty()
-                }
-            }
-        val searchItems = searchResults.flatMap { result ->
+    // TMDB providers may support ID lookup without implementing text search.
+    val tmdbLookup = request.tmdbId?.let { tmdbId ->
+        runCatchingUnlessCancelled {
+            CloudStreamRepository.loadByExternalId(
+                provider.id,
+                "nuvio-tmdb:$tmdbId:${if (normalizeCloudStreamType(request.type) == "movie") "movie" else "tv"}",
+            )
+        }
+    }
+    if (tmdbLookup?.isFailure == true) rememberError(tmdbLookup.exceptionOrNull(), "CloudStream TMDB lookup failed")
+    val tmdbResult = tmdbLookup?.getOrNull()
+    if (tmdbResult?.isFailure == true) rememberError(tmdbResult.exceptionOrNull(), "CloudStream TMDB lookup failed")
+    val tmdbLoaded = tmdbResult?.getOrNull()
+    if (tmdbLoaded != null && tmdbLoaded.matchesCloudStreamTmdbRequest(request)) {
+        val linkData = tmdbLoaded.linkDataForCloudStreamRequest(request)
+        if (linkData != null) {
+            attemptedExtractors++
+            val linksAttempt = runCatchingUnlessCancelled { CloudStreamRepository.loadLinks(provider.id, linkData) }
+            if (linksAttempt.isFailure) rememberError(linksAttempt.exceptionOrNull(), "CloudStream TMDB link extraction failed")
+            val linksResult = linksAttempt.getOrNull()
+            if (linksResult?.isFailure == true) rememberError(linksResult.exceptionOrNull(), "CloudStream TMDB link extraction failed")
+            val links = linksResult?.getOrNull().orEmpty()
+            if (links.isNotEmpty()) return CloudStreamProviderStreams(links.map { it.toStreamItem(provider.id, provider.name) })
+        }
+    }
+
+    val externalLookup = request.externalId?.let { id ->
+        runCatchingUnlessCancelled { CloudStreamRepository.loadByExternalId(provider.id, id) }
+    }
+    if (externalLookup?.isFailure == true) rememberError(externalLookup.exceptionOrNull(), "CloudStream external-ID lookup failed")
+    val externalResult = externalLookup?.getOrNull()
+    if (externalResult?.isFailure == true) rememberError(externalResult.exceptionOrNull(), "CloudStream external-ID lookup failed")
+    val externalLoaded = externalResult?.getOrNull()
+    if (externalLoaded != null && externalLoaded.matchesCloudStreamExternalIdRequest(request)) {
+        val linkData = externalLoaded.linkDataForCloudStreamRequest(request)
+        if (linkData != null) {
+            attemptedExtractors++
+            val linksAttempt = runCatchingUnlessCancelled { CloudStreamRepository.loadLinks(provider.id, linkData) }
+            if (linksAttempt.isFailure) rememberError(linksAttempt.exceptionOrNull(), "CloudStream external-ID link extraction failed")
+            val linksResult = linksAttempt.getOrNull()
+            if (linksResult?.isFailure == true) rememberError(linksResult.exceptionOrNull(), "CloudStream external-ID link extraction failed")
+            val links = linksResult?.getOrNull().orEmpty()
+            if (links.isNotEmpty()) return CloudStreamProviderStreams(links.map { it.toStreamItem(provider.id, provider.name) })
+        }
+    }
+
+    val seen = mutableSetOf<String>()
+    for (query in cloudStreamSearchQueries(request)) {
+        val searchAttempt = runCatchingUnlessCancelled { CloudStreamRepository.search(query, provider.id) }
+        if (searchAttempt.isFailure) rememberError(searchAttempt.exceptionOrNull(), "CloudStream search failed")
+        val searchItems = searchAttempt.getOrNull().orEmpty().flatMap { result ->
             result.getOrElse { error ->
                 if (firstError == null) firstError = error.message ?: "CloudStream search failed"
                 emptyList()
             }
-        }
-        val matches = searchItems.bestCloudStreamMatches(request)
+        }.distinctBy { it.type to it.data }.filter { seen.add(it.type.toString() + "|" + it.data) }
+        val strictMatches = searchItems.bestCloudStreamMatches(request)
+        val fallback = strictMatches.isEmpty()
+        val matches = strictMatches.ifEmpty { searchItems.providerRankedCloudStreamFallbacks(request) }
         if (matches.isEmpty()) continue
         matchedTitles += matches.size
-
         for (item in matches) {
-            val loadAttempt = runCatchingUnlessCancelled {
-                CloudStreamRepository.load(provider.id, item.data)
+            resolveMatch(item, allowProviderRankedFallback = fallback)?.let { streams ->
+                if (streams.isNotEmpty()) return CloudStreamProviderStreams(streams, firstError)
             }
-            if (loadAttempt.isFailure) {
-                if (firstError == null) firstError = loadAttempt.exceptionOrNull()?.message ?: "CloudStream title lookup failed"
-                continue
-            }
-            val loadedResult = loadAttempt.getOrNull()
-            if (loadedResult == null || loadedResult.isFailure) {
-                if (firstError == null) firstError = loadedResult?.exceptionOrNull()?.message ?: "CloudStream title lookup failed"
-                continue
-            }
-            val loaded = loadedResult.getOrNull() ?: continue
-            if (!loaded.matchesCloudStreamRequest(request, item)) continue
-            val linkData = loaded.linkDataForCloudStreamRequest(request) ?: continue
-            attemptedExtractors++
-            val linksAttempt = runCatchingUnlessCancelled {
-                CloudStreamRepository.loadLinks(provider.id, linkData)
-            }
-            if (linksAttempt.isFailure) {
-                if (firstError == null) firstError = linksAttempt.exceptionOrNull()?.message ?: "CloudStream link lookup failed"
-                continue
-            }
-            val linksResult = linksAttempt.getOrNull()
-            if (linksResult == null || linksResult.isFailure) {
-                if (firstError == null) firstError = linksResult?.exceptionOrNull()?.message ?: "CloudStream link lookup failed"
-                continue
-            }
-            streams += linksResult.getOrNull().orEmpty().map { it.toStreamItem(provider.id, provider.name) }
         }
     }
 
     val diagnostic = when {
-        streams.isNotEmpty() -> firstError
-        attemptedProviders == 0 -> "No enabled, compatible CloudStream providers are available for this content type"
-        matchedTitles == 0 && firstError == null -> "CloudStream providers returned no title matching '${request.title}'"
+        matchedTitles == 0 && firstError == null -> "CloudStream returned no title matching '${request.title}'"
         attemptedExtractors == 0 && firstError == null -> "CloudStream title matched, but no season/episode entry could be selected"
-        firstError == null -> "CloudStream providers matched the title but returned no playable links"
+        firstError == null -> "CloudStream matched the title but returned no playable links"
         else -> firstError
     }
-    return CloudStreamProviderStreams(streams = streams.distinctBy { it.url }, error = diagnostic)
+    return CloudStreamProviderStreams(emptyList(), diagnostic)
 }
 
 internal suspend fun resolveCloudStreamDirectRoute(
@@ -329,12 +410,34 @@ internal suspend fun resolveCloudStreamDirectRoute(
     providerName: String,
     data: String,
 ): Result<List<StreamItem>> {
-    val loaded = CloudStreamRepository.load(providerId, data)
-    if (loaded.isFailure) return Result.failure(loaded.exceptionOrNull() ?: IllegalStateException("CloudStream title lookup failed"))
-    val item = loaded.getOrNull() ?: return Result.success(emptyList())
-    return CloudStreamRepository.loadLinks(providerId, item.data).map { links ->
-        links.map { it.toStreamItem(providerId, providerName) }
+    val resolved = withTimeoutOrNull(CLOUDSTREAM_PROVIDER_STREAM_TIMEOUT_MS) {
+        val loadAttempt = runCatchingUnlessCancelled { CloudStreamRepository.load(providerId, data) }
+        val loadedResult = loadAttempt.getOrElse {
+            return@withTimeoutOrNull Result.failure(it)
+        }
+        if (loadedResult.isFailure) {
+            return@withTimeoutOrNull Result.failure(
+                loadedResult.exceptionOrNull() ?: IllegalStateException("CloudStream title lookup failed"),
+            )
+        }
+        val item = loadedResult.getOrNull() ?: return@withTimeoutOrNull Result.success(emptyList())
+
+        val linksAttempt = runCatchingUnlessCancelled { CloudStreamRepository.loadLinks(providerId, item.data) }
+        val linksResult = linksAttempt.getOrElse {
+            return@withTimeoutOrNull Result.failure(it)
+        }
+        if (linksResult.isFailure) {
+            return@withTimeoutOrNull Result.failure(
+                linksResult.exceptionOrNull() ?: IllegalStateException("CloudStream link extraction failed"),
+            )
+        }
+        Result.success(
+            linksResult.getOrNull().orEmpty()
+                .map { it.toStreamItem(providerId, providerName) }
+                .distinctBy(::cloudStreamStreamIdentity),
+        )
     }
+    return resolved ?: Result.failure(IllegalStateException("CloudStream provider timed out"))
 }
 
 internal fun List<CloudStreamSearchItem>.bestCloudStreamMatch(
@@ -379,28 +482,46 @@ internal fun List<CloudStreamSearchItem>.bestCloudStreamMatches(
     }.sortedByDescending { it.second }
         .distinctBy { it.first.data }
         .map { it.first }
+        .take(3)
+}
+
+private fun List<CloudStreamSearchItem>.providerRankedCloudStreamFallbacks(
+    request: CloudStreamSearchRequest,
+): List<CloudStreamSearchItem> {
+    val requestedType = normalizeCloudStreamType(request.type)
+    val typed = filter { cloudStreamTypeMatches(it.type.nuvioType, requestedType) }
+    return (typed.ifEmpty { this })
+        .filter { item ->
+            val candidateYear = item.year ?: cloudStreamYear(item.name)
+            request.year == null || candidateYear == null || candidateYear == request.year
+        }
+        .distinctBy { it.data }
+        .take(10)
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamRequest(
     request: CloudStreamSearchRequest,
     searchItem: CloudStreamSearchItem,
+    allowProviderRankedFallback: Boolean = false,
 ): Boolean {
     val requestedTitles = (listOf(request.title) + request.aliases)
-        .map(::normalizeCloudStreamTitle)
-        .filter(String::isNotBlank)
-        .toSet()
+        .map(::normalizeCloudStreamTitle).filter(String::isNotBlank).toSet()
     val titleSimilarity = maxOf(
         cloudStreamTitleSimilarity(name, requestedTitles),
         cloudStreamTitleSimilarity(searchItem.name, requestedTitles),
     )
-    if (!cloudStreamTypeMatches(type.nuvioType, request.type) && titleSimilarity < 0.98) return false
     val loadedYear = year ?: cloudStreamYear(name)
     val searchedYear = searchItem.year ?: cloudStreamYear(searchItem.name)
     if (request.year != null) {
         if (loadedYear != null && kotlin.math.abs(loadedYear - request.year) > 1) return false
         if (searchedYear != null && kotlin.math.abs(searchedYear - request.year) > 1) return false
     }
-    return titleSimilarity >= 0.86
+    if (cloudStreamTypeMatches(type.nuvioType, request.type) && titleSimilarity >= 0.86) return true
+    // Localized provider-ranked fallback is only safe for movies with exact year identity.
+    return allowProviderRankedFallback &&
+        normalizeCloudStreamType(request.type) == "movie" &&
+        request.year != null && loadedYear == request.year &&
+        cloudStreamTypeMatches(type.nuvioType, request.type)
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamExternalIdRequest(
@@ -413,10 +534,13 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
         .toSet()
     val titleMatches = cloudStreamTitleMatches(name, requestedTitles)
     val loadedYear = year ?: cloudStreamYear(name)
-    if (request.year != null && loadedYear != null && kotlin.math.abs(loadedYear - request.year) > 1) return false
-    val safeExternalIdFallback = !request.externalId.isNullOrBlank() &&
-        (request.year == null || loadedYear == null || loadedYear == request.year)
-    return titleMatches || safeExternalIdFallback
+    if (request.year != null && loadedYear != request.year) return false
+    if (titleMatches) return true
+
+    // External-ID lookups may return localized movie titles. A year alone cannot
+    // safely identify a localized series because many shows share the same release year.
+    if (normalizeCloudStreamType(request.type) == "series") return false
+    return request.year != null && loadedYear == request.year
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamTmdbRequest(
@@ -536,6 +660,55 @@ private fun normalizeCloudStreamTitle(value: String): String {
         .toMutableList()
     if (words.firstOrNull() in setOf("the", "a", "an")) words.removeAt(0)
     return words.joinToString(" ")
+}
+
+internal fun cloudStreamSearchQueries(request: CloudStreamSearchRequest): List<String> =
+    (listOf(request.title) + request.aliases)
+        .flatMap { candidate ->
+            val title = candidate.trim()
+            listOfNotNull(
+                title,
+                request.year?.takeIf { cloudStreamYear(title) == null }?.let { "$title $it" },
+            )
+        }
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        // Years remain meaningful query tokens. Do not use the title matcher normalizer here.
+        .distinctBy(::normalizeCloudStreamSearchQuery)
+
+private fun normalizeCloudStreamSearchQuery(value: String): String =
+    value.lowercase()
+        .map { char -> if (char.isLetterOrDigit()) char else ' ' }
+        .joinToString("")
+        .trim()
+        .split(Regex("\\s+"))
+        .filter(String::isNotBlank)
+        .joinToString(" ")
+
+internal fun cloudStreamStreamIdentity(stream: StreamItem): String {
+    val requestHeaders = stream.behaviorHints.proxyHeaders?.request.orEmpty()
+        .entries
+        .sortedWith(compareBy({ it.key.lowercase() }, { it.value }))
+        .joinToString("\u001f") { "${it.key.lowercase()}=${it.value}" }
+    val subtitleIdentity = stream.externalSubtitles.joinToString("\u001e") { subtitle ->
+        listOf(
+            subtitle.url,
+            subtitle.language,
+            subtitle.name.orEmpty(),
+            subtitle.headers.orEmpty().entries
+                .sortedWith(compareBy({ it.key.lowercase() }, { it.value }))
+                .joinToString("\u001f") { "${it.key.lowercase()}=${it.value}" },
+        ).joinToString("\u001d")
+    }
+    return listOf(
+        stream.addonId,
+        stream.sourceName.orEmpty(),
+        stream.streamLabel,
+        stream.playableDirectUrl.orEmpty(),
+        stream.streamType.orEmpty(),
+        requestHeaders,
+        subtitleIdentity,
+    ).joinToString("\u001c")
 }
 
 private fun cloudStreamYear(value: String): Int? =

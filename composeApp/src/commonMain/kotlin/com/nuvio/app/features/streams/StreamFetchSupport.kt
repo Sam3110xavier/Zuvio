@@ -166,18 +166,23 @@ private fun String.fallbackRepositoryLabel(): String {
  * Stable identity shared by provider integrations so the same direct source is not
  * displayed repeatedly when it is returned by more than one provider.
  */
-internal fun crossProviderStreamIdentity(stream: StreamItem): String =
-    stream.infoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { "hash:$it" }
-        ?: stream.ytId?.trim()?.takeIf { it.isNotBlank() }?.let { "youtube:$it" }
-        ?: stream.playableDirectUrl?.let { raw ->
-            val normalized = raw.trim().substringBefore('#').substringBefore('?').trimEnd('/')
-            normalized.takeIf { it.isNotBlank() }?.lowercase()?.let { "url:$it" }
-        }
-        ?: listOf(
-            stream.addonId,
-            stream.sourceName.orEmpty(),
-            stream.streamLabel,
-        ).joinToString("|") { it.trim().lowercase() }
+internal fun crossProviderStreamIdentity(stream: StreamItem): String {
+    val requestHeaders = stream.behaviorHints.proxyHeaders?.request.orEmpty()
+        .entries
+        .sortedWith(compareBy({ it.key.lowercase() }, { it.value }))
+        .joinToString("\u001f") { "${it.key.lowercase()}=${it.value}" }
+
+    // Preserve the existing torrent/YouTube precedence. A magnet URL may vary by
+    // tracker while still representing the same info hash; request headers, however,
+    // must remain part of identity because they can make the same URL independently playable.
+    val identity = stream.infoHash?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let { "hash:$it" }
+        ?: stream.ytId?.trim()?.takeIf(String::isNotBlank)?.let { "youtube:$it" }
+        ?: stream.playableDirectUrl?.trim()?.takeIf(String::isNotBlank)?.let { "url:$it" }
+        ?: stream.externalUrl?.trim()?.takeIf(String::isNotBlank)?.let { "external:$it" }
+        ?: stream.url?.trim()?.takeIf(String::isNotBlank)?.let { "url:$it" }
+        ?: "unresolved:${stream.sourceName.orEmpty()}:${stream.name}"
+    return listOf(identity, requestHeaders).joinToString("\u001c")
+}
 
 internal fun pluginStreamIdentity(stream: StreamItem): String =
     crossProviderStreamIdentity(stream)
