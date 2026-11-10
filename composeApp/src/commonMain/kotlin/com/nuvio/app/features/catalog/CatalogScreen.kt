@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import com.nuvio.app.core.ui.background.appBackgroundCover
 import androidx.compose.foundation.horizontalScroll
@@ -80,6 +81,7 @@ import kotlinx.coroutines.flow.map
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CatalogScreen(
     title: String,
@@ -114,6 +116,7 @@ fun CatalogScreen(
     var headerHeightPx by remember { mutableIntStateOf(0) }
     var observedOfflineState by remember { mutableStateOf(false) }
     var selectedMergedSourceKey by rememberSaveable(target) { mutableStateOf("all") }
+    var areMergedSourceTabsVisible by remember { mutableStateOf(true) }
     val showMergedSourceTabs = target is CatalogTarget.MergedRow &&
         uiState.mergedDisplayMode != MergedHomeRowDisplayMode.UNIFIED_CAROUSEL.storageValue
     val usesPerSourceMergedTabs = uiState.mergedDisplayMode == MergedHomeRowDisplayMode.SOURCE_TABS.storageValue
@@ -147,7 +150,31 @@ fun CatalogScreen(
     }
 
     LaunchedEffect(selectedMergedSourceKey, showMergedSourceTabs) {
-        if (showMergedSourceTabs) gridState.scrollToItem(0)
+        if (showMergedSourceTabs) {
+            areMergedSourceTabsVisible = true
+            gridState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(gridState, showMergedSourceTabs) {
+        if (!showMergedSourceTabs) {
+            areMergedSourceTabsVisible = true
+            return@LaunchedEffect
+        }
+        var previousPosition: Pair<Int, Int>? = null
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .collect { currentPosition ->
+                val previous = previousPosition
+                if (previous != null && currentPosition != previous) {
+                    val movingDown = currentPosition.first > previous.first ||
+                        (currentPosition.first == previous.first && currentPosition.second > previous.second)
+                    areMergedSourceTabsVisible = !movingDown
+                }
+                if (currentPosition.first == 0 && currentPosition.second == 0) {
+                    areMergedSourceTabsVisible = true
+                }
+                previousPosition = currentPosition
+            }
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
@@ -226,19 +253,23 @@ fun CatalogScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (showMergedSourceTabs && uiState.mergedSourceTabs.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            uiState.mergedSourceTabs.forEach { tab ->
-                                FilterChip(
-                                    selected = tab.key == selectedMergedTab?.key,
-                                    onClick = { selectedMergedSourceKey = tab.key },
-                                    label = { Text(tab.title) },
-                                )
+                    stickyHeader(span = { GridItemSpan(maxLineSpan) }) {
+                        if (areMergedSourceTabsVisible) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                uiState.mergedSourceTabs.forEach { tab ->
+                                    FilterChip(
+                                        selected = tab.key == selectedMergedTab?.key,
+                                        onClick = { selectedMergedSourceKey = tab.key },
+                                        label = { Text(tab.title) },
+                                    )
+                                }
                             }
                         }
                     }

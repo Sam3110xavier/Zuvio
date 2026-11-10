@@ -163,21 +163,6 @@ fun HomeScreen(
     val continueWatchingListState = rememberLazyListState()
     val upcomingListState = rememberLazyListState()
     val mergedRowSelectedTabs = remember { mutableStateMapOf<String, String>() }
-    var areMergedRowTabsVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(homeListState) {
-        var previousPosition: Pair<Int, Int>? = null
-        snapshotFlow {
-            homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset
-        }.collect { currentPosition ->
-            val previous = previousPosition
-            if (previous != null && currentPosition != previous) {
-                val scrollingDown = currentPosition.first > previous.first ||
-                    (currentPosition.first == previous.first && currentPosition.second > previous.second)
-                areMergedRowTabsVisible = scrollingDown
-            }
-            previousPosition = currentPosition
-        }
-    }
     ScreenActivityEffect(homeListState, continueWatchingListState, upcomingListState) { active ->
         if (!active) {
             homeListState.stopScroll(MutatePriority.PreventUserInput)
@@ -1266,15 +1251,13 @@ fun HomeScreen(
                                             key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
                                             contentType = "merged_row_tabs",
                                         ) {
-                                            if (areMergedRowTabsVisible) {
-                                                MergedHomeRowTabSelector(
-                                                    tabs = section.sourceTabs,
-                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                        ?: section.sourceTabs.firstOrNull()?.key,
-                                                    sectionPadding = homeSectionPadding,
-                                                    onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                                )
-                                            }
+                                            MergedHomeRowTabSelector(
+                                                tabs = section.sourceTabs,
+                                                selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                    ?: section.sourceTabs.firstOrNull()?.key,
+                                                sectionPadding = homeSectionPadding,
+                                                onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
+                                            )
                                         }
                                     }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
