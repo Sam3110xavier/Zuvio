@@ -1264,6 +1264,10 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
+                                    val selectedMergedRowTabKey = resolveMergedHomeTabKey(
+                                        selectedKey = mergedRowSelectedTabs[section.key],
+                                        tabs = section.sourceTabs,
+                                    )
                                     if (section.isMergedRow && section.sourceTabs.size > 1) {
                                         stickyHeader(
                                             key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
@@ -1272,8 +1276,7 @@ fun HomeScreen(
                                             if (areMergedRowTabsVisible) {
                                                 MergedHomeRowTabSelector(
                                                     tabs = section.sourceTabs,
-                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                        ?: section.sourceTabs.firstOrNull()?.key,
+                                                    selectedTabKey = selectedMergedRowTabKey,
                                                     sectionPadding = homeSectionPadding,
                                                     onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
                                                 )
@@ -1284,8 +1287,7 @@ fun HomeScreen(
                                         HomeCatalogRowSection(
                                             section = section,
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
-                                            selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                ?: section.sourceTabs.firstOrNull()?.key,
+                                            selectedTabKey = selectedMergedRowTabKey,
                                             onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
                                             showTabSelector = !section.isMergedRow,
                                             modifier = Modifier.padding(bottom = 12.dp),

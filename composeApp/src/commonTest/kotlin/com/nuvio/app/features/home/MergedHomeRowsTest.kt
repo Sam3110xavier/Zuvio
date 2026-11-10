@@ -105,6 +105,41 @@ class MergedHomeRowsTest {
     }
 
     @Test
+    fun restoredMergedTabDoesNotTriggerAnInitialScrollReset() {
+        assertEquals(false, shouldResetMergedCatalogScroll(null, "source-a"))
+    }
+
+    @Test
+    fun changingMergedTabsTriggersAScrollReset() {
+        assertEquals(true, shouldResetMergedCatalogScroll("source-a", "source-b"))
+    }
+
+    @Test
+    fun keepingTheSameMergedTabDoesNotTriggerAScrollReset() {
+        assertEquals(false, shouldResetMergedCatalogScroll("source-a", "source-a"))
+    }
+
+    @Test
+    fun selectedMergedTabFallsBackWhenSavedSourceNoLongerExists() {
+        val tabs = listOf(
+            HomeCatalogTab("all", "All", emptyList()),
+            HomeCatalogTab("source-b", "Source B", emptyList()),
+        )
+
+        assertEquals("all", resolveMergedHomeTabKey("removed-source", tabs))
+    }
+
+    @Test
+    fun selectedMergedTabIsPreservedWhenItsSourceStillExists() {
+        val tabs = listOf(
+            HomeCatalogTab("all", "All", emptyList()),
+            HomeCatalogTab("source-b", "Source B", emptyList()),
+        )
+
+        assertEquals("source-b", resolveMergedHomeTabKey("source-b", tabs))
+    }
+
+    @Test
     fun homeSourceTabPreviewsUseTheSelectedSourceRatherThanIntersectingTheMergedPreview() {
         val mergedPreview = listOf(item("source-a-1"), item("source-b-1"))
         val selectedSourceTab = HomeCatalogTab(

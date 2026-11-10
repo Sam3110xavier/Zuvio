@@ -23,6 +23,19 @@ internal fun mergedHomeRowPreviewItems(
 ): List<MetaPreview> =
     (selectedTab?.items ?: fallbackEntries).take(fallbackEntries.size)
 
+internal fun resolveMergedHomeTabKey(
+    selectedKey: String?,
+    tabs: List<HomeCatalogTab>,
+): String? =
+    selectedKey?.takeIf { key -> tabs.any { it.key == key } }
+        ?: tabs.firstOrNull()?.key
+
+internal fun shouldResetMergedCatalogScroll(
+    previousSelectedKey: String?,
+    selectedKey: String?,
+): Boolean =
+    previousSelectedKey != null && selectedKey != null && previousSelectedKey != selectedKey
+
 @Serializable
 data class MergedHomeRowDefinition(
     val id: String,

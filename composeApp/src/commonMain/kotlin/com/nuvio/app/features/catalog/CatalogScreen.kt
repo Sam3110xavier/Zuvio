@@ -70,6 +70,8 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MergedHomeRowDisplayMode
 import com.nuvio.app.features.home.shouldShowMergedRowTabs
+import com.nuvio.app.features.home.resolveMergedHomeTabKey
+import com.nuvio.app.features.home.shouldResetMergedCatalogScroll
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.stableKey
@@ -118,11 +120,18 @@ fun CatalogScreen(
     var observedOfflineState by remember { mutableStateOf(false) }
     var selectedMergedSourceKey by rememberSaveable(target) { mutableStateOf("all") }
     var areMergedSourceTabsVisible by remember { mutableStateOf(true) }
+    var isCurrentCatalogRequestStarted by remember(
+        target,
+        homeCatalogSettingsUiState.hideUnreleasedContent,
+    ) { mutableStateOf(false) }
     val showMergedSourceTabs = target is CatalogTarget.MergedRow &&
         uiState.mergedDisplayMode != MergedHomeRowDisplayMode.UNIFIED_CAROUSEL.storageValue
     val usesPerSourceMergedTabs = uiState.mergedDisplayMode == MergedHomeRowDisplayMode.SOURCE_TABS.storageValue
-    val selectedMergedTab = uiState.mergedSourceTabs.firstOrNull { it.key == selectedMergedSourceKey }
-        ?: uiState.mergedSourceTabs.firstOrNull()
+    val effectiveSelectedMergedSourceKey = resolveMergedHomeTabKey(
+        selectedKey = selectedMergedSourceKey,
+        tabs = uiState.mergedSourceTabs,
+    )
+    val selectedMergedTab = uiState.mergedSourceTabs.firstOrNull { it.key == effectiveSelectedMergedSourceKey }
     val visibleItems = if (showMergedSourceTabs) selectedMergedTab?.items.orEmpty() else uiState.items
     val loadMoreSourceKey = selectedMergedTab?.key
         ?.takeIf { showMergedSourceTabs && usesPerSourceMergedTabs && it != "all" }
@@ -144,14 +153,27 @@ fun CatalogScreen(
         uiState.unavailableMergedSourceCount > 0 &&
         (!showMergedSourceTabs || !usesPerSourceMergedTabs || selectedMergedTab?.key == "all")
 
-    LaunchedEffect(uiState.mergedSourceTabs.map { it.key }) {
-        if (uiState.mergedSourceTabs.none { it.key == selectedMergedSourceKey }) {
-            selectedMergedSourceKey = "all"
+    LaunchedEffect(
+        isCurrentCatalogRequestStarted,
+        uiState.isMergedCatalog,
+        uiState.mergedSourceTabs.map { it.key },
+    ) {
+        // Wait until this screen's request has been started and its source tabs have
+        // arrived; previous catalog state must not invalidate this target's saved tab.
+        if (!isCurrentCatalogRequestStarted || !uiState.isMergedCatalog) return@LaunchedEffect
+        val resolvedKey = resolveMergedHomeTabKey(selectedMergedSourceKey, uiState.mergedSourceTabs)
+        if (resolvedKey != null && resolvedKey != selectedMergedSourceKey) {
+            selectedMergedSourceKey = resolvedKey
         }
     }
 
-    LaunchedEffect(selectedMergedSourceKey, showMergedSourceTabs) {
-        if (showMergedSourceTabs) {
+    var lastHandledMergedTabKey by remember(target) { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectedMergedSourceKey) {
+        val previousKey = lastHandledMergedTabKey
+        lastHandledMergedTabKey = selectedMergedSourceKey
+        // Do not reset a restored scroll position on first composition. Only an actual
+        // user/source selection change should return this source's grid to the top.
+        if (shouldResetMergedCatalogScroll(previousKey, selectedMergedSourceKey) && showMergedSourceTabs) {
             areMergedSourceTabsVisible = true
             gridState.scrollToItem(0)
         }
@@ -181,9 +203,8 @@ fun CatalogScreen(
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
-        CatalogRepository.load(
-            target = target,
-        )
+        CatalogRepository.load(target = target)
+        isCurrentCatalogRequestStarted = true
     }
 
     LaunchedEffect(gridState, target, homeCatalogSettingsUiState.hideUnreleasedContent) {
