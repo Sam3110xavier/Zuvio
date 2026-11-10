@@ -545,14 +545,7 @@ fun LibraryScreen(
                             )
                         }
                     }
-                    if (sourceMode == LibraryViewMode.Telegram) {
-                telegramLibraryContent(
-                    entries = telegramEntries,
-                    searchQuery = telegramSearch,
-                    onSearchQueryChange = { telegramSearch = it },
-                    onRefresh = { telegramEntries = TelegramIntegrationBridge.indexedMedia() },
-                )
-            } else if (sourceMode == LibraryViewMode.Cloud) {
+                    if (sourceMode == LibraryViewMode.Cloud) {
                         val cloudSearchLabel = stringResource(Res.string.cloud_library_search_label)
                         IconButton(
                             onClick = {
@@ -599,7 +592,14 @@ fun LibraryScreen(
                 autoHidesNativeTabBar = true,
             ) {
 
-            if (sourceMode == LibraryViewMode.Cloud) {
+            if (sourceMode == LibraryViewMode.Telegram) {
+                telegramLibraryContent(
+                    entries = telegramEntries,
+                    searchQuery = telegramSearch,
+                    onSearchQueryChange = { telegramSearch = it },
+                    onRefresh = { telegramEntries = TelegramIntegrationBridge.indexedMedia() },
+                )
+            } else if (sourceMode == LibraryViewMode.Cloud) {
                 cloudLibraryContent(
                     uiState = cloudUiState,
                     selectedProviderId = selectedProviderId,
