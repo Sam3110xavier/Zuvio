@@ -349,7 +349,8 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                     },
                     timeoutMs = 30_000L,
                 ) as? TdApi.Messages ?: throw IllegalStateException("Telegram did not return recent history for chat $chatId.")
-                mediaIndex.upsert(recent.messages.mapNotNull(::extractCandidate).map(::toIndexedMedia), prepend = true)
+                val recentMessages = recent.messages.filterNotNull()
+                mediaIndex.upsert(recentMessages.mapNotNull(::extractCandidate).map(::toIndexedMedia), prepend = true)
                 mediaIndex.touch()
 
                 var cursor = mediaIndex.cursor(chatId)
@@ -360,7 +361,7 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                     )
                     continue
                 }
-                if (cursor == 0L) cursor = recent.messages.minOfOrNull { it.id } ?: 0L
+                if (cursor == 0L) cursor = recentMessages.minOfOrNull { it.id } ?: 0L
 
                 var batches = 0
                 var finished = false
@@ -380,8 +381,17 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                         finished = true
                         break
                     }
-                    val oldestId = page.messages.minOf { it.id }
-                    mediaIndex.upsert(page.messages.mapNotNull(::extractCandidate).map(::toIndexedMedia))
+                    val historyMessages = page.messages.filterNotNull()
+                    if (historyMessages.isEmpty()) {
+                        hasPendingChannels = true
+                        _snapshot.value = _snapshot.value.copy(
+                            indexStatus = "Paused safely: Telegram returned unavailable messages for channel " + chatId,
+                        )
+                        finished = true
+                        break
+                    }
+                    val oldestId = historyMessages.minOf { it.id }
+                    mediaIndex.upsert(historyMessages.mapNotNull(::extractCandidate).map(::toIndexedMedia))
                     if (oldestId <= 0L || oldestId == cursor) {
                         // TDLib may return a short page before the end of history. Never mark
                         // the channel complete unless a subsequent request explicitly returns empty.
@@ -394,7 +404,7 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                         cursor = oldestId
                         mediaIndex.setCursor(chatId, cursor)
                     }
-                    processed += page.messages.size
+                    processed += historyMessages.size
                     batches += 1
                     _snapshot.value = _snapshot.value.copy(
                         indexedFileCount = mediaIndex.count(),
@@ -613,6 +623,7 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                 ?: return ChatSearchResult(found.values.toList(), complete = false)
 
             result.messages.forEach { message ->
+                if (message == null) return@forEach
                 // Global search spans all chats; never expose or stream a result outside the allowlist.
                 if (message.chatId !in selectedChatIds) return@forEach
                 extractCandidate(message)?.let { candidate ->
