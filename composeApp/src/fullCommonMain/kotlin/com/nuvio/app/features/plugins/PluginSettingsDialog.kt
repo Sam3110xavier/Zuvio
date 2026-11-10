@@ -194,3 +194,17 @@ fun PluginSettingsDialog(
         }
     }
 }
+
+internal fun hasUsablePluginSettingsLayout(layoutJson: String): Boolean {
+    val elements = runCatching {
+        kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .parseToJsonElement(layoutJson).jsonArray
+    }.getOrNull() ?: return false
+
+    return elements.any { element ->
+        val field = element as? kotlinx.serialization.json.JsonObject ?: return@any false
+        val type = field["type"]?.jsonPrimitive?.contentOrNull
+        val key = field["key"]?.jsonPrimitive?.contentOrNull
+        type in setOf("text", "select", "toggle") && !key.isNullOrBlank()
+    }
+}

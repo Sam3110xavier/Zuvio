@@ -94,6 +94,7 @@ fun PluginsSettingsPageContent(
     var isAdding by remember { mutableStateOf(false) }
 
     var testingScraperId by remember { mutableStateOf<String?>(null) }
+    val unavailableSettingsVersions = remember { mutableStateMapOf<String, String>() }
     val testResults = remember { mutableStateMapOf<String, List<PluginRuntimeResult>>() }
 
     var configuringScraper by remember { mutableStateOf<PluginScraper?>(null) }
@@ -391,13 +392,16 @@ fun PluginsSettingsPageContent(
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (scraper.hasSettings) {
+                            if (scraper.hasSettings && unavailableSettingsVersions[scraper.id] != scraper.version) {
                                 IconButton(onClick = {
                                     coroutineScope.launch {
                                         val layout = PluginRuntime.getPluginSettingsLayout(scraper.code, scraper.id)
-                                        if (layout != null) {
+                                        if (layout != null && hasUsablePluginSettingsLayout(layout)) {
+                                            unavailableSettingsVersions.remove(scraper.id)
                                             configuringScraper = scraper
                                             configuringLayout = layout
+                                        } else {
+                                            unavailableSettingsVersions[scraper.id] = scraper.version
                                         }
                                     }
                                 }) {
