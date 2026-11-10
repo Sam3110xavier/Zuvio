@@ -347,10 +347,9 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.linkDataForC
     }
     val numbered = numberedCandidates.firstOrNull()
     if (numbered != null) {
-        if (episodeTitle.isNullOrBlank()) return numbered.data
-        val actualTitle = normalizeCloudStreamTitle(numbered.name)
-        val isGenericEpisodeTitle = actualTitle.matches(Regex("episode \\d+"))
-        return numbered.data.takeIf { actualTitle == episodeTitle || isGenericEpisodeTitle }
+        // Season/episode numbering is more reliable than translated episode titles.
+        // Providers frequently localize names while retaining correct episode numbers.
+        return numbered.data
     }
     if (!episodeTitle.isNullOrBlank()) {
         return seasonCandidates.firstOrNull {
