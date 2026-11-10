@@ -71,8 +71,16 @@ internal actual object CloudStreamPlatformRuntime {
     actual fun initialize(context: Any?) {
         val androidContext = context as? Context ?: return
         appContext = androidContext.applicationContext
-        activityReference = (androidContext as? Activity)?.let(::WeakReference)
-        activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        findActivity(androidContext)?.let { activity ->
+            activityReference = WeakReference(activity)
+            CommonActivity.setActivityInstance(activity)
+        }
+    }
+
+    private fun findActivity(context: Context): Activity? = when (context) {
+        is Activity -> context
+        is ContextWrapper -> findActivity(context.baseContext)
+        else -> null
     }
 
     actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
@@ -205,8 +213,8 @@ internal actual object CloudStreamPlatformRuntime {
             val providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
-            require(providers.isNotEmpty()) {
-                "Plugin loaded but registered no providers. It may reject the host runtime."
+            if (providers.isEmpty()) {
+                log.w { "CloudStream plugin ${item.metadata.internalName} loaded without catalogue providers; retaining plugin settings if exposed" }
             }
             providers.forEach(MainAPI::init)
             var registeredExtractors = extractorApis
