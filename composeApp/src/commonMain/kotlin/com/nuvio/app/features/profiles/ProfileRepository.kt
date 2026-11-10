@@ -84,6 +84,33 @@ object ProfileRepository {
 
     val activeProfileId: Int get() = activeProfileIndex
 
+    /**
+     * Applies the custom profile background URL received from the account's
+     * profile-settings blob. Built-in background selections intentionally remain
+     * device-local and are not modified by this sync path.
+     */
+    fun applySyncedCustomBackgroundUrl(profileIndex: Int, url: String?) {
+        val current = _state.value
+        val target = current.profiles.firstOrNull { it.profileIndex == profileIndex } ?: return
+        val normalized = normalizedAvatarUrl(url)
+        if (target.profileBackgroundUrl == normalized) return
+        val updatedProfiles = current.profiles.map { profile ->
+            if (profile.profileIndex == profileIndex) {
+                profile.copy(
+                    profileBackgroundId = if (normalized != null) null else profile.profileBackgroundId,
+                    profileBackgroundUrl = normalized,
+                )
+            } else {
+                profile
+            }
+        }
+        _state.value = current.copy(
+            profiles = updatedProfiles,
+            activeProfile = updatedProfiles.firstOrNull { it.profileIndex == activeProfileIndex },
+        )
+        persist()
+    }
+
     fun setRememberLastProfileEnabled(enabled: Boolean) {
         if (_state.value.rememberLastProfileEnabled == enabled) return
 
@@ -133,17 +160,33 @@ object ProfileRepository {
     }
 
     suspend fun pullProfiles() {
+        pullProfilesWithBackgroundOverrides(emptyMap())
+    }
+
+    private suspend fun pullProfilesWithBackgroundOverrides(
+        backgroundOverrides: Map<Int, Pair<String?, String?>>,
+    ): Boolean {
         if (AuthRepository.state.value.isAnonymous) {
             if (!_state.value.isLoaded) {
                 _state.value = _state.value.copy(isLoaded = true)
             }
-            return
+            return true
         }
         try {
             val result = SupabaseProvider.client.postgrest.rpc("sync_pull_profiles")
-            val profiles = result.decodeList<NuvioProfile>()
+            val cachedProfiles = decodeStoredPayload()
+                ?.takeIf { it.userId == (AuthRepository.state.value as? AuthState.Authenticated)?.userId }
+                ?.profiles
+                .orEmpty()
+            val localProfiles = (cachedProfiles.associateBy { it.profileIndex } +
+                _state.value.profiles.associateBy { it.profileIndex }).values.toList()
+            val profiles = mergeProfileBackgrounds(
+                remoteProfiles = result.decodeList<NuvioProfile>(),
+                localProfiles = localProfiles,
+                backgroundOverrides = backgroundOverrides,
+            ).sortedBy { it.profileIndex }
             _state.value = _state.value.copy(
-                profiles = profiles.sortedBy { it.profileIndex },
+                profiles = profiles,
                 isLoaded = true,
                 activeProfile = profiles.find { it.profileIndex == activeProfileIndex }
                     ?: profiles.firstOrNull(),
@@ -152,17 +195,19 @@ object ProfileRepository {
                 activeProfileIndex = _state.value.activeProfile!!.profileIndex
             }
             withContext(Dispatchers.IO) {
-                syncPinCache(profiles.sortedBy { it.profileIndex })
+                syncPinCache(profiles)
             }
             persist()
+            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            if (AuthRepository.signOutIfSessionInvalid(e, "Profile pull")) return
+            if (AuthRepository.signOutIfSessionInvalid(e, "Profile pull")) return false
             log.e(e) { "Failed to pull profiles" }
             if (!_state.value.isLoaded) {
                 _state.value = _state.value.copy(isLoaded = true)
             }
+            return false
         }
     }
 
@@ -218,11 +263,21 @@ object ProfileRepository {
         try {
             val params = buildJsonObject {
                 put("p_client_max_profiles", MAX_PROFILES)
-                put("p_profiles", json.encodeToJsonElement(profiles))
+                put(
+                    "p_profiles",
+                    json.encodeToJsonElement(profiles.map(ProfilePushPayload::toUpstreamProfilePushPayload)),
+                )
                 putSyncOriginClientId()
             }
             SupabaseProvider.client.postgrest.rpc("sync_push_profiles", params)
-            pullProfiles()
+            val backgroundOverrides = profiles.associate {
+                it.profileIndex to (it.profileBackgroundId to it.profileBackgroundUrl)
+            }
+            if (!pullProfilesWithBackgroundOverrides(backgroundOverrides)) {
+                // Keep a successful edit available locally even when the follow-up
+                // profile refresh is temporarily unavailable.
+                applyPayloadsLocally(profiles)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -236,6 +291,8 @@ object ProfileRepository {
         avatarColorHex: String,
         avatarId: String? = null,
         avatarUrl: String? = null,
+        profileBackgroundId: String? = null,
+        profileBackgroundUrl: String? = null,
         usesPrimaryAddons: Boolean = false,
     ) {
         val existing = _state.value.profiles
@@ -260,6 +317,8 @@ object ProfileRepository {
             usesPrimaryAddons = usesPrimaryAddons,
             avatarId = avatarId,
             avatarUrl = avatarUrl,
+            profileBackgroundId = profileBackgroundId,
+            profileBackgroundUrl = profileBackgroundUrl,
         )
 
         pushProfiles(allPayloads)
