@@ -16,6 +16,35 @@ import kotlin.test.assertTrue
 class LibraryRepositoryTest {
 
     @Test
+    fun `local status sections stay separate from media type`() {
+        val items = listOf(
+            LibraryItem(id = "a", type = "movie", name = "A", savedAtEpochMs = 1L),
+            LibraryItem(id = "b", type = "series", name = "B", savedAtEpochMs = 2L,
+                localStatus = LocalLibraryStatus.WATCHING.storageKey),
+            LibraryItem(id = "c", type = "anime", name = "C", savedAtEpochMs = 3L,
+                localStatus = LocalLibraryStatus.ON_HOLD.storageKey),
+            LibraryItem(id = "d", type = "movie", name = "D", savedAtEpochMs = 4L,
+                localStatus = LocalLibraryStatus.WATCHED.storageKey),
+        )
+        val sections = localLibrarySections(items)
+        assertEquals(
+            listOf("local:status:planning", "local:status:watching", "local:status:on_hold", "local:status:watched"),
+            sections.map { it.type },
+        )
+        assertEquals(listOf("a"), sections[0].items.map { it.id })
+        assertEquals(listOf("b"), sections[1].items.map { it.id })
+        assertEquals(listOf("c"), sections[2].items.map { it.id })
+        assertEquals(listOf("d"), sections[3].items.map { it.id })
+        assertEquals(listOf("movie", "series", "anime", "movie"), items.map { it.type })
+    }
+
+    @Test
+    fun `legacy completed status migrates to watched`() {
+        assertEquals(LocalLibraryStatus.WATCHED, LocalLibraryStatus.fromStorage("completed"))
+        assertEquals(LocalLibraryStatus.PLANNING, LocalLibraryStatus.fromStorage("unknown"))
+    }
+
+    @Test
     fun `display title uses exact type formatting`() {
         assertEquals("Movie", "movie".toLibraryDisplayTitle())
         assertEquals("Anime Series", "anime-series".toLibraryDisplayTitle())

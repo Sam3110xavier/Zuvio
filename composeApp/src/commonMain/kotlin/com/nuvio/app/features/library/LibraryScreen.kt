@@ -334,6 +334,9 @@ fun LibraryScreen(
             )
         }
     }
+    val selectedLocalStatusKey = selectedLibrarySectionKey
+        ?.takeIf { key -> uiState.sections.any { it.type == key && it.items.isNotEmpty() } }
+        ?: uiState.sections.firstOrNull { it.items.isNotEmpty() }?.type
     val releaseInfoFor = remember(hydratedReleaseInfo, unknownReleaseLabel) {
         { item: LibraryItem ->
             resolveReleaseInfoForDisplay(
@@ -712,6 +715,12 @@ fun LibraryScreen(
                                     sourceMode = uiState.sourceMode,
                                     sortOption = effectiveSortOption,
                                     verticalProjection = verticalProjection,
+                                    localStatusSections = uiState.sections.filter { it.items.isNotEmpty() },
+                                    selectedLocalStatusKey = selectedLocalStatusKey,
+                                    onLocalStatusSelected = { sectionKey ->
+                                        selectedLibrarySectionKey = sectionKey
+                                        selectedLibraryType = null
+                                    },
                                     onSectionSelected = { sectionKey ->
                                         selectedLibrarySectionKey = sectionKey
                                         selectedLibraryType = null
@@ -726,7 +735,9 @@ fun LibraryScreen(
                         }
                         when (displaySettings.layoutMode) {
                             LibraryLayoutMode.HORIZONTAL -> librarySections(
-                                displaySections = librarySectionsDisplay,
+                                displaySections = librarySectionsDisplay.filter { section ->
+                                    selectedLocalStatusKey == null || section.type == selectedLocalStatusKey
+                                },
                                 releaseInfoFor = releaseInfoFor,
                                 watchedKeys = watchedUiState.watchedKeys,
                                 fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,

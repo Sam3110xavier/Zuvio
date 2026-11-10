@@ -348,13 +348,35 @@ object LibraryRepository {
 
     fun save(item: LibraryItem) {
         ensureLoaded()
-        val snapshot = localState.upsert(item.copy(savedAtEpochMs = LibraryClock.nowEpochMs()))
+        val existing = localState.find(item.id, item.type)
+        val snapshot = localState.upsert(
+            item.copy(
+                savedAtEpochMs = existing?.savedAtEpochMs ?: LibraryClock.nowEpochMs(),
+                localStatus = existing?.localStatus ?: item.localStatus,
+            ),
+        )
         log.i {
             "Saving local library item item=${item.id} type=${item.type} profile=${snapshot.token.profileId}"
         }
         persist(snapshot)
         publish()
         pushToServer(snapshot)
+    }
+
+    /**
+     * Updates only the native Nuvio Library status of an already-saved item.
+     * Metadata and media type remain intact; the usual local persistence and
+     * Supabase delta-sync path handles the updated LibraryItem.
+     */
+    fun setLocalStatusIfSaved(id: String, type: String, status: LocalLibraryStatus): Boolean {
+        ensureLoaded()
+        val existing = localState.find(id, type) ?: return false
+        if (LocalLibraryStatus.fromStorage(existing.localStatus) == status) return true
+        val snapshot = localState.upsert(existing.copy(localStatus = status.storageKey))
+        persist(snapshot)
+        publish()
+        pushToServer(snapshot)
+        return true
     }
 
     fun remove(id: String) {
@@ -670,16 +692,7 @@ object LibraryRepository {
 
         val items = localSnapshot.items
             .sortedByDescending { it.savedAtEpochMs }
-        val sections = items
-            .groupBy { it.type }
-            .map { (type, typeItems) ->
-                LibrarySection(
-                    type = type,
-                    displayTitle = type.toLibraryDisplayTitle(),
-                    items = typeItems.sortedByDescending { it.savedAtEpochMs },
-                )
-            }
-            .sortedBy { it.displayTitle }
+        val sections = localLibrarySections(items)
 
         val newUiState = LibraryUiState(
             sourceMode = LibrarySourceMode.LOCAL,
@@ -817,3 +830,14 @@ private fun localizedLibraryOtherTitle(): String =
 private fun localizedStringOrDefault(resource: StringResource, fallback: String): String =
     runCatching { runBlocking { getString(resource) } }
         .getOrDefault(fallback)
+
+
+internal fun localLibrarySections(items: List<LibraryItem>): List<LibrarySection> =
+    LocalLibraryStatus.entries.map { status ->
+        LibrarySection(
+            type = status.sectionKey,
+            displayTitle = status.title,
+            items = items.filter { LocalLibraryStatus.fromStorage(it.localStatus) == status }
+                .sortedByDescending { it.savedAtEpochMs },
+        )
+    }

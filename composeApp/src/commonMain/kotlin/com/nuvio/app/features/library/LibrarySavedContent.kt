@@ -41,6 +41,9 @@ internal fun LibrarySavedControls(
     sourceMode: LibrarySourceMode,
     sortOption: LibrarySortOption,
     verticalProjection: LibraryVerticalProjection,
+    localStatusSections: List<LibrarySection>,
+    selectedLocalStatusKey: String?,
+    onLocalStatusSelected: (String) -> Unit,
     onSectionSelected: (String) -> Unit,
     onTypeSelected: (String?) -> Unit,
     onSortSelected: (LibrarySortOption) -> Unit,
@@ -96,6 +99,23 @@ internal fun LibrarySavedControls(
                         ?.let(onSortSelected)
                 },
             )
+        }
+
+        if (sourceMode == LibrarySourceMode.LOCAL && localStatusSections.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                localStatusSections.forEach { section ->
+                    LibraryChip(
+                        label = localizedLibrarySectionTitle(section.type, section.displayTitle),
+                        selected = section.type == selectedLocalStatusKey,
+                        onClick = { onLocalStatusSelected(section.type) },
+                    )
+                }
+            }
         }
 
         if (

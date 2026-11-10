@@ -35,9 +35,26 @@ data class LibraryItem(
     override val trackingProviderItemId: String? = null,
     override val trackingSourceUrl: String? = null,
     val savedAtEpochMs: Long,
+    val localStatus: String = LocalLibraryStatus.PLANNING.storageKey,
 ) : TrackingAttributedItem {
     override val trackingContentId: String
         get() = id
+}
+
+enum class LocalLibraryStatus(val storageKey: String, val title: String) {
+    PLANNING("planning", "Planning to Watch"),
+    WATCHING("watching", "Watching"),
+    ON_HOLD("on_hold", "On Hold"),
+    WATCHED("watched", "Watched");
+
+    val sectionKey: String get() = "local:status:$storageKey"
+
+    companion object {
+        fun fromStorage(value: String?): LocalLibraryStatus =
+            entries.firstOrNull { it.storageKey.equals(value, ignoreCase = true) }
+                ?: WATCHED.takeIf { value.equals("completed", ignoreCase = true) }
+                ?: PLANNING
+    }
 }
 
 data class LibrarySection(
