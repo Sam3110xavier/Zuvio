@@ -257,7 +257,7 @@ fun CatalogScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (showMergedSourceTabs && uiState.mergedSourceTabs.isNotEmpty()) {
-                    stickyHeader(span = { GridItemSpan(maxLineSpan) }) {
+                    stickyHeader {
                         if (areMergedSourceTabsVisible) {
                             Row(
                                 modifier = Modifier

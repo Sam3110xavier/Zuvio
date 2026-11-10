@@ -334,6 +334,70 @@ internal actual object CloudStreamPlatformRuntime {
             PluginManager.unregister(path)
         }
     }
+    @Suppress("DEPRECATION")
+    private fun findExtractorApisInDex(loader: PathClassLoader, file: File): List<ExtractorApi> {
+        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return emptyList()
+        val found = mutableListOf<ExtractorApi>()
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (className.indexOf('$') >= 0) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (_: LinkageError) {
+                    continue
+                }
+                if (!ExtractorApi::class.java.isAssignableFrom(candidate)) continue
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                val extractor = runCatching {
+                    candidate.getDeclaredConstructor().newInstance() as ExtractorApi
+                }.getOrNull() ?: continue
+                if (extractor.mainUrl.isNotBlank()) found.add(extractor)
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return found.distinctBy { it.mainUrl.lowercase() }
+    }
+    @Suppress("DEPRECATION")
+    private fun findAnnotatedPluginClass(loader: PathClassLoader, file: File): Class<*>? {
+        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return null
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (
+                    className.indexOf('$') >= 0 ||
+                    className.startsWith("java.") ||
+                    className.startsWith("android.") ||
+                    className.startsWith("kotlin.")
+                ) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (error: LinkageError) {
+                    log.w(error) { "Skipping CloudStream DEX class with missing dependency: $className" }
+                    continue
+                }
+                if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
+                if (!BasePlugin::class.java.isAssignableFrom(candidate)) {
+                    log.w { "Ignoring annotated CloudStream class that does not extend BasePlugin: $className" }
+                    continue
+                }
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                log.i { "Found CloudStream plugin entry point by DEX scan: $className" }
+                return candidate
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return null
+    }
+
 }
 
 private class CloudStreamIdentityContext(base: Context) : ContextWrapper(base) {
@@ -571,70 +635,6 @@ private class AndroidDexCloudStreamProvider(
         if (value.isBlank()) return false
         val uri = runCatching { Uri.parse(value.trim()) }.getOrNull() ?: return false
         return uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun findExtractorApisInDex(loader: PathClassLoader, file: File): List<ExtractorApi> {
-        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return emptyList()
-        val found = mutableListOf<ExtractorApi>()
-        try {
-            val entries = dex.entries()
-            while (entries.hasMoreElements()) {
-                val className = entries.nextElement()
-                if (className.indexOf(36) >= 0) continue
-                val candidate = try {
-                    loader.loadClass(className)
-                } catch (_: ClassNotFoundException) {
-                    continue
-                } catch (_: LinkageError) {
-                    continue
-                }
-                if (!ExtractorApi::class.java.isAssignableFrom(candidate)) continue
-                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
-                val extractor = runCatching {
-                    candidate.getDeclaredConstructor().newInstance() as ExtractorApi
-                }.getOrNull() ?: continue
-                if (extractor.mainUrl.isNotBlank()) found.add(extractor)
-            }
-        } finally {
-            runCatching { dex.close() }
-        }
-        return found.distinctBy { it.mainUrl.lowercase() }
-    }
-    @Suppress("DEPRECATION")
-    private fun findAnnotatedPluginClass(loader: PathClassLoader, file: File): Class<*>? {
-        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return null
-        try {
-            val entries = dex.entries()
-            while (entries.hasMoreElements()) {
-                val className = entries.nextElement()
-                if (
-                    className.indexOf(36) >= 0 ||
-                    className.startsWith("java.") ||
-                    className.startsWith("android.") ||
-                    className.startsWith("kotlin.")
-                ) continue
-                val candidate = try {
-                    loader.loadClass(className)
-                } catch (_: ClassNotFoundException) {
-                    continue
-                } catch (error: LinkageError) {
-                    log.w(error) { "Skipping CloudStream DEX class with missing dependency: $className" }
-                    continue
-                }
-                if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
-                if (!BasePlugin::class.java.isAssignableFrom(candidate)) {
-                    log.w { "Ignoring annotated CloudStream class that does not extend BasePlugin: $className" }
-                    continue
-                }
-                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
-                log.i { "Found CloudStream plugin entry point by DEX scan: $className" }
-                return candidate
-            }
-        } finally {
-            runCatching { dex.close() }
-        }
-        return null
     }
 
     private fun findProvider(className: String): MainAPI =
