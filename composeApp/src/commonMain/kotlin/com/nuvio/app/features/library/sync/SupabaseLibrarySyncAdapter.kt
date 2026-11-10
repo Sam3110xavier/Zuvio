@@ -110,6 +110,7 @@ internal data class LibrarySyncItem(
     override val genres: List<String> = emptyList(),
     @SerialName("addon_base_url") override val addonBaseUrl: String? = null,
     @SerialName("added_at") override val addedAt: Long = 0,
+    @SerialName("local_status") override val localStatus: String? = null,
 ) : LibrarySyncFields
 
 @Serializable
@@ -145,6 +146,7 @@ internal interface LibrarySyncFields {
     val genres: List<String>
     val addonBaseUrl: String?
     val addedAt: Long
+    val localStatus: String?
 }
 
 internal fun LibrarySyncFields.toLibraryItem(): LibraryItem =
@@ -162,6 +164,7 @@ internal fun LibrarySyncFields.toLibraryItem(): LibraryItem =
         posterShape = posterShape.toPosterShape(),
         addonBaseUrl = addonBaseUrl,
         savedAtEpochMs = addedAt,
+        localStatus = localStatus ?: com.nuvio.app.features.library.LocalLibraryStatus.PLANNING.storageKey,
     )
 
 internal fun LibraryItem.toSyncItem(): LibrarySyncItem =
@@ -179,6 +182,7 @@ internal fun LibraryItem.toSyncItem(): LibrarySyncItem =
         genres = genres,
         addonBaseUrl = addonBaseUrl,
         addedAt = savedAtEpochMs,
+        localStatus = localStatus,
     )
 
 private fun String.toPosterShape(): PosterShape =

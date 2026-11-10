@@ -36,6 +36,23 @@ class SupabaseLibrarySyncAdapterTest {
     }
 
     @Test
+    fun `library push and pull preserve local watch status`() {
+        val item = LibraryItem(
+            id = "tt456",
+            type = "series",
+            name = "Show",
+            localStatus = com.nuvio.app.features.library.LocalLibraryStatus.WATCHING.storageKey,
+            savedAtEpochMs = 2L,
+        )
+
+        val payload = json.parseToJsonElement(json.encodeToString(item.toSyncItem())).jsonObject
+        assertEquals("watching", payload.getValue("local_status").jsonPrimitive.content)
+        val pulled = json.decodeFromString<LibrarySyncItem>(payload.toString()).toLibraryItem()
+        assertEquals(item.localStatus, pulled.localStatus)
+        assertEquals(item.type, pulled.type)
+    }
+
+    @Test
     fun `snapshot logo survives local storage and reload`() {
         val remote = json.decodeFromString<LibrarySyncItem>(
             """{"content_id":"tt123","content_type":"movie","logo":"https://example.com/logo.png"}""",
