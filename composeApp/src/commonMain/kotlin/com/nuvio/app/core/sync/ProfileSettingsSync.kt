@@ -180,6 +180,40 @@ object ProfileSettingsSync {
         }
     }
 
+    /**
+     * Updates only the custom background field for the requested profile. Unlike the
+     * debounced active-profile observer, this is awaited by profile save and therefore
+     * survives an immediate app close. Existing settings for non-active profiles are
+     * fetched and preserved before the one-field update is pushed.
+     */
+    suspend fun pushCustomProfileBackgroundUrl(profileId: Int, url: String?): Boolean {
+        if (profileId !in 1..6) return false
+        return syncMutex.withLock {
+            try {
+                val params = buildJsonObject {
+                    put("p_profile_id", profileId)
+                    put("p_platform", MOBILE_SYNC_PLATFORM)
+                }
+                val result = SupabaseProvider.client.postgrest.rpc("sync_pull_profile_settings_blob", params)
+                val remoteJson = result.decodeList<SettingsBlobResponse>().firstOrNull()?.settingsJson
+                val existing = remoteJson?.let {
+                    json.decodeFromJsonElement(MobileProfileSettingsBlob.serializer(), it)
+                } ?: MobileProfileSettingsBlob()
+                val updated = existing.copy(
+                    version = maxOf(existing.version, 5),
+                    features = existing.features.copy(customProfileBackgroundUrl = url),
+                )
+                pushToRemoteLocked(profileId, updated)
+                true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                log.e(error) { "pushCustomProfileBackgroundUrl(profileId=$profileId) — FAILED" }
+                false
+            }
+        }
+    }
+
     @OptIn(FlowPreview::class)
     private fun observeLocalChangesAndPush() {
         val signatureFlows = listOf(

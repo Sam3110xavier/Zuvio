@@ -278,6 +278,14 @@ object ProfileRepository {
                 // profile refresh is temporarily unavailable.
                 applyPayloadsLocally(profiles)
             }
+            // Persist each profile's custom background immediately. The settings-blob
+            // observer is debounced, so relying on it alone can lose edits on app exit.
+            profiles.forEach { profile ->
+                ProfileSettingsSync.pushCustomProfileBackgroundUrl(
+                    profileId = profile.profileIndex,
+                    url = profile.profileBackgroundUrl,
+                )
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
