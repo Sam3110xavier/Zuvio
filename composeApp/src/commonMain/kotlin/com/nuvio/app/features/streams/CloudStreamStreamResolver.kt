@@ -385,20 +385,22 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
     request: CloudStreamSearchRequest,
     searchItem: CloudStreamSearchItem,
 ): Boolean {
-    if (!cloudStreamTypeMatches(type.nuvioType, request.type)) return false
     val requestedTitles = (listOf(request.title) + request.aliases)
         .map(::normalizeCloudStreamTitle)
         .filter(String::isNotBlank)
         .toSet()
-    val titleMatches = cloudStreamTitleMatches(name, requestedTitles) ||
-        cloudStreamTitleMatches(searchItem.name, requestedTitles)
+    val titleSimilarity = maxOf(
+        cloudStreamTitleSimilarity(name, requestedTitles),
+        cloudStreamTitleSimilarity(searchItem.name, requestedTitles),
+    )
+    if (!cloudStreamTypeMatches(type.nuvioType, request.type) && titleSimilarity < 0.98) return false
     val loadedYear = year ?: cloudStreamYear(name)
     val searchedYear = searchItem.year ?: cloudStreamYear(searchItem.name)
     if (request.year != null) {
-        if (loadedYear != null && loadedYear != request.year) return false
-        if (searchedYear != null && searchedYear != request.year) return false
+        if (loadedYear != null && kotlin.math.abs(loadedYear - request.year) > 1) return false
+        if (searchedYear != null && kotlin.math.abs(searchedYear - request.year) > 1) return false
     }
-    return titleMatches
+    return titleSimilarity >= 0.86
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamExternalIdRequest(
@@ -411,7 +413,7 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
         .toSet()
     val titleMatches = cloudStreamTitleMatches(name, requestedTitles)
     val loadedYear = year ?: cloudStreamYear(name)
-    if (request.year != null && loadedYear != null && loadedYear != request.year) return false
+    if (request.year != null && loadedYear != null && kotlin.math.abs(loadedYear - request.year) > 1) return false
     val safeExternalIdFallback = !request.externalId.isNullOrBlank() &&
         (request.year == null || loadedYear == null || loadedYear == request.year)
     return titleMatches || safeExternalIdFallback
