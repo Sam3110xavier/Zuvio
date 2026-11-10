@@ -594,8 +594,8 @@
     <string name="settings_advanced_debug_logs">Debug Logs</string>
     <string name="settings_advanced_debug_logs_description">View, copy, export, or clear in-app logs and crash reports</string>
     <string name="settings_advanced_debugging_copy_logs">Copy Logs to Clipboard</string>
-    <string name="settings_advanced_debugging_export">Export Logs &amp; Crash Reports</string>
-    <string name="settings_advanced_debugging_export_description">Share %1$d retained log entries and %2$d saved crash report(s) as a text file</string>
+    <string name="settings_debug_logs_export_title">Export Logs &amp; Crash Reports</string>
+    <string name="settings_debug_logs_export_description">Share %1$d retained log entries and %2$d saved crash report(s) as a text file</string>
     <string name="settings_advanced_debugging_copy_logs_description">Copy %1$d in-app log lines</string>
     <string name="settings_advanced_debugging_clear_logs">Clear Logs</string>
     <string name="settings_advanced_debugging_clear_logs_description">Clear in-memory logs and saved local crash reports</string>
