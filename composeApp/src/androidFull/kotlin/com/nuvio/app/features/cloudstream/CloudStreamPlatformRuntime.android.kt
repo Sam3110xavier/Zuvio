@@ -3,6 +3,7 @@ package com.nuvio.app.features.cloudstream
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.net.Uri
 import android.content.res.AssetManager
 import android.content.res.Resources
 import co.touchlab.kermit.Logger
@@ -17,6 +18,7 @@ import com.lagradost.cloudstream3.LiveStreamLoadResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.metaproviders.TmdbProvider
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.MovieSearchResponse
 import com.lagradost.cloudstream3.SearchResponse
@@ -26,6 +28,7 @@ import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.actions.VideoClickActionHolder
 import com.lagradost.cloudstream3.plugins.BasePlugin
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.plugins.PluginData
 import com.lagradost.cloudstream3.plugins.PluginManager
@@ -33,6 +36,7 @@ import com.lagradost.cloudstream3.syncproviders.SyncIdName
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.extractorApis
+import dalvik.system.DexFile
 import dalvik.system.PathClassLoader
 import java.io.File
 import java.lang.ref.WeakReference
@@ -48,6 +52,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
@@ -167,18 +172,22 @@ internal actual object CloudStreamPlatformRuntime {
                 json.decodeFromString<CloudStreamCs3Manifest>(reader.readText())
             }
         }
-        val pluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
-            ?: error("CloudStream manifest has no pluginClassName")
+        val declaredPluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
         val loader = PathClassLoader(file.absolutePath, context.classLoader)
         val providersBefore = APIHolder.allProviders.toSet()
         val extractorsBefore = extractorApis.toSet()
         var instance: BasePlugin? = null
         PluginManager.currentlyLoading = item.metadata.internalName
         try {
-            val pluginClass = loader.loadClass(pluginClassName)
-            require(BasePlugin::class.java.isAssignableFrom(pluginClass)) {
-                "CloudStream entry point does not extend BasePlugin"
+            val declaredPluginClass = declaredPluginClassName?.let { className ->
+                runCatching { loader.loadClass(className) }
+                    .onFailure { error -> log.w(error) { "Could not load declared CloudStream entry point $className; scanning DEX" } }
+                    .getOrNull()
+                    ?.takeIf { BasePlugin::class.java.isAssignableFrom(it) }
             }
+            val pluginClass = declaredPluginClass ?: findAnnotatedPluginClass(loader, file)
+                ?: error("CloudStream manifest entry point was missing or incompatible and no @CloudstreamPlugin class was found")
+            val pluginClassName = pluginClass.name
 
             @Suppress("UNCHECKED_CAST")
             val pluginInstance = (pluginClass as Class<out BasePlugin>).getDeclaredConstructor().newInstance()
@@ -409,6 +418,41 @@ private class AndroidDexCloudStreamProvider(
     }
 
     override suspend fun loadByExternalId(externalId: String): CloudStreamLoadItem? = withContext(Dispatchers.IO) {
+        // Internal route used by the common resolver for CloudStream TmdbProvider plugins.
+        // These providers often do not implement search() and expect a TMDB ID payload.
+        if (externalId.startsWith("nuvio-tmdb:")) {
+            val parts = externalId.split(':')
+            val tmdbId = parts.getOrNull(1)?.toIntOrNull() ?: return@withContext null
+            val mediaType = parts.getOrNull(2)?.lowercase()?.takeIf { it == "movie" || it == "tv" }
+                ?: return@withContext null
+            val tmdbJson = """{"id":$tmdbId,"type":"$mediaType"}"""
+            val tmdbUrl = "https://www.themoviedb.org/$mediaType/$tmdbId"
+            return@withContext providers.filterIsInstance<TmdbProvider>().firstNotNullOfOrNull { api ->
+                var response: LoadResponse? = null
+                try {
+                    response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                        api.load(tmdbJson)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    log.w(error) { "CloudStream TMDB JSON load failed api=${api.name} id=$tmdbId" }
+                }
+                if (response == null) {
+                    try {
+                        response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                            api.load(tmdbUrl)
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        log.w(error) { "CloudStream TMDB URL fallback failed api=${api.name} id=$tmdbId" }
+                    }
+                }
+                response?.toNuvioLoadItem(api)
+            }
+        }
+
         val syncName = when {
             externalId.matches(IMDB_ID_REGEX) -> SyncIdName.Imdb
             else -> return@withContext null
@@ -443,25 +487,46 @@ private class AndroidDexCloudStreamProvider(
         val api = findProvider(route.providerClassName)
         val subtitles = Collections.synchronizedList(mutableListOf<CloudStreamSubtitle>())
         val links = Collections.synchronizedList(mutableListOf<ExtractorLink>())
-        val completed = withTimeout(stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)) {
-            api.loadLinks(
-                route.data,
-                false,
-                { subtitle ->
-                    subtitles += CloudStreamSubtitle(
-                        url = subtitle.url,
-                        language = subtitle.lang,
-                        name = subtitle.lang,
-                        headers = subtitle.headers.orEmpty(),
-                    )
-                },
-                links::add,
-            )
+        val timeoutMs = stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)
+        val completed = withTimeoutOrNull(timeoutMs) {
+            try {
+                api.loadLinks(
+                    route.data,
+                    false,
+                    { subtitle ->
+                        if (isValidHttpUrl(subtitle.url)) {
+                            subtitles += CloudStreamSubtitle(
+                                url = subtitle.url,
+                                language = subtitle.lang,
+                                name = subtitle.lang,
+                                headers = subtitle.headers.orEmpty(),
+                            )
+                        }
+                    },
+                    links::add,
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                log.w(error) {
+                    "CloudStream loadLinks failed api=${api.name}; preserving ${links.size} captured link(s)"
+                }
+                false
+            }
         }
         val subtitleSnapshot = synchronized(subtitles) { subtitles.toList() }
         val linkSnapshot = synchronized(links) { links.toList() }
-        if (!completed && linkSnapshot.isEmpty()) error("CloudStream provider could not resolve this source")
-        linkSnapshot.distinctBy { link ->
+        if (completed == null) {
+            log.w { "CloudStream loadLinks timed out api=${api.name} after ${timeoutMs}ms; captured=${linkSnapshot.size}" }
+        }
+        val validLinks = linkSnapshot.filter { isValidHttpUrl(it.url) }
+        if (validLinks.isEmpty()) {
+            error(
+                if (completed == null) "CloudStream provider timed out before resolving playable links"
+                else "CloudStream provider returned no valid HTTP(S) playable links",
+            )
+        }
+        validLinks.distinctBy { link ->
             listOf(link.url, link.referer, link.quality.toString(), link.type.name, link.headers.toString())
         }.map { link ->
             CloudStreamPlaybackSource(
@@ -474,7 +539,44 @@ private class AndroidDexCloudStreamProvider(
                 isHls = link.type == ExtractorLinkType.M3U8,
                 isDash = link.type == ExtractorLinkType.DASH,
             )
-        }.also { if (it.isEmpty()) error("CloudStream provider returned no playable links") }
+        }
+    }
+
+    private fun isValidHttpUrl(value: String): Boolean {
+        if (value.isBlank()) return false
+        val uri = runCatching { Uri.parse(value.trim()) }.getOrNull() ?: return false
+        return uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun findAnnotatedPluginClass(loader: PathClassLoader, file: File): Class<*>? {
+        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return null
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (!className.startsWith("com.")) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (error: LinkageError) {
+                    log.w(error) { "Skipping CloudStream DEX class with missing dependency: $className" }
+                    continue
+                }
+                if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
+                if (!BasePlugin::class.java.isAssignableFrom(candidate)) {
+                    log.w { "Ignoring annotated CloudStream class that does not extend BasePlugin: $className" }
+                    continue
+                }
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                log.i { "Found CloudStream plugin entry point by DEX scan: $className" }
+                return candidate
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return null
     }
 
     private fun findProvider(className: String): MainAPI =
@@ -548,7 +650,7 @@ private class AndroidDexCloudStreamProvider(
 
         private const val DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000L
         private const val DEFAULT_LOAD_TIMEOUT_MS = 30_000L
-        private const val DEFAULT_LINK_TIMEOUT_MS = 120_000L
+        private const val DEFAULT_LINK_TIMEOUT_MS = 60_000L
     }
 }
 
