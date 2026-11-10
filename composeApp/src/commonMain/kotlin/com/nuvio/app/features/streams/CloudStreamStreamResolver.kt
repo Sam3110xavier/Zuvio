@@ -7,6 +7,7 @@ import com.nuvio.app.features.cloudstream.CloudStreamTvType
 import com.nuvio.app.features.cloudstream.sha256Hex
 import com.nuvio.app.features.cloudstream.toStreamItem
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.tmdb.TmdbMetadataService
 
 internal data class CloudStreamSearchRequest(
     val title: String,
@@ -17,6 +18,7 @@ internal data class CloudStreamSearchRequest(
     val aliases: List<String> = emptyList(),
     val episodeTitle: String? = null,
     val externalId: String? = null,
+    val tmdbId: String? = null,
 )
 
 internal data class CloudStreamProviderTarget(
@@ -67,19 +69,51 @@ internal fun buildCloudStreamSearchRequest(
         ?: details?.imdbId?.trim()?.takeIf(imdbIdPattern::matches)
         ?: parentMetaId?.trim()?.takeIf(imdbIdPattern::matches)
         ?: videoId.trim().takeIf(imdbIdPattern::matches)
-    val aliases = listOfNotNull(searchTitle?.trim(), details?.name?.trim())
-        .filter(String::isNotBlank)
-        .distinct()
+    val tmdbId = listOf(parentMetaId, videoId, details?.id)
+        .firstNotNullOfOrNull(::cloudStreamTmdbId)
+    val originalTitle = tmdbId?.let { TmdbMetadataService.cachedOriginalTitle(it, type) }
+    val aliases = listOfNotNull(
+        searchTitle?.trim(),
+        details?.name?.trim(),
+        originalTitle?.trim(),
+    ).filter(String::isNotBlank).distinct()
+    val (requestSeason, requestEpisode) = cloudStreamEpisodeCoordinates(videoId, season, episode)
     return CloudStreamSearchRequest(
         title = title,
         type = type,
         year = year,
-        season = season,
-        episode = episode,
+        season = requestSeason,
+        episode = requestEpisode,
         episodeTitle = episodeTitle,
         externalId = externalId,
+        tmdbId = tmdbId,
         aliases = aliases,
     )
+}
+
+internal fun cloudStreamEpisodeCoordinates(
+    videoId: String,
+    season: Int?,
+    episode: Int?,
+): Pair<Int?, Int?> {
+    val absoluteEpisode = absoluteCloudStreamAnimeEpisodeNumber(videoId)
+    return if (absoluteEpisode != null) null to absoluteEpisode else season to episode
+}
+
+internal fun absoluteCloudStreamAnimeEpisodeNumber(videoId: String): Int? {
+    val parts = videoId.trim().split(':')
+    if (parts.size != 3) return null
+    if (parts[0].lowercase() !in setOf("kitsu", "mal", "anilist", "anidb")) return null
+    if (parts[1].isBlank() || parts[1].toLongOrNull() == null) return null
+    return parts[2].toIntOrNull()?.takeIf { it > 0 }
+}
+
+private fun cloudStreamTmdbId(value: String?): String? {
+    val raw = value?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val prefix = raw.substringBefore(':', missingDelimiterValue = "")
+    if (prefix.lowercase() !in setOf("tmdb", "movie", "series", "tv")) return null
+    val candidate = raw.substringAfter(':').substringBefore(':').substringBefore('/').trim()
+    return candidate.takeIf { it.isNotEmpty() && it.all(Char::isDigit) && it.toLongOrNull() != null }
 }
 
 internal fun cloudStreamProviderGroupsForRequest(
@@ -151,6 +185,40 @@ internal suspend fun resolveCloudStreamProviderStreams(
 
     for (provider in providerGroup.providers) {
         attemptedProviders++
+
+        // TmdbProvider extensions accept TMDB IDs directly and often do not implement search().
+        // Use this path first; the Android runtime falls back to the standard TMDB URL form.
+        val tmdbLookup = request.tmdbId?.let { tmdbId ->
+            runCatchingUnlessCancelled {
+                CloudStreamRepository.loadByExternalId(
+                    provider.id,
+                    "nuvio-tmdb:$tmdbId:${if (normalizeCloudStreamType(request.type) == "movie") "movie" else "tv"}",
+                )
+            }
+        }
+        if (tmdbLookup?.isFailure == true && firstError == null) {
+            firstError = tmdbLookup.exceptionOrNull()?.message ?: "CloudStream TMDB lookup failed"
+        }
+        val tmdbLoaded = tmdbLookup?.getOrNull()?.getOrNull()
+        if (tmdbLoaded != null && tmdbLoaded.matchesCloudStreamTmdbRequest(request)) {
+            val linkData = tmdbLoaded.linkDataForCloudStreamRequest(request)
+            if (linkData != null) {
+                attemptedExtractors++
+                val linkResult = runCatchingUnlessCancelled {
+                    CloudStreamRepository.loadLinks(provider.id, linkData)
+                }
+                val links = linkResult.getOrNull()?.getOrNull()
+                if (!links.isNullOrEmpty()) {
+                    streams += links.map { it.toStreamItem(provider.id, provider.name) }
+                    continue
+                }
+                if (firstError == null) {
+                    firstError = linkResult.exceptionOrNull()?.message
+                        ?: linkResult.getOrNull()?.exceptionOrNull()?.message
+                        ?: "CloudStream TMDB match returned no playable links"
+                }
+            }
+        }
 
         // Prefer a provider's external-ID lookup when metadata supplies a valid IMDb ID.
         // This avoids depending on localized title search for providers that implement sync lookup.
@@ -285,18 +353,32 @@ internal fun List<CloudStreamSearchItem>.bestCloudStreamMatches(
         .filter(String::isNotBlank)
         .toSet()
     if (requestedTitles.isEmpty()) return emptyList()
-    return asSequence()
-        .filter { cloudStreamTypeMatches(it.type.nuvioType, request.type) }
-        .filter { item ->
-            val candidateYear = item.year ?: cloudStreamYear(item.name)
-            request.year == null || candidateYear == null || candidateYear == request.year
+    return mapNotNull { item ->
+        val candidateYear = item.year ?: cloudStreamYear(item.name)
+        if (request.year != null && candidateYear != null &&
+            kotlin.math.abs(candidateYear - request.year) > 1
+        ) return@mapNotNull null
+
+        val similarity = cloudStreamTitleSimilarity(item.name, requestedTitles)
+        val minimumSimilarity = if (requestedTitles.any { it.length <= 5 }) 0.92 else 0.86
+        if (similarity < minimumSimilarity) return@mapNotNull null
+
+        val actualType = normalizeCloudStreamType(item.type.nuvioType)
+        val requestedType = normalizeCloudStreamType(request.type)
+        val exactTitle = similarity >= 0.98
+        if (actualType != requestedType && actualType != "other" && !exactTitle) {
+            return@mapNotNull null
         }
-        .filter { item -> cloudStreamTitleMatches(item.name, requestedTitles) }
-        .sortedByDescending { item ->
-            request.year != null && (item.year ?: cloudStreamYear(item.name)) == request.year
-        }
-        .distinctBy(CloudStreamSearchItem::data)
-        .toList()
+        if (requestedType == "series" && actualType in setOf("anime", "ova", "asiandrama") &&
+            similarity < 0.92
+        ) return@mapNotNull null
+
+        val yearBonus = if (request.year != null && candidateYear == request.year) 0.15 else 0.0
+        val typeBonus = if (actualType == requestedType) 0.05 else 0.0
+        item to (similarity + yearBonus + typeBonus)
+    }.sortedByDescending { it.second }
+        .distinctBy { it.first.data }
+        .map { it.first }
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamRequest(
@@ -335,6 +417,15 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
     return titleMatches || safeExternalIdFallback
 }
 
+internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamTmdbRequest(
+    request: CloudStreamSearchRequest,
+): Boolean {
+    if (!cloudStreamTypeMatches(type.nuvioType, request.type)) return false
+    val loadedYear = year ?: cloudStreamYear(name)
+    return request.year == null || loadedYear == null ||
+        kotlin.math.abs(loadedYear - request.year) <= 1
+}
+
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.linkDataForCloudStreamRequest(
     request: CloudStreamSearchRequest,
 ): String? {
@@ -345,15 +436,15 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.linkDataForC
             (request.season == 1 && episode.season == null)
     }
     val episodeTitle = request.episodeTitle?.let(::normalizeCloudStreamTitle)
-    val numberedCandidates = if (request.episode == null) {
-        emptyList()
+    val numbered = if (request.episode == null) {
+        null
+    } else if (request.season != null) {
+        seasonCandidates.firstOrNull { it.episode == request.episode }
     } else {
-        seasonCandidates.filter { it.episode == request.episode }
+        // Absolute anime catalogs are usually seasonless; some tag every row S1.
+        seasonCandidates.firstOrNull { it.episode == request.episode && it.season == null }
+            ?: seasonCandidates.firstOrNull { it.episode == request.episode }
     }
-    if (request.season == null && numberedCandidates.map { it.season }.distinct().size > 1) {
-        return null
-    }
-    val numbered = numberedCandidates.firstOrNull()
     if (numbered != null) {
         // Season/episode numbering is more reliable than translated episode titles.
         // Providers frequently localize names while retaining correct episode numbers.
@@ -384,26 +475,62 @@ private val cloudStreamReleaseSuffixTokens = setOf(
     "complete", "uncut", "extended", "proper", "repack", "season", "episode",
 )
 
-private fun cloudStreamTitleMatches(value: String, requestedTitles: Set<String>): Boolean {
+private fun cloudStreamTitleMatches(value: String, requestedTitles: Set<String>): Boolean =
+    cloudStreamTitleSimilarity(value, requestedTitles) >= 0.86
+
+private fun cloudStreamTitleSimilarity(value: String, requestedTitles: Set<String>): Double {
     val candidate = normalizeCloudStreamTitle(value)
-    if (candidate.isBlank()) return false
-    return requestedTitles.any { requested ->
-        candidate == requested || (
-            candidate.startsWith("$requested ") &&
-                candidate.removePrefix("$requested ")
-                    .split(Regex("\\s+"))
-                    .all { token -> token in cloudStreamReleaseSuffixTokens }
+    if (candidate.isBlank()) return 0.0
+    return requestedTitles.maxOfOrNull { requested ->
+        when {
+            candidate == requested -> 1.0
+            candidate.isBlank() || requested.isBlank() -> 0.0
+            else -> {
+                val shorter = minOf(candidate.length, requested.length).toDouble()
+                val longer = maxOf(candidate.length, requested.length).toDouble()
+                val containment = shorter / longer
+                if ((candidate.startsWith("$requested ") || requested.startsWith("$candidate ")) &&
+                    containment >= 0.8
+                ) {
+                    0.90
+                } else {
+                    val distance = cloudStreamLevenshteinDistance(candidate, requested)
+                    1.0 - distance.toDouble() / longer
+                }
+            }
+        }
+    } ?: 0.0
+}
+
+private fun cloudStreamLevenshteinDistance(left: String, right: String): Int {
+    val previous = IntArray(right.length + 1) { it }
+    val current = IntArray(right.length + 1)
+    for (i in 1..left.length) {
+        current[0] = i
+        for (j in 1..right.length) {
+            val cost = if (left[i - 1] == right[j - 1]) 0 else 1
+            current[j] = minOf(
+                current[j - 1] + 1,
+                previous[j] + 1,
+                previous[j - 1] + cost,
             )
+        }
+        for (j in previous.indices) previous[j] = current[j]
     }
+    return previous[right.length]
 }
 
 private fun normalizeCloudStreamTitle(value: String): String {
     val words = value.lowercase()
         .replace(Regex("\\b(19\\d{2}|20\\d{2})\\b"), " ")
+        .replace(Regex("\\b(temporada|season)\\s*\\d+\\b"), " ")
+        .replace(Regex("\\b[st]\\d{1,2}\\b"), " ")
+        .replace(Regex("\\b(part|parte)\\s*\\d+\\b"), " ")
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         .trim()
         .split(Regex("\\s+"))
         .filter(String::isNotBlank)
+        .filterNot { it in cloudStreamReleaseSuffixTokens }
         .toMutableList()
     if (words.firstOrNull() in setOf("the", "a", "an")) words.removeAt(0)
     return words.joinToString(" ")
