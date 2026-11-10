@@ -52,6 +52,7 @@ interface TelegramPlatformAdapter {
     suspend fun addChatSource(identifier: String): Boolean
     suspend fun toggleChatSource(chatId: Long, selected: Boolean)
     suspend fun indexSelectedChats()
+    fun indexedMedia(): List<TelegramLibraryEntry>
     suspend fun clearCache()
     suspend fun disconnect()
     suspend fun resolveStreams(
@@ -125,6 +126,8 @@ object TelegramIntegrationBridge {
     suspend fun indexSelectedChats() {
         adapter?.indexSelectedChats()
     }
+
+    fun indexedMedia(): List<TelegramLibraryEntry> = adapter?.indexedMedia().orEmpty()
 
     suspend fun clearCache() {
         adapter?.clearCache()
