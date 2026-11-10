@@ -3,6 +3,7 @@ package com.nuvio.app.features.home.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.MutatePriority
@@ -38,7 +39,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -69,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
@@ -108,6 +118,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
@@ -126,6 +137,7 @@ private const val MOBILE_PORTRAIT_HERO_WIDTH_RATIO = 1.5f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
 private const val TABLET_LANDSCAPE_HERO_HEIGHT_MULTIPLIER = 1.5f
+private const val HERO_TITLE_LOGO_MIN_ASPECT_RATIO = 1.8f
 
 internal object HomeHeroTrailerPlaybackController {
     private var stopCallback: (() -> Unit)? = null
@@ -205,6 +217,7 @@ internal fun HomeHeroSection(
     viewportHeight: Dp? = null,
     mobileBelowSectionHeightHint: Dp? = null,
     heroStyle: HomeHeroStyle = HomeHeroStyle.FULL_BLEED,
+    netflixStyleEnabled: Boolean = false,
     listState: LazyListState? = null,
     stretchPx: () -> Float = { 0f },
     trailerPlaybackEnabled: Boolean = false,
@@ -213,6 +226,10 @@ internal fun HomeHeroSection(
     showImdbRating: Boolean = true,
     showMdbListRatings: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)? = null,
+    onItemLongClick: ((MetaPreview) -> Unit)? = null,
+    onSearchClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
+    onProfileClick: (() -> Unit)? = null,
     onActiveArtworkChange: ((String?) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
@@ -267,10 +284,10 @@ internal fun HomeHeroSection(
     } else {
         Modifier
     }
-    val heroShape = if (isCardStyle) {
-        RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
-    } else {
-        RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
+    val heroShape = when {
+        netflixStyleEnabled -> RectangleShape
+        isCardStyle -> RoundedCornerShape(HERO_CARD_CORNER_RADIUS)
+        else -> RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
     }
 
     Column(
@@ -293,16 +310,22 @@ internal fun HomeHeroSection(
                 viewportHeightDp = viewportHeight?.value,
                 mobileBelowSectionHeightHintDp = mobileBelowSectionHeightHint?.value,
             )
-            val layout = if (isCardStyle) {
-                baseLayout.copy(
+            val layout = when {
+                netflixStyleEnabled -> baseLayout.copy(
+                    heroHeight = viewportHeight
+                        ?.let { (it * 0.68f).coerceIn(340.dp, 720.dp) }
+                        ?: baseLayout.heroHeight,
+                    bottomFadeHeight = maxOf(baseLayout.bottomFadeHeight, 220.dp),
+                    contentVerticalPadding = maxOf(baseLayout.contentVerticalPadding, 22.dp),
+                )
+                isCardStyle -> baseLayout.copy(
                     heroHeight = cardHeroHeight(
                         maxWidth = maxWidth,
                         viewportHeight = viewportHeight,
                         isTablet = baseLayout.isTablet,
                     ),
                 )
-            } else {
-                baseLayout
+                else -> baseLayout
             }
             val effectiveArtworkSource = when {
                 !isCardStyle -> HomeHeroArtworkSource.BACKDROP
@@ -541,7 +564,7 @@ internal fun HomeHeroSection(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .drawBehind {
-                                    val fade = heroFadeColorState?.value ?: themeBackground
+                                    val fade = if (netflixStyleEnabled) Color.Black else heroFadeColorState?.value ?: themeBackground
                                     drawRect(
                                         Brush.verticalGradient(
                                             colors = listOf(
@@ -561,11 +584,27 @@ internal fun HomeHeroSection(
                                 .height(layout.bottomFadeHeight)
                                 .align(Alignment.BottomCenter)
                                 .drawBehind {
-                                    val fade = heroFadeColorState?.value ?: themeBackground
+                                    val fade = if (netflixStyleEnabled) Color.Black else heroFadeColorState?.value ?: themeBackground
                                     drawRect(Brush.verticalGradient(colors = listOf(fade.copy(alpha = 0f), fade)))
                                 },
                         )
                     }
+
+                        if (netflixStyleEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .align(Alignment.TopCenter)
+                                    .drawBehind {
+                                        drawRect(
+                                            Brush.verticalGradient(
+                                                colors = listOf(Color.Black.copy(alpha = 0.58f), Color.Transparent),
+                                            ),
+                                        )
+                                    },
+                            )
+                        }
 
                     if (isCardStyle) {
                         Box(
@@ -595,7 +634,7 @@ internal fun HomeHeroSection(
                                     },
                                 )
                                 .padding(vertical = layout.contentVerticalPadding),
-                            horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
+                            horizontalAlignment = if (layout.isTablet || netflixStyleEnabled) Alignment.Start else Alignment.CenterHorizontally,
                         ) {
                             Box(
                                 modifier = Modifier
@@ -619,7 +658,9 @@ internal fun HomeHeroSection(
                                             layout = layout,
                                             showImdbRating = showImdbRating,
                                             showMdbListRatings = showMdbListRatings,
+                                            showNetflixActions = netflixStyleEnabled,
                                             onItemClick = onItemClick,
+                                            onItemLongClick = onItemLongClick,
                                         )
                                     }
                                     }
@@ -644,7 +685,7 @@ internal fun HomeHeroSection(
                                 .align(Alignment.TopEnd)
                                 .padding(
                                     top = statusBarTopPadding + 12.dp,
-                                    end = if (layout.isTablet) 32.dp else 18.dp,
+                                    end = if (netflixStyleEnabled) 180.dp else if (layout.isTablet) 32.dp else 18.dp,
                                 )
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.35f))
@@ -664,6 +705,20 @@ internal fun HomeHeroSection(
                             )
                         }
                     }
+
+                    if (netflixStyleEnabled) {
+                        NetflixHomeTopBar(
+                            onSearchClick = onSearchClick,
+                            onDownloadsClick = onDownloadsClick,
+                            onProfileClick = onProfileClick,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 28.dp),
+                        )
+                    }
+
                 }
             }
         }
@@ -717,9 +772,11 @@ private data class HeroPageLayer(
     val itemIndex: Int,
 )
 
-private fun heroArtworkUrl(item: MetaPreview, source: HomeHeroArtworkSource): String? = when (source) {
-    HomeHeroArtworkSource.POSTER -> item.poster ?: item.banner
-    HomeHeroArtworkSource.BACKDROP -> item.banner ?: item.poster
+internal fun heroArtworkUrl(item: MetaPreview, source: HomeHeroArtworkSource): String? = when (source) {
+    HomeHeroArtworkSource.POSTER -> item.poster ?: item.landscapePoster ?: item.banner
+    // Some catalog providers populate landscapePoster without banner/background.
+    // Prefer the explicit wide artwork before falling back to a portrait poster.
+    HomeHeroArtworkSource.BACKDROP -> item.banner ?: item.landscapePoster ?: item.poster
 }
 
 private fun heroPageOffset(
@@ -796,15 +853,55 @@ internal fun HomeHeroReservedSpace(
 }
 
 @Composable
+private fun NetflixHomeTopBar(
+    onSearchClick: () -> Unit,
+    onDownloadsClick: () -> Unit,
+    onProfileClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Image(
+            painter = painterResource(Res.drawable.app_icon_original),
+            contentDescription = "Nuvio",
+            modifier = Modifier.size(36.dp),
+            contentScale = ContentScale.Fit,
+        )
+        Text(
+            text = "Home",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = Color.White,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        IconButton(onClick = onSearchClick) {
+            Icon(Icons.Rounded.Search, contentDescription = "Search", tint = Color.White)
+        }
+        IconButton(onClick = onDownloadsClick) {
+            Icon(Icons.Rounded.Download, contentDescription = "Downloads", tint = Color.White)
+        }
+        if (onProfileClick != null) {
+            IconButton(onClick = onProfileClick) {
+                Icon(Icons.Rounded.Person, contentDescription = "Profile", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
 private fun HeroContentBlock(
     item: MetaPreview,
     layout: HomeHeroLayout,
     showImdbRating: Boolean,
     showMdbListRatings: Boolean,
+    showNetflixActions: Boolean = false,
     onItemClick: ((MetaPreview) -> Unit)?,
+    onItemLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    var logoLoadError by remember(item.type, item.id, item.logo) {
-        mutableStateOf(false)
+    var logoIsLandscape by remember(item.type, item.id, item.logo) {
+        mutableStateOf<Boolean?>(null)
     }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
 
@@ -812,21 +909,33 @@ private fun HeroContentBlock(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
-        horizontalAlignment = if (layout.isTablet) Alignment.Start else Alignment.CenterHorizontally,
+        horizontalAlignment = if (layout.isTablet || showNetflixActions) Alignment.Start else Alignment.CenterHorizontally,
     ) {
-        if (logoUrl != null && !logoLoadError) {
+        if (logoUrl != null && logoIsLandscape != false) {
             AsyncImage(
                 model = logoUrl,
                 contentDescription = item.name,
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
                     .aspectRatio(2.6f)
-                    .clickable(enabled = onItemClick != null) {
+                    .graphicsLayer {
+                        // Keep unvalidated artwork invisible until its intrinsic dimensions
+                        // confirm it is a wide title logo; this prevents a portrait poster
+                        // flashing in the logo slot while Coil finishes decoding it.
+                        alpha = if (logoIsLandscape == true) 1f else 0f
+                    }
+                    .clickable(enabled = onItemClick != null && logoIsLandscape == true) {
                         onItemClick?.invoke(item)
                     },
-                alignment = if (layout.isTablet) Alignment.CenterStart else Alignment.Center,
+                alignment = if (layout.isTablet || showNetflixActions) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
-                onError = { logoLoadError = true },
+                onSuccess = { state ->
+                    val imageWidth = state.result.image.width
+                    val imageHeight = state.result.image.height
+                    logoIsLandscape = imageHeight > 0 &&
+                        imageWidth.toFloat() / imageHeight.toFloat() >= HERO_TITLE_LOGO_MIN_ASPECT_RATIO
+                },
+                onError = { logoIsLandscape = false },
             )
         } else {
             Text(
@@ -843,7 +952,7 @@ private fun HeroContentBlock(
                 },
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Black,
-                textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+                textAlign = if (layout.isTablet || showNetflixActions) TextAlign.Start else TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -882,6 +991,7 @@ private fun HeroContentBlock(
             isTablet = layout.isTablet,
             showImdbRating = showImdbRating,
             showMdbListRatings = showMdbListRatings,
+            forceStartAlignment = showNetflixActions,
         )
 
         if (synopsis != null) {
@@ -891,10 +1001,38 @@ private fun HeroContentBlock(
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                textAlign = if (layout.isTablet) TextAlign.Start else TextAlign.Center,
+                textAlign = if (layout.isTablet || showNetflixActions) TextAlign.Start else TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (showNetflixActions) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { onItemClick?.invoke(item) },
+                    enabled = onItemClick != null,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        disabledContainerColor = Color.White.copy(alpha = 0.35f),
+                        disabledContentColor = Color.Black.copy(alpha = 0.55f),
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("▶  Play")
+                }
+                OutlinedButton(
+                    onClick = { onItemLongClick?.invoke(item) },
+                    enabled = onItemLongClick != null,
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text("＋  My List")
+                }
+            }
         }
     }
 }
