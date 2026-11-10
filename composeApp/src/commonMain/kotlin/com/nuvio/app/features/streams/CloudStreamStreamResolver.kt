@@ -56,7 +56,7 @@ internal fun buildCloudStreamSearchRequest(
         ?: videoId
     val year = details?.releaseInfo
         ?.let { Regex("\\b(19\\d{2}|20\\d{2})\\b").find(it)?.value?.toIntOrNull() }
-    val episodeDetails = if (season != null || episode != null) {
+    val episodeDetails = if (episode != null) {
         details?.videos?.firstOrNull { it.season == season && it.episode == episode }
     } else {
         null
@@ -65,6 +65,8 @@ internal fun buildCloudStreamSearchRequest(
     val externalId = episodeDetails?.imdbId
         ?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
         ?: details?.imdbId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
+        ?: parentMetaId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
+        ?: videoId.takeIf { it.matches(Regex("tt\\d{7,10}") }
     return CloudStreamSearchRequest(
         title = title,
         type = type,
@@ -212,7 +214,7 @@ internal suspend fun resolveCloudStreamProviderStreams(
                 continue
             }
             val loaded = loadedResult.getOrNull() ?: continue
-            if (!loaded.matchesCloudStreamRequest(request, item, allowProviderRankedFallback = true)) continue
+            if (!loaded.matchesCloudStreamRequest(request, item)) continue
             val linkData = loaded.linkDataForCloudStreamRequest(request) ?: continue
             attemptedExtractors++
             val linksAttempt = runCatchingUnlessCancelled {
@@ -288,7 +290,6 @@ internal fun List<CloudStreamSearchItem>.bestCloudStreamMatches(
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamRequest(
     request: CloudStreamSearchRequest,
     searchItem: CloudStreamSearchItem,
-    allowProviderRankedFallback: Boolean = false,
 ): Boolean {
     if (!cloudStreamTypeMatches(type.nuvioType, request.type)) return false
     val requestedTitles = (listOf(request.title) + request.aliases)
@@ -303,10 +304,7 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
         if (loadedYear != null && loadedYear != request.year) return false
         if (searchedYear != null && searchedYear != request.year) return false
     }
-    val safeProviderRankedFallback = allowProviderRankedFallback &&
-        normalizeCloudStreamType(request.type) == "movie" &&
-        request.year != null && loadedYear == request.year
-    return titleMatches || safeProviderRankedFallback
+    return titleMatches
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamExternalIdRequest(
