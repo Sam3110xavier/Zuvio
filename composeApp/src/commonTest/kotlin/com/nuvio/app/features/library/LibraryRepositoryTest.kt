@@ -124,10 +124,45 @@ class LibraryRepositoryTest {
         assertEquals(
             mapOf(
                 "local" to true,
+                "local:status:planning" to true,
+                "local:status:watching" to false,
+                "local:status:on_hold" to false,
+                "local:status:watched" to false,
                 "trakt:watchlist" to false,
             ),
             membership,
         )
+    }
+
+    @Test
+    fun `local status membership is mutually exclusive and defaults to planning`() {
+        val planning = libraryMembershipWithLocal(inLocal = true)
+        assertEquals(LocalLibraryStatus.PLANNING, selectedLocalLibraryStatus(planning))
+
+        val watching = libraryMembershipWithLocal(
+            inLocal = true,
+            localStatus = LocalLibraryStatus.WATCHING.storageKey,
+        )
+        assertEquals(LocalLibraryStatus.WATCHING, selectedLocalLibraryStatus(watching))
+        assertEquals(false, watching["local:status:planning"])
+        assertEquals(true, watching["local:status:watching"])
+        assertEquals(false, watching["local:status:on_hold"])
+        assertEquals(false, watching["local:status:watched"])
+    }
+
+    @Test
+    fun `removing local library membership clears every local status`() {
+        val membership = libraryMembershipWithRemovedList(
+            currentMembership = libraryMembershipWithLocal(
+                inLocal = true,
+                localStatus = LocalLibraryStatus.WATCHED.storageKey,
+            ),
+            listKey = "local:status:watched",
+        )
+        assertEquals(false, membership["local"])
+        LocalLibraryStatus.entries.forEach { status ->
+            assertEquals(false, membership[status.sectionKey])
+        }
     }
 
     @Test
