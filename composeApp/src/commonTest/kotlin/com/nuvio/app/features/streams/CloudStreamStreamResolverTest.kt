@@ -1,5 +1,6 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.features.cloudstream.CloudStreamEpisode
 import com.nuvio.app.features.cloudstream.CloudStreamLoadItem
 import com.nuvio.app.features.cloudstream.CloudStreamSearchItem
 import com.nuvio.app.features.cloudstream.CloudStreamTvType
@@ -94,6 +95,36 @@ class CloudStreamStreamResolverTest {
         )
 
         assertEquals(1, matches.size)
+    }
+
+    @Test
+    fun `selects numbered episode when provider localizes its title`() {
+        val loaded = CloudStreamLoadItem(
+            providerId = "test-provider",
+            data = "series-data",
+            name = "Money Heist",
+            type = CloudStreamTvType.TvSeries,
+            episodes = listOf(
+                CloudStreamEpisode(
+                    data = "episode-s1e1",
+                    name = "Llamada entrante",
+                    season = 1,
+                    episode = 1,
+                ),
+            ),
+        )
+
+        val selected = loaded.linkDataForCloudStreamRequest(
+            CloudStreamSearchRequest(
+                title = "Money Heist",
+                type = "series",
+                season = 1,
+                episode = 1,
+                episodeTitle = "We Are Back",
+            ),
+        )
+
+        assertEquals("episode-s1e1", selected)
     }
 
     private fun searchItem(
