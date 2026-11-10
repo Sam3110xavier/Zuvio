@@ -43,7 +43,7 @@ class CloudStreamStreamResolverTest {
             year = 2017,
             externalId = "tt6468322",
         )
-        val loaded = loadItem(name = "La casa de papel", year = 2017)
+        val loaded = loadItem(name = "La casa de papel", year = 2017, type = CloudStreamTvType.TvSeries)
 
         assertTrue(loaded.matchesCloudStreamExternalIdRequest(request))
     }
@@ -75,11 +75,12 @@ class CloudStreamStreamResolverTest {
     private fun loadItem(
         name: String,
         year: Int?,
+        type: CloudStreamTvType = CloudStreamTvType.Movie,
     ) = CloudStreamLoadItem(
         providerId = "test-provider",
         data = name,
         name = name,
-        type = CloudStreamTvType.Movie,
+        type = type,
         year = year,
     )
 }
