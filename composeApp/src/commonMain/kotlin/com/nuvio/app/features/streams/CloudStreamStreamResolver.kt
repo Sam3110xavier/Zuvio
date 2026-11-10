@@ -302,7 +302,6 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
     if (request.year != null) {
         if (loadedYear != null && loadedYear != request.year) return false
         if (searchedYear != null && searchedYear != request.year) return false
-        if (loadedYear != request.year && searchedYear != request.year) return false
     }
     val safeProviderRankedFallback = allowProviderRankedFallback &&
         normalizeCloudStreamType(request.type) == "movie" &&
@@ -371,7 +370,7 @@ private val cloudStreamReleaseSuffixTokens = setOf(
     "480p", "720p", "1080p", "2160p", "4k", "8k",
     "hindi", "english", "tamil", "telugu", "malayalam", "kannada", "japanese", "korean",
     "dub", "dubbed", "sub", "subbed", "dual", "multi", "audio",
-    "web", "webdl", "webrip", "bluray", "brrip", "hdrip", "hdtv", "remux",
+    "web", "webdl", "webrip", "dl", "bluray", "brrip", "hdrip", "hdtv", "remux", "nf", "amzn", "dsnp",
     "x264", "x265", "h264", "h265", "hevc", "av1", "aac", "dts", "hdr", "10bit",
     "complete", "uncut", "extended", "proper", "repack", "season", "episode",
 )
