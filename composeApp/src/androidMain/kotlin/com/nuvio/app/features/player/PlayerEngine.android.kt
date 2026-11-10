@@ -1829,6 +1829,7 @@ private fun LibmpvPlayerSurface(
                 }
             }
         }
+        val recentErrorLogs = ArrayDeque<String>()
         val observer = object : MPV.EventObserver {
             override fun eventProperty(property: String) {
                 if (property == "sub-text" || property == "sid") view.updateStyledSubtitle()
@@ -1881,6 +1882,7 @@ private fun LibmpvPlayerSurface(
             override fun event(eventId: Int, data: MPVNode) {
                 when (eventId) {
                     MPV.mpvEvent.MPV_EVENT_START_FILE -> {
+                        synchronized(recentErrorLogs) { recentErrorLogs.clear() }
                         Log.i(
                             PLAYER_DIAGNOSTIC_TAG,
                             "mpv_event=START_FILE attempt=${playbackDiagnostics.attempt} " +
@@ -1939,8 +1941,12 @@ private fun LibmpvPlayerSurface(
                                     "mpv_error attempt=${playbackDiagnostics.attempt} " +
                                         "fileError=${diagnosticPlayerMessage(fileError)}",
                                 )
+                                val details = synchronized(recentErrorLogs) { recentErrorLogs.toList() } +
+                                    listOfNotNull(fileError?.trim()?.takeIf { it.isNotEmpty() })
                                 latestOnError.value(
-                                    getString(Res.string.player_unable_to_play_stream),
+                                    details.distinct().joinToString("\n").ifEmpty {
+                                        getString(Res.string.player_unable_to_play_stream)
+                                    },
                                 )
                             }
                         }
@@ -1958,6 +1964,13 @@ private fun LibmpvPlayerSurface(
                     "mpv_log level=$level prefix=${diagnosticPlayerMessage(prefix)} " +
                         "message=${diagnosticPlayerMessage(text)}",
                 )
+                val line = text.trim()
+                if (level <= MPV_LOG_LEVEL_ERROR && line.isNotEmpty() && "://" !in line) {
+                    synchronized(recentErrorLogs) {
+                        recentErrorLogs.addLast("[$prefix] ${line.take(160)}")
+                        while (recentErrorLogs.size > 3) recentErrorLogs.removeFirst()
+                    }
+                }
             }
         }
         view.mpv.addObserver(observer)
@@ -2828,15 +2841,19 @@ private class NuvioLibmpvView(
                     mpv.setPropertyString("sub-ass-override", "no")
                     mpv.setPropertyString("sub-color", style.textColor.toMpvColor())
                     mpv.setPropertyString("sub-back-color", style.backgroundColor.toMpvColor())
-                    mpv.setPropertyString("sub-outline-color", style.outlineColor.toMpvColor())
-                    mpv.setPropertyString("sub-border-color", style.outlineColor.toMpvColor())
+                    val nativeOutlineColor = style.outlineColor.copy(
+                        alpha = style.outlineColor.alpha * style.textColor.alpha *
+                            subtitleOutlineBlurOpacity(style.mpvNativeOutlineBlurLevel),
+                    )
+                    mpv.setPropertyString("sub-outline-color", nativeOutlineColor.toMpvColor())
+                    mpv.setPropertyString("sub-border-color", nativeOutlineColor.toMpvColor())
                     mpv.setPropertyString("sub-border-style", style.toMpvSubtitleBorderStyle())
                     mpv.setPropertyString("sub-bold", if (style.bold) "yes" else "no")
                     mpv.setPropertyInt("sub-font-size", style.toMpvSubtitleFontSize())
                     mpv.setPropertyInt("sub-outline-size", style.toMpvSubtitleOutlineSize())
                     mpv.setPropertyInt("sub-border-size", style.toMpvSubtitleOutlineSize())
-                    // Use mpv/libass's native Gaussian border blur, matching Umbra's sub-blur path.
-                    mpv.setPropertyString("sub-blur", style.mpvNativeOutlineBlurLevel.toString())
+                    // Boost low blur levels so they soften the border instead of only thickening it.
+                    mpv.setPropertyString("sub-blur", style.mpvNativeOutlineBlurAmount.toString())
                     mpv.setPropertyInt("sub-pos", (100 - style.bottomOffset / 10).coerceIn(0, 100))
                     mpv.setPropertyBoolean("sub-filter-sdh", style.stripSdh)
                     mpv.setPropertyBoolean("sub-filter-sdh-harder", style.stripSdh)
@@ -4533,6 +4550,8 @@ private fun isLoopbackPlaybackSource(value: String): Boolean = runCatching {
         else -> false
     }
 }.getOrDefault(false)
+
+private const val MPV_LOG_LEVEL_ERROR = 20
 
 private fun diagnosticPlayerMessage(value: String?): String =
     value?.replace('\n', ' ')?.replace('\r', ' ')?.take(160) ?: "none"
