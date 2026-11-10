@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -131,6 +132,8 @@ import com.nuvio.app.features.cloud.CloudLibraryItemType
 import com.nuvio.app.features.cloud.CloudLibraryRepository
 import com.nuvio.app.features.cloud.CloudLibraryUiState
 import com.nuvio.app.features.cloud.TorboxCloudConnectDialog
+import com.nuvio.app.features.telegram.TelegramIntegrationBridge
+import com.nuvio.app.features.telegram.TelegramLibraryEntry
 import com.nuvio.app.core.ui.DialogButton
 import com.nuvio.app.core.ui.DialogButtonStyle
 import com.nuvio.app.features.debrid.DebridProviders
@@ -274,6 +277,8 @@ fun LibraryScreen(
     }
     var selectedCloudItemKey by rememberSaveable { mutableStateOf<String?>(null) }
     var showTorboxConnectDialog by rememberSaveable { mutableStateOf(false) }
+    var telegramEntries by remember { mutableStateOf<List<TelegramLibraryEntry>>(emptyList()) }
+    var telegramSearch by rememberSaveable { mutableStateOf("") }
     val torboxConnected = cloudSettings.apiKeyFor(DebridProviders.TORBOX_ID).isNotBlank()
     var selectedLibrarySectionKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedLibraryType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -416,6 +421,12 @@ fun LibraryScreen(
                 }
             }
             hydratedReleaseInfo = resolved.toMap()
+        }
+    }
+
+    LaunchedEffect(sourceMode) {
+        if (sourceMode == LibraryViewMode.Telegram) {
+            telegramEntries = TelegramIntegrationBridge.indexedMedia()
         }
     }
 
@@ -581,7 +592,14 @@ fun LibraryScreen(
                 autoHidesNativeTabBar = true,
             ) {
 
-            if (sourceMode == LibraryViewMode.Cloud) {
+            if (sourceMode == LibraryViewMode.Telegram) {
+                telegramLibraryContent(
+                    entries = telegramEntries,
+                    searchQuery = telegramSearch,
+                    onSearchQueryChange = { telegramSearch = it },
+                    onRefresh = { telegramEntries = TelegramIntegrationBridge.indexedMedia() },
+                )
+            } else if (sourceMode == LibraryViewMode.Cloud) {
                 cloudLibraryContent(
                     uiState = cloudUiState,
                     selectedProviderId = selectedProviderId,
@@ -786,6 +804,84 @@ fun LibraryScreen(
             onDismiss = { showTorboxConnectDialog = false },
             onConnected = { selectedCloudItemKey = null },
         )
+    }
+}
+
+private fun LazyListScope.telegramLibraryContent(
+    entries: List<TelegramLibraryEntry>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val filtered = entries.filter { entry ->
+        val query = searchQuery.trim()
+        query.isEmpty() || entry.fileName.contains(query, ignoreCase = true) ||
+            entry.caption.contains(query, ignoreCase = true)
+    }
+    item(key = "telegram-library-toolbar") {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("Search Telegram files") },
+            )
+            IconButton(onClick = onRefresh) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Telegram index")
+            }
+        }
+        Text(
+            "${entries.size} indexed media files",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (filtered.isEmpty()) {
+        item(key = "telegram-library-empty") {
+            HomeEmptyStateCard(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                title = if (entries.isEmpty()) "No Telegram files indexed" else "No matching Telegram files",
+                message = if (entries.isEmpty()) {
+                    "Connect Telegram, select channels or groups, then build the media index in Telegram settings."
+                } else {
+                    "Try a different title or filename."
+                },
+            )
+        }
+    } else {
+        items(
+            items = filtered,
+            key = { entry -> "telegram:${entry.chatId}:${entry.messageId}" },
+        ) { entry ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(entry.fileName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        listOfNotNull(entry.caption.takeIf(String::isNotBlank), entry.mimeType.takeIf(String::isNotBlank), entry.fileSize.takeIf { it > 0L }?.let(::formatCloudBytes)).joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(start = 48.dp, end = 16.dp))
+        }
     }
 }
 
@@ -1046,6 +1142,11 @@ private fun LibrarySourceSwitch(
             label = stringResource(Res.string.library_source_cloud),
             selected = selectedMode == LibraryViewMode.Cloud,
             onClick = { onModeSelected(LibraryViewMode.Cloud) },
+        )
+        LibraryChip(
+            label = "Telegram",
+            selected = selectedMode == LibraryViewMode.Telegram,
+            onClick = { onModeSelected(LibraryViewMode.Telegram) },
         )
         if (showServers) {
             LibraryChip(
@@ -3195,6 +3296,7 @@ private fun isoEpochDay(date: String): Long {
 private enum class LibraryViewMode {
     Saved,
     Cloud,
+    Telegram,
     Servers,
 }
 

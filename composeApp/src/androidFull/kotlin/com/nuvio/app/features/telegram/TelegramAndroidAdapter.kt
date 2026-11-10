@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
@@ -31,6 +33,11 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         private const val SELECTED_CHAT_IDS = "selected_chat_ids"
         private const val CHAT_LIMIT = 200
         private const val SEARCH_LIMIT = 40
+        private const val MAX_SEARCH_PAGES = 3
+        private const val MAX_PARALLEL_QUERIES = 2
+        private const val INDEX_BATCH_SIZE = 100
+        private const val INDEX_MAX_BATCHES_PER_RUN = 50
+        private const val INDEX_FRESH_MS = 5 * 60 * 1000L
         private const val CACHE_TTL_MS = 5 * 60 * 1000L
         private const val CACHE_MAX_ENTRIES = 96
     }
@@ -66,7 +73,9 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         apiHashProvider = { preferences.getString(API_HASH, "").orEmpty() },
     )
     private val proxy = TelegramStreamingProxy(appContext, tdClient)
+    private val mediaIndex = TelegramMediaIndex(appContext)
     private val lookupCache = ConcurrentHashMap<String, CachedLookup>()
+    private val lookupLocks = ConcurrentHashMap<String, Mutex>()
     private val _snapshot = MutableStateFlow(buildInitialSnapshot())
     override val snapshot: StateFlow<TelegramIntegrationSnapshot> = _snapshot.asStateFlow()
 
@@ -83,6 +92,8 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         authState = "Idle",
         selectedChatIds = readSelectedChatIds(),
         cacheSizeBytes = calculateCacheSize(),
+        indexedFileCount = mediaIndex.count(),
+        indexStatus = if (mediaIndex.count() > 0) "Index available" else "Not indexed yet",
     )
 
     private fun kotlinx.coroutines.flow.StateFlow<TelegramTdAuthState>.collectInBackground() {
@@ -309,6 +320,171 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         lookupCache.clear()
     }
 
+    /**
+     * Resumable on-device indexing inspired by Telegram-Stremio's scanner. This Android version
+     * never sends probe messages or modifies channel content; it stores only media metadata.
+     */
+    override fun indexedMedia(): List<TelegramLibraryEntry> =
+        mediaIndex.entries(readSelectedChatIds()).map { entry ->
+            TelegramLibraryEntry(
+                chatId = entry.chatId,
+                messageId = entry.messageId,
+                fileName = entry.fileName,
+                fileSize = entry.fileSize,
+                mimeType = entry.mimeType,
+                caption = entry.caption,
+            )
+        }
+
+    override suspend fun indexSelectedChats() {
+        if (!tdClient.isAuthenticated()) {
+            fail("Connect Telegram before indexing channels.")
+            return
+        }
+        val selected = readSelectedChatIds()
+        if (selected.isEmpty()) {
+            fail("Select at least one Telegram channel or group before indexing.")
+            return
+        }
+        _snapshot.value = _snapshot.value.copy(isBusy = true, error = null, indexStatus = "Preparing index…")
+        try {
+            var processed = 0
+            var hasPendingChannels = false
+            for (chatId in selected) {
+                val recent = tdClient.sendRequest(
+                    TdApi.GetChatHistory().also { request ->
+                        request.chatId = chatId
+                        request.fromMessageId = 0L
+                        request.offset = 0
+                        request.limit = INDEX_BATCH_SIZE
+                        request.onlyLocal = false
+                    },
+                    timeoutMs = 30_000L,
+                ) as? TdApi.Messages ?: throw IllegalStateException("Telegram did not return recent history for chat $chatId.")
+                val recentMessages = recent.messages.filterNotNull()
+                mediaIndex.upsert(recentMessages.mapNotNull(::extractCandidate).map(::toIndexedMedia), prepend = true)
+                mediaIndex.touch()
+
+                var cursor = mediaIndex.cursor(chatId)
+                if (cursor == -1L) {
+                    _snapshot.value = _snapshot.value.copy(
+                        indexedFileCount = mediaIndex.count(),
+                        indexStatus = "Updated recent posts in selected channels",
+                    )
+                    continue
+                }
+                if (cursor == 0L) cursor = recentMessages.minOfOrNull { it.id } ?: 0L
+
+                var batches = 0
+                var finished = false
+                while (batches < INDEX_MAX_BATCHES_PER_RUN && !finished) {
+                    val page = tdClient.sendRequest(
+                        TdApi.GetChatHistory().also { request ->
+                            request.chatId = chatId
+                            request.fromMessageId = cursor
+                            request.offset = 0
+                            request.limit = INDEX_BATCH_SIZE
+                            request.onlyLocal = false
+                        },
+                        timeoutMs = 30_000L,
+                    ) as? TdApi.Messages ?: throw IllegalStateException("Telegram history request failed for chat $chatId.")
+                    if (page.messages.isEmpty()) {
+                        mediaIndex.setCursor(chatId, -1L)
+                        finished = true
+                        break
+                    }
+                    val historyMessages = page.messages.filterNotNull()
+                    if (historyMessages.isEmpty()) {
+                        hasPendingChannels = true
+                        _snapshot.value = _snapshot.value.copy(
+                            indexStatus = "Paused safely: Telegram returned unavailable messages for channel " + chatId,
+                        )
+                        finished = true
+                        break
+                    }
+                    val oldestId = historyMessages.minOf { it.id }
+                    mediaIndex.upsert(historyMessages.mapNotNull(::extractCandidate).map(::toIndexedMedia))
+                    if (oldestId <= 0L || oldestId == cursor) {
+                        // TDLib may return a short page before the end of history. Never mark
+                        // the channel complete unless a subsequent request explicitly returns empty.
+                        hasPendingChannels = true
+                        _snapshot.value = _snapshot.value.copy(
+                            indexStatus = "Paused safely: Telegram returned no older page for channel " + chatId,
+                        )
+                        finished = true
+                    } else {
+                        cursor = oldestId
+                        mediaIndex.setCursor(chatId, cursor)
+                    }
+                    processed += historyMessages.size
+                    batches += 1
+                    _snapshot.value = _snapshot.value.copy(
+                        indexedFileCount = mediaIndex.count(),
+                        indexStatus = "Indexed " + processed + " messages; channel " + chatId,
+                    )
+                }
+                if (!finished) {
+                    hasPendingChannels = true
+                    _snapshot.value = _snapshot.value.copy(
+                        indexStatus = "Paused safely at channel " + chatId + "; tap index again to continue",
+                    )
+                }
+            }
+            _snapshot.value = _snapshot.value.copy(
+                indexedFileCount = mediaIndex.count(),
+                indexStatus = if (hasPendingChannels) "Index partially complete; tap index again to continue" else "Index updated successfully",
+                isBusy = false,
+                error = null,
+            )
+            lookupCache.clear()
+        } catch (cancelled: CancellationException) {
+            _snapshot.value = _snapshot.value.copy(
+                indexedFileCount = mediaIndex.count(),
+                indexStatus = "Index paused; progress saved",
+                isBusy = false,
+            )
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "Telegram media indexing failed", error)
+            _snapshot.value = _snapshot.value.copy(
+                indexedFileCount = mediaIndex.count(),
+                indexStatus = "Index incomplete; progress saved",
+                isBusy = false,
+                error = error.message ?: "Telegram indexing failed.",
+            )
+        }
+    }
+
+    private fun toIndexedMedia(candidate: VideoCandidate) = TelegramIndexedMedia(
+        chatId = candidate.chatId,
+        messageId = candidate.messageId,
+        fileId = candidate.fileId,
+        fileName = candidate.fileName,
+        fileSize = candidate.fileSize,
+        mimeType = candidate.mimeType,
+        caption = candidate.caption,
+        durationSeconds = candidate.durationSeconds,
+        width = candidate.width,
+        height = candidate.height,
+        hasAudioTag = candidate.hasAudioTag,
+        hasSubtitleTag = candidate.hasSubtitleTag,
+    )
+
+    private fun TelegramIndexedMedia.toCandidate() = VideoCandidate(
+        chatId = chatId,
+        messageId = messageId,
+        fileId = fileId,
+        fileName = fileName,
+        fileSize = fileSize,
+        mimeType = mimeType,
+        caption = caption,
+        durationSeconds = durationSeconds,
+        width = width,
+        height = height,
+        hasAudioTag = hasAudioTag,
+        hasSubtitleTag = hasSubtitleTag,
+    )
+
     override suspend fun clearCache() {
         // Evict only TDLib file IDs known to this proxy; never touch Nuvio downloads or account data.
         proxy.clearCache()
@@ -321,7 +497,10 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         proxy.stop()
         proxy.forgetRegisteredFiles()
         lookupCache.clear()
+        mediaIndex.clear()
         _snapshot.value = _snapshot.value.copy(
+            indexedFileCount = 0,
+            indexStatus = "Not indexed yet",
             authenticated = false,
             authState = "Idle",
             accountName = null,
@@ -363,19 +542,42 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
             episode?.toString().orEmpty(),
             selectedChatIds.sorted().joinToString(","),
         ).joinToString("|")
-        lookupCache[key]?.takeIf { System.currentTimeMillis() < it.expiresAt }?.let { return it.streams }
+        val lookupLock = lookupLocks.getOrPut(key) { Mutex() }
+        return lookupLock.withLock {
+            lookupCache[key]?.takeIf { System.currentTimeMillis() < it.expiresAt }?.let { return@withLock it.streams }
 
-        val queries = buildQueries(title, year, season, episode, normalizedType)
-        val semaphore = Semaphore(permits = 3)
-        val chatResults = coroutineScope {
-            selectedChatIds.map { chatId ->
-                async(Dispatchers.IO) {
-                    semaphore.withPermit { searchChat(chatId, queries) }
-                }
-            }.map { deferred -> deferred.await() }
+        val indexedCandidates = mediaIndex.entries(selectedChatIds).map { it.toCandidate() }
+        val indexedMatches = indexedCandidates.filter { candidate ->
+            matchCandidate(candidate, title, year, season, episode, normalizedType) > 0
         }
-        val searchComplete = chatResults.all(ChatSearchResult::complete)
-        val candidates = chatResults.flatMap(ChatSearchResult::candidates)
+        // Prefer a recently refreshed, complete local index. A stale or partial index is combined
+        // with live Telegram search so new uploads and not-yet-scanned history remain discoverable.
+        val indexComplete = selectedChatIds.all { mediaIndex.isComplete(it) }
+        val indexFresh = mediaIndex.isFresh(INDEX_FRESH_MS)
+        val (candidates, searchComplete) = if (indexComplete && indexFresh && indexedMatches.isNotEmpty()) {
+            indexedMatches to true
+        } else {
+            val queries = buildQueries(title, year, season, episode, normalizedType)
+            val semaphore = Semaphore(permits = MAX_PARALLEL_QUERIES)
+            suspend fun searchBatch(batch: List<String>): List<ChatSearchResult> = coroutineScope {
+                batch.map { query ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit { searchQuery(query, selectedChatIds) }
+                    }
+                }.map { deferred -> deferred.await() }
+            }
+            val coreQueries = queries.take(2)
+            val fallbackQueries = queries.drop(2)
+            val coreResults = searchBatch(coreQueries)
+            val coreCandidates = coreResults.flatMap(ChatSearchResult::candidates)
+            val coreHasMatch = coreCandidates.any { candidate ->
+                matchCandidate(candidate, title, year, season, episode, normalizedType) > 0
+            }
+            val fallbackResults = if (coreHasMatch) emptyList() else searchBatch(fallbackQueries)
+            val usedResults = coreResults + fallbackResults
+            (indexedMatches + coreCandidates + fallbackResults.flatMap(ChatSearchResult::candidates)) to
+                usedResults.all(ChatSearchResult::complete)
+        }
 
         val matched = candidates
             .distinctBy { "${it.chatId}:${it.messageId}:${it.fileId}" }
@@ -399,54 +601,57 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
                 oldestKeys.forEach(lookupCache::remove)
             }
         }
-        return matched
+        matched
+        }
     }
 
-    private suspend fun searchChat(chatId: Long, queries: List<String>): ChatSearchResult {
-        val found = linkedMapOf<String, VideoCandidate>()
-        // SearchChatMessages is deliberately bounded to one page per phrase. If Telegram reports
-        // more matches than it returned, preserve the streams found but do not cache the lookup as
-        // complete; otherwise a truncated page could be mistaken for an exhaustive empty result.
-        var complete = true
-        for (query in queries) {
-            for (filter in listOf(TdApi.SearchMessagesFilterVideo(), TdApi.SearchMessagesFilterDocument())) {
-                val response = try {
-                    tdClient.sendRequest(TdApi.SearchChatMessages().also { request ->
-                        request.chatId = chatId
-                        request.query = query
-                        request.fromMessageId = 0L
-                        request.offset = 0
-                        request.limit = SEARCH_LIMIT
-                        request.filter = filter
-                    }, timeoutMs = 20_000L)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    Log.w(TAG, "Telegram search failed for chat $chatId and query '$query'", error)
-                    return ChatSearchResult(found.values.toList(), complete = false)
-                } ?: run {
-                    Log.w(TAG, "Telegram search timed out for chat $chatId and query '$query'")
-                    return ChatSearchResult(found.values.toList(), complete = false)
-                }
 
-                val result = response as? TdApi.FoundChatMessages
-                    ?: return ChatSearchResult(found.values.toList(), complete = false)
-                if (result.totalCount > result.messages.size) {
-                    complete = false
-                    Log.w(
-                        TAG,
-                        "Telegram search page is truncated for chat " + chatId + " and query '" + query +
-                            "' (" + result.messages.size + "/" + result.totalCount +
-                            "); results will not be cached as complete",
-                    )
-                }
-                result.messages.forEach { message ->
-                    extractCandidate(message)?.let { candidate ->
-                        found["${candidate.chatId}:${candidate.messageId}:${candidate.fileId}"] = candidate
-                    }
+    private suspend fun searchQuery(query: String, selectedChatIds: Set<Long>): ChatSearchResult {
+        val found = linkedMapOf<String, VideoCandidate>()
+        var offset = ""
+        var page = 0
+        var complete = true
+
+        do {
+            val response = try {
+                tdClient.sendRequest(TdApi.SearchMessages().also { request ->
+                    request.chatList = null
+                    request.query = query
+                    request.offset = offset
+                    request.limit = SEARCH_LIMIT
+                    request.filter = null
+                }, timeoutMs = 20_000L)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Telegram global search failed for query '" + query + "' (page " + (page + 1) + ")", error)
+                return ChatSearchResult(found.values.toList(), complete = false)
+            } ?: run {
+                Log.w(TAG, "Telegram global search timed out for query '" + query + "' (page " + (page + 1) + ")")
+                return ChatSearchResult(found.values.toList(), complete = false)
+            }
+
+            val result = response as? TdApi.FoundMessages
+                ?: return ChatSearchResult(found.values.toList(), complete = false)
+
+            result.messages.forEach { message ->
+                if (message == null) return@forEach
+                // Global search spans all chats; never expose or stream a result outside the allowlist.
+                if (message.chatId !in selectedChatIds) return@forEach
+                extractCandidate(message)?.let { candidate ->
+                    found[candidate.chatId.toString() + ":" + candidate.messageId + ":" + candidate.fileId] = candidate
                 }
             }
+
+            offset = result.nextOffset
+            page += 1
+        } while (offset.isNotEmpty() && page < MAX_SEARCH_PAGES)
+
+        if (offset.isNotEmpty()) {
+            complete = false
+            Log.i(TAG, "Telegram search for '" + query + "' reached the " + MAX_SEARCH_PAGES + "-page safety limit; keeping partial results")
         }
+        Log.d(TAG, "Telegram search '" + query + "': " + found.size + " selected-channel files across " + page + " page(s)")
         return ChatSearchResult(found.values.toList(), complete = complete)
     }
 
@@ -459,52 +664,57 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         var duration = 0
         var width = 0
         var height = 0
+        val videoExtensions = setOf("mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv", "mpg", "mpeg", "3gp")
+        fun isVideoName(value: String): Boolean = value.substringAfterLast('.', "").lowercase(Locale.ROOT) in videoExtensions
+        fun captionName(value: String): String = value.lineSequence().firstOrNull()?.trim().orEmpty()
 
         when (val content = message.content) {
             is TdApi.MessageVideo -> {
                 val video = content.video
-                fileName = video.fileName
+                caption = content.caption.text
+                fileName = video.fileName.takeIf(String::isNotBlank)
+                    ?: captionName(caption).takeIf(String::isNotBlank)
+                    ?: "Telegram_video_" + message.id + ".mp4"
                 fileId = video.video.id
                 fileSize = video.video.size
                 mimeType = video.mimeType
                 duration = video.duration
                 width = video.width
                 height = video.height
-                caption = content.caption.text
             }
             is TdApi.MessageDocument -> {
                 val document = content.document
-                fileName = document.fileName
+                caption = content.caption.text
+                val captionFileName = captionName(caption)
+                val originalName = document.fileName
+                fileName = when {
+                    isVideoName(originalName) -> originalName
+                    isVideoName(captionFileName) -> captionFileName
+                    document.mimeType.startsWith("video/") || document.mimeType == "application/x-matroska" ->
+                        originalName.ifBlank { captionFileName.ifBlank { "Telegram_video_" + message.id + ".mkv" } }
+                    else -> originalName
+                }
                 fileId = document.document.id
                 fileSize = document.document.size
                 mimeType = document.mimeType
-                caption = content.caption.text
             }
             else -> return null
         }
 
         if (fileId <= 0 || fileSize <= 0L || fileName.isBlank()) return null
-        val videoExtension = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT) in
-            setOf("mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv", "mpg", "mpeg", "3gp")
+        val videoExtension = isVideoName(fileName)
         if (!mimeType.startsWith("video/") && mimeType != "application/x-matroska" && !videoExtension) return null
+        val audioTagged = Regex("(?i)\\b(dual[ ._-]?audio|multi[ ._-]?audio|dubbed|aac|ac3|eac3|dts|truehd|atmos)\\b")
+            .containsMatchIn(fileName + " " + caption)
+        val subtitleTagged = Regex("(?i)\\b(subs?|subbed|subtitle|softsubs?|hardsubs?|engsub|multisub)\\b")
+            .containsMatchIn(fileName + " " + caption)
         return VideoCandidate(
-            chatId = message.chatId,
-            messageId = message.id,
-            fileId = fileId,
-            fileName = fileName,
-            fileSize = fileSize,
-            mimeType = mimeType,
-            caption = caption,
-            durationSeconds = duration,
-            width = width,
-            height = height,
-            hasAudioTag = Regex("(?i)\\b(dual[ ._-]?audio|multi[ ._-]?audio|dubbed|aac|ac3|eac3|dts|truehd|atmos)\\b")
-                .containsMatchIn("$fileName $caption"),
-            hasSubtitleTag = Regex("(?i)\\b(subs?|subbed|subtitle|softsubs?|hardsubs?|engsub|multisub)\\b")
-                .containsMatchIn("$fileName $caption"),
+            chatId = message.chatId, messageId = message.id, fileId = fileId,
+            fileName = fileName, fileSize = fileSize, mimeType = mimeType, caption = caption,
+            durationSeconds = duration, width = width, height = height,
+            hasAudioTag = audioTagged, hasSubtitleTag = subtitleTagged,
         )
     }
-
     private fun VideoCandidate.toStreamItem(): StreamItem {
         val heightValue = max(height, parseHeight(fileName))
         val quality = when {
@@ -549,60 +759,18 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         season: Int?,
         episode: Int?,
         type: String,
-    ): Int {
-        val searchable = normalize("${candidate.fileName} ${candidate.caption}")
-        val normalizedTitle = normalize(title)
-        if (normalizedTitle.isBlank()) return 0
-        val tokens = normalizedTitle.split(' ').filter { it.length > 1 }
-        if (tokens.isEmpty()) return 0
-        val matchedTokens = tokens.count { token -> searchable.contains(token) }
-        if (matchedTokens < tokens.size) return 0
+    ): Int = TelegramSearchMatcher.score(
+        fileName = candidate.fileName,
+        caption = candidate.caption,
+        title = title,
+        year = year,
+        season = season,
+        episode = episode,
+        type = type,
+    )
 
-        val seasonValue = season
-        val episodeValue = episode
-        if (type == "tv" && seasonValue != null && episodeValue != null) {
-            val episodePatterns = listOf(
-                Regex("(?i)s0*${seasonValue}\\s*e0*${episodeValue}(?!\\d)"),
-                Regex("(?i)0*${seasonValue}x0*${episodeValue}(?!\\d)"),
-            )
-            if (episodePatterns.none { it.containsMatchIn(searchable) }) return 0
-        }
-
-        if (type == "movie" && year != null) {
-            val years = Regex("\\b(19\\d{2}|20\\d{2})\\b").findAll(searchable).mapNotNull { it.value.toIntOrNull() }.toList()
-            if (years.isNotEmpty() && year !in years) return 0
-        }
-
-        var score = 60 + matchedTokens * 5
-        if (year != null && searchable.contains(year.toString())) score += 5
-        if (seasonValue != null && episodeValue != null && type == "tv") score += 20
-        if (candidate.height > 0) score += 2
-        return score
-    }
-
-    private fun buildQueries(title: String, year: Int?, season: Int?, episode: Int?, type: String): List<String> {
-        val cleanTitle = title
-            .replace(Regex("[^\\p{L}\\p{N} ]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        if (cleanTitle.isBlank()) return emptyList()
-        val episodeQueries = if (type == "tv" && season != null && episode != null) {
-            listOf(
-                "$cleanTitle S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}",
-                "$cleanTitle ${season}x${episode}",
-                cleanTitle,
-            )
-        } else {
-            listOfNotNull("$cleanTitle ${year ?: ""}".trim(), cleanTitle)
-        }
-        return episodeQueries.distinct().take(3)
-    }
-
-    private fun normalize(value: String): String =
-        value.lowercase(Locale.ROOT)
-            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun buildQueries(title: String, year: Int?, season: Int?, episode: Int?, type: String): List<String> =
+        TelegramSearchMatcher.buildQueries(title, year, season, episode, type)
 
     private fun normalizeMediaType(type: String): String =
         if (type.equals("tv", true) || type.equals("series", true)) "tv" else "movie"
