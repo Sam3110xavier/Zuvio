@@ -324,6 +324,18 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
      * Resumable on-device indexing inspired by Telegram-Stremio's scanner. This Android version
      * never sends probe messages or modifies channel content; it stores only media metadata.
      */
+    override fun indexedMedia(): List<TelegramLibraryEntry> =
+        mediaIndex.entries(readSelectedChatIds()).map { entry ->
+            TelegramLibraryEntry(
+                chatId = entry.chatId,
+                messageId = entry.messageId,
+                fileName = entry.fileName,
+                fileSize = entry.fileSize,
+                mimeType = entry.mimeType,
+                caption = entry.caption,
+            )
+        }
+
     override suspend fun indexSelectedChats() {
         if (!tdClient.isAuthenticated()) {
             fail("Connect Telegram before indexing channels.")

@@ -15,6 +15,15 @@ data class TelegramChatSource(
     val isSelected: Boolean = false,
 )
 
+data class TelegramLibraryEntry(
+    val chatId: Long,
+    val messageId: Long,
+    val fileName: String,
+    val fileSize: Long,
+    val mimeType: String,
+    val caption: String,
+)
+
 data class TelegramIntegrationSnapshot(
     val configured: Boolean = false,
     val authenticated: Boolean = false,
