@@ -161,24 +161,23 @@ fun CatalogScreen(
             areMergedSourceTabsVisible = true
             return@LaunchedEffect
         }
-        var previousPosition: Pair<Int, Int>? = null
-        snapshotFlow {
-            gridState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.index > 0 }
-                ?.let { it.index to it.offset.y }
-        }.collect { currentPosition ->
-            val previous = previousPosition
-            if (previous != null && currentPosition != null && currentPosition != previous) {
-                // The first regular grid item moves upward (smaller Y) as the user scrolls down.
-                val movingDown = currentPosition.first > previous.first ||
-                    (currentPosition.first == previous.first && currentPosition.second < previous.second)
-                areMergedSourceTabsVisible = !movingDown
+
+        // Use the grid's own scroll-direction signal instead of inferring direction
+        // from visible child offsets. Sticky headers and multi-column grid re-layouts
+        // can keep those offsets unchanged while the user reverses the gesture.
+        snapshotFlow { gridState.lastScrolledForward }
+            .distinctUntilChanged()
+            .collect { scrollingForward ->
+                // Forward = moving deeper into the catalog (finger swipes up): hide.
+                // Backward = returning toward earlier items (finger swipes down): show
+                // immediately, without waiting for the absolute top.
+                areMergedSourceTabsVisible = !scrollingForward
+                if (gridState.firstVisibleItemIndex == 0 &&
+                    gridState.firstVisibleItemScrollOffset == 0
+                ) {
+                    areMergedSourceTabsVisible = true
+                }
             }
-            if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
-                areMergedSourceTabsVisible = true
-            }
-            if (currentPosition != null) previousPosition = currentPosition
-        }
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
