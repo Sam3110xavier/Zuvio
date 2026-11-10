@@ -61,14 +61,50 @@ class CloudStreamStreamResolverTest {
         assertFalse(loaded.matchesCloudStreamExternalIdRequest(request))
     }
 
+    @Test
+    fun `accepts exact title when provider omits release year`() {
+        val loaded = loadItem(name = "Dune", year = null)
+        val search = searchItem(name = "Dune", year = null)
+
+        assertTrue(
+            loaded.matchesCloudStreamRequest(
+                request = CloudStreamSearchRequest(title = "Dune", type = "movie", year = 2021),
+                searchItem = search,
+            ),
+        )
+    }
+
+    @Test
+    fun `matches title with trailing language and release metadata`() {
+        val matches = listOf(
+            searchItem(name = "Batman.2022.1080p.WEB-DL.Hindi"),
+        ).bestCloudStreamMatches(
+            CloudStreamSearchRequest(title = "The Batman", type = "movie", year = 2022),
+        )
+
+        assertEquals(1, matches.size)
+    }
+
+    @Test
+    fun `accepts Other provider classification when title is a safe match`() {
+        val matches = listOf(
+            searchItem(name = "Dune", type = CloudStreamTvType.Other),
+        ).bestCloudStreamMatches(
+            CloudStreamSearchRequest(title = "Dune", type = "movie", year = 2021),
+        )
+
+        assertEquals(1, matches.size)
+    }
+
     private fun searchItem(
         name: String,
         year: Int? = null,
+        type: CloudStreamTvType = CloudStreamTvType.Movie,
     ) = CloudStreamSearchItem(
         providerId = "test-provider",
         data = name,
         name = name,
-        type = CloudStreamTvType.Movie,
+        type = type,
         year = year,
     )
 
