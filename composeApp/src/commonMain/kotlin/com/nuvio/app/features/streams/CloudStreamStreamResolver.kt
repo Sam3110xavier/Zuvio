@@ -183,17 +183,25 @@ internal suspend fun resolveCloudStreamProviderStreams(
             }
         }
 
-        val searchAttempt = runCatchingUnlessCancelled {
-            CloudStreamRepository.search(request.title, provider.id)
-        }
-        if (searchAttempt.isFailure) {
-            if (firstError == null) firstError = searchAttempt.exceptionOrNull()?.message ?: "CloudStream search failed"
-            continue
-        }
-
-        // Keep every successful result. Some adapters return more than one result for a
-        // provider (for example, a paged or multi-catalog implementation).
-        val searchResults = searchAttempt.getOrNull().orEmpty()
+        // Search every known title variant. A provider may index the localized title
+        // while the metadata source supplies the international title (or vice versa).
+        val searchResults = mutableListOf<Result<List<CloudStreamSearchItem>>>()
+        (listOf(request.title) + request.aliases)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .forEach { query ->
+                val searchAttempt = runCatchingUnlessCancelled {
+                    CloudStreamRepository.search(query, provider.id)
+                }
+                if (searchAttempt.isFailure) {
+                    if (firstError == null) {
+                        firstError = searchAttempt.exceptionOrNull()?.message ?: "CloudStream search failed"
+                    }
+                } else {
+                    searchResults += searchAttempt.getOrNull().orEmpty()
+                }
+            }
         val searchItems = searchResults.flatMap { result ->
             result.getOrElse { error ->
                 if (firstError == null) firstError = error.message ?: "CloudStream search failed"
