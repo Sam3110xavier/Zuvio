@@ -53,6 +53,7 @@ fun HomeCatalogRowSection(
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     selectedTabKey: String? = null,
     onTabSelected: ((String) -> Unit)? = null,
+    showTabSelector: Boolean = true,
 ) {
     if (sectionPadding != null) {
         HomeCatalogRowSectionContent(
@@ -67,6 +68,7 @@ fun HomeCatalogRowSection(
             onPosterLongClick = onPosterLongClick,
             selectedTabKey = selectedTabKey,
             onTabSelected = onTabSelected,
+            showTabSelector = showTabSelector,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -82,6 +84,7 @@ fun HomeCatalogRowSection(
                 onPosterLongClick = onPosterLongClick,
                 selectedTabKey = selectedTabKey,
                 onTabSelected = onTabSelected,
+                showTabSelector = showTabSelector,
             )
         }
     }
@@ -100,6 +103,7 @@ private fun HomeCatalogRowSectionContent(
     onPosterLongClick: ((MetaPreview) -> Unit)?,
     selectedTabKey: String?,
     onTabSelected: ((String) -> Unit)?,
+    showTabSelector: Boolean,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val netflixStyleEnabled = posterCardStyle.netflixStyleEnabled
@@ -143,7 +147,7 @@ private fun HomeCatalogRowSectionContent(
     PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
 
     Column(modifier = modifier.fillMaxWidth()) {
-        if (section.sourceTabs.size > 1) {
+        if (showTabSelector && section.sourceTabs.size > 1) {
             MergedHomeRowTabSelector(
                 tabs = section.sourceTabs,
                 selectedTabKey = selectedTab?.key,
