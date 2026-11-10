@@ -16,6 +16,7 @@ internal data class CloudStreamSearchRequest(
     val episode: Int? = null,
     val aliases: List<String> = emptyList(),
     val episodeTitle: String? = null,
+    val externalId: String? = null,
 )
 
 internal data class CloudStreamProviderTarget(
@@ -55,10 +56,12 @@ internal fun buildCloudStreamSearchRequest(
         ?: videoId
     val year = details?.releaseInfo
         ?.let { Regex("\\b(19\\d{2}|20\\d{2})\\b").find(it)?.value?.toIntOrNull() }
-    val episodeTitle = details?.videos
+    val episodeDetails = details?.videos
         ?.firstOrNull { it.season == season && it.episode == episode }
-        ?.title
-        ?.takeIf(String::isNotBlank)
+    val episodeTitle = episodeDetails?.title?.takeIf(String::isNotBlank)
+    val externalId = episodeDetails?.imdbId
+        ?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
+        ?: details?.imdbId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
     return CloudStreamSearchRequest(
         title = title,
         type = type,
@@ -66,6 +69,7 @@ internal fun buildCloudStreamSearchRequest(
         season = season,
         episode = episode,
         episodeTitle = episodeTitle,
+        externalId = externalId,
     )
 }
 
@@ -132,7 +136,44 @@ internal suspend fun resolveCloudStreamProviderStreams(
 ): CloudStreamProviderStreams {
     val streams = mutableListOf<StreamItem>()
     var firstError: String? = null
+    var attemptedProviders = 0
+    var matchedTitles = 0
+    var attemptedExtractors = 0
+
     for (provider in providerGroup.providers) {
+        attemptedProviders++
+
+        // Prefer a provider's external-ID lookup when metadata supplies a valid IMDb ID.
+        // This avoids depending on localized title search for providers that implement sync lookup.
+        val externalLookup = request.externalId?.let { externalId ->
+            runCatchingUnlessCancelled {
+                CloudStreamRepository.loadByExternalId(provider.id, externalId)
+            }
+        }
+        if (externalLookup?.isFailure == true && firstError == null) {
+            firstError = externalLookup.exceptionOrNull()?.message ?: "CloudStream external-ID lookup failed"
+        }
+        val externalLoaded = externalLookup?.getOrNull()?.getOrNull()
+        if (externalLoaded != null && externalLoaded.matchesCloudStreamExternalIdRequest(request)) {
+            val linkData = externalLoaded.linkDataForCloudStreamRequest(request)
+            if (linkData != null) {
+                attemptedExtractors++
+                val linkResult = runCatchingUnlessCancelled {
+                    CloudStreamRepository.loadLinks(provider.id, linkData)
+                }
+                val links = linkResult.getOrNull()?.getOrNull()
+                if (links.isNullOrEmpty()) {
+                    val message = linkResult.exceptionOrNull()?.message
+                        ?: linkResult.getOrNull()?.exceptionOrNull()?.message
+                        ?: "CloudStream external-ID match returned no playable links"
+                    if (firstError == null) firstError = message
+                } else {
+                    streams += links.map { it.toStreamItem(provider.id, provider.name) }
+                    continue
+                }
+            }
+        }
+
         val searchAttempt = runCatchingUnlessCancelled {
             CloudStreamRepository.search(request.title, provider.id)
         }
@@ -140,15 +181,21 @@ internal suspend fun resolveCloudStreamProviderStreams(
             if (firstError == null) firstError = searchAttempt.exceptionOrNull()?.message ?: "CloudStream search failed"
             continue
         }
+
+        // Keep every successful result. Some adapters return more than one result for a
+        // provider (for example, a paged or multi-catalog implementation).
         val searchResults = searchAttempt.getOrNull().orEmpty()
-        val searchResult = searchResults.firstOrNull()
-        if (searchResult == null) continue
-        if (searchResult.isFailure) {
-            if (firstError == null) firstError = searchResult.exceptionOrNull()?.message ?: "CloudStream search failed"
-            continue
+        val searchItems = searchResults.flatMap { result ->
+            result.getOrElse { error ->
+                if (firstError == null) firstError = error.message ?: "CloudStream search failed"
+                emptyList()
+            }
         }
-        val searchItems = searchResult.getOrNull().orEmpty()
-        for (item in searchItems.bestCloudStreamMatches(request)) {
+        val matches = searchItems.bestCloudStreamMatches(request)
+        if (matches.isEmpty()) continue
+        matchedTitles += matches.size
+
+        for (item in matches) {
             val loadAttempt = runCatchingUnlessCancelled {
                 CloudStreamRepository.load(provider.id, item.data)
             }
@@ -164,6 +211,7 @@ internal suspend fun resolveCloudStreamProviderStreams(
             val loaded = loadedResult.getOrNull() ?: continue
             if (!loaded.matchesCloudStreamRequest(request, item, allowProviderRankedFallback = true)) continue
             val linkData = loaded.linkDataForCloudStreamRequest(request) ?: continue
+            attemptedExtractors++
             val linksAttempt = runCatchingUnlessCancelled {
                 CloudStreamRepository.loadLinks(provider.id, linkData)
             }
@@ -179,7 +227,16 @@ internal suspend fun resolveCloudStreamProviderStreams(
             streams += linksResult.getOrNull().orEmpty().map { it.toStreamItem(provider.id, provider.name) }
         }
     }
-    return CloudStreamProviderStreams(streams = streams, error = firstError)
+
+    val diagnostic = when {
+        streams.isNotEmpty() -> firstError
+        attemptedProviders == 0 -> "No enabled, compatible CloudStream providers are available for this content type"
+        matchedTitles == 0 && firstError == null -> "CloudStream providers returned no title matching '${request.title}'"
+        attemptedExtractors == 0 && firstError == null -> "CloudStream title matched, but no season/episode entry could be selected"
+        firstError == null -> "CloudStream providers matched the title but returned no playable links"
+        else -> firstError
+    }
+    return CloudStreamProviderStreams(streams = streams.distinctBy { it.url }, error = diagnostic)
 }
 
 internal suspend fun resolveCloudStreamDirectRoute(
