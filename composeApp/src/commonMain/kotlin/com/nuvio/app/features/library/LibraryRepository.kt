@@ -426,13 +426,23 @@ object LibraryRepository {
         return localState.findById(id)
     }
 
-    fun libraryListTabs(item: LibraryItem? = null): List<TrackingLibraryTab> =
-        libraryTabsWithLocal(
-            TrackingProviderRegistry.connectedLibraryProviders()
-                .flatMap { provider -> provider.snapshot().tabs },
-        ).filter { tab ->
-            item == null || (tab.supportsContentType(item.type) && (!item.isServerItem || tab.key == LOCAL_LIBRARY_LIST_KEY))
+    fun libraryListTabs(item: LibraryItem? = null): List<TrackingLibraryTab> {
+        val providerTabs = TrackingProviderRegistry.connectedLibraryProviders()
+            .flatMap { provider -> provider.snapshot().tabs }
+        val localStatusTabs = LocalLibraryStatus.entries.map { status ->
+            TrackingLibraryTab(
+                key = status.sectionKey,
+                title = status.title,
+                providerId = null,
+                kind = TrackingLibraryTabKind.STATUS,
+                selectionGroup = "local:status",
+            )
         }
+        return (libraryTabsWithLocal(providerTabs) + localStatusTabs).filter { tab ->
+            item == null || (tab.supportsContentType(item.type) &&
+                (!item.isServerItem || tab.key == LOCAL_LIBRARY_LIST_KEY))
+        }
+    }
 
     internal fun listManagementContext(): LibraryManagementContext? {
         val source = effectiveLibrarySourceMode()
@@ -497,7 +507,12 @@ object LibraryRepository {
                 memberships += provider.membership(item)
             }
         }
-        return libraryMembershipWithLocal(inLocal = inLocal, providerMembership = memberships)
+        val localItem = localState.find(item.id, item.type)
+        return libraryMembershipWithLocal(
+            inLocal = inLocal,
+            providerMembership = memberships,
+            localStatus = localItem?.localStatus ?: item.localStatus,
+        )
     }
 
     suspend fun applyMembershipChanges(
@@ -550,10 +565,17 @@ object LibraryRepository {
                 requiredRemovalConfirmations = requiredConfirmations,
             )
         }
-        if (updateLocal && localDesired != currentlyInLocal) {
+        if (updateLocal) {
             if (localDesired) {
-                save(item)
-            } else {
+                val existingLocalItem = localState.find(item.id, item.type)
+                val selectedStatus = selectedLocalLibraryStatus(desiredMembership)
+                val desiredStatus = selectedStatus?.storageKey
+                    ?: existingLocalItem?.localStatus
+                    ?: item.localStatus
+                if (!currentlyInLocal || existingLocalItem?.localStatus != desiredStatus) {
+                    save(item.copy(localStatus = desiredStatus))
+                }
+            } else if (currentlyInLocal) {
                 remove(item.id, item.type)
             }
         }
@@ -588,8 +610,12 @@ object LibraryRepository {
         ensureLoaded()
         val targetProvider = TrackingProviderRegistry.connectedLibraryProviders()
             .firstOrNull { provider -> provider.snapshot().tabs.any { tab -> tab.key == listKey } }
-        val currentMembership = if (listKey == LOCAL_LIBRARY_LIST_KEY) {
-            mapOf(LOCAL_LIBRARY_LIST_KEY to localState.contains(item.id, item.type))
+        val currentMembership = if (isLocalLibrarySectionKey(listKey)) {
+            val localItem = localState.find(item.id, item.type)
+            libraryMembershipWithLocal(
+                inLocal = localItem != null,
+                localStatus = localItem?.localStatus ?: item.localStatus,
+            )
         } else {
             targetProvider?.membership(item).orEmpty()
         }
@@ -602,7 +628,7 @@ object LibraryRepository {
             desiredMembership = desiredMembership,
             confirmedRemovalProviders = confirmedRemovalProviders,
             targetProviderIds = targetProvider?.let { provider -> setOf(provider.providerId) }.orEmpty(),
-            updateLocal = listKey == LOCAL_LIBRARY_LIST_KEY,
+            updateLocal = isLocalLibrarySectionKey(listKey),
         )
     }
 
@@ -795,17 +821,32 @@ internal fun libraryTabsWithLocal(providerTabs: List<TrackingLibraryTab>): List<
 internal fun libraryMembershipWithLocal(
     inLocal: Boolean,
     providerMembership: Map<String, Boolean> = emptyMap(),
+    localStatus: String = LocalLibraryStatus.PLANNING.storageKey,
 ): Map<String, Boolean> =
     linkedMapOf<String, Boolean>(LOCAL_LIBRARY_LIST_KEY to inLocal).apply {
+        LocalLibraryStatus.entries.forEach { status ->
+            this[status.sectionKey] = inLocal && status == LocalLibraryStatus.fromStorage(localStatus)
+        }
         putAll(providerMembership)
     }
+
+internal fun selectedLocalLibraryStatus(membership: Map<String, Boolean>): LocalLibraryStatus? =
+    LocalLibraryStatus.entries.firstOrNull { status -> membership[status.sectionKey] == true }
+
+internal fun isLocalLibrarySectionKey(listKey: String): Boolean =
+    listKey == LOCAL_LIBRARY_LIST_KEY || listKey.startsWith("local:status:")
 
 internal fun libraryMembershipWithRemovedList(
     currentMembership: Map<String, Boolean>,
     listKey: String,
 ): Map<String, Boolean> =
-    currentMembership.toMutableMap().apply {
-        this[listKey] = false
+    if (isLocalLibrarySectionKey(listKey)) {
+        currentMembership.toMutableMap().apply {
+            this[LOCAL_LIBRARY_LIST_KEY] = false
+            LocalLibraryStatus.entries.forEach { status -> this[status.sectionKey] = false }
+        }
+    } else {
+        currentMembership.toMutableMap().apply { this[listKey] = false }
     }
 
 internal fun String.toLibraryDisplayTitle(): String {
