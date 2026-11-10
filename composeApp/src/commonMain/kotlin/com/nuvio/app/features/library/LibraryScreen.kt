@@ -67,7 +67,6 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ViewAgenda
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -278,14 +277,6 @@ fun LibraryScreen(
     val torboxConnected = cloudSettings.apiKeyFor(DebridProviders.TORBOX_ID).isNotBlank()
     var selectedLibrarySectionKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedLibraryType by rememberSaveable { mutableStateOf<String?>(null) }
-    var localStatusItem by remember { mutableStateOf<LibraryItem?>(null) }
-    val handlePosterLongClick: (LibraryItem, LibrarySection) -> Unit = { item, section ->
-        if (uiState.sourceMode == LibrarySourceMode.LOCAL && section.type.startsWith("local:status:")) {
-            localStatusItem = item
-        } else {
-            onPosterLongClick?.invoke(item, section)
-        }
-    }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     ScreenActivityEffect(listState) { screenActive ->
@@ -754,7 +745,7 @@ fun LibraryScreen(
                                 posterPattern = effectivePosterPattern,
                                 onPosterClick = onPosterClick,
                                 onSectionViewAllClick = onSectionViewAllClick,
-                                onPosterLongClick = handlePosterLongClick,
+                                onPosterLongClick = onPosterLongClick,
                                 onDisintegrated = disintegration::onExited,
                             )
                             LibraryLayoutMode.VERTICAL -> libraryVerticalContent(
@@ -765,7 +756,7 @@ fun LibraryScreen(
                                 fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                                 posterPattern = effectivePosterPattern,
                                 onPosterClick = onPosterClick,
-                                onPosterLongClick = handlePosterLongClick,
+                                onPosterLongClick = onPosterLongClick,
                             )
                         }
                     }
@@ -796,36 +787,6 @@ fun LibraryScreen(
             onRetryFailed = {
                 coroutineScope.launch {
                     LibraryReleaseCalendarCache.retryFailed(uiState.items)
-                }
-            },
-        )
-    }
-
-    localStatusItem?.let { item ->
-        AlertDialog(
-            onDismissRequest = { localStatusItem = null },
-            title = { Text("Move ${item.name}") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LocalLibraryStatus.entries.forEach { status ->
-                        TextButton(
-                            onClick = {
-                                LibraryRepository.setLocalStatusIfSaved(item.id, item.type, status)
-                                localStatusItem = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = if (LocalLibraryStatus.fromStorage(item.localStatus) == status) "✓ ${status.title}" else status.title,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { localStatusItem = null }) {
-                    Text(stringResource(Res.string.action_cancel))
                 }
             },
         )

@@ -121,6 +121,7 @@ import com.nuvio.app.features.home.components.shouldBlurContinueWatchingArtwork
 import com.nuvio.app.features.library.refreshLibraryReleaseScheduleIfStale
 import com.nuvio.app.features.library.warmLibraryReleaseSchedule
 import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.library.LocalLibraryStatus
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.rememberLibrarySectionTitleResolver
@@ -2273,6 +2274,25 @@ internal fun MainAppContent(
                             )
                             statusLibraryItem?.let { item ->
                                 val providerId = statusProviderId
+                                if (providerId == null && libraryUiState.sourceMode == LibrarySourceMode.LOCAL) {
+                                    LocalLibraryStatus.entries.forEach { status ->
+                                        val statusIcon = when (status) {
+                                            LocalLibraryStatus.PLANNING -> Icons.Default.Info
+                                            LocalLibraryStatus.WATCHING -> Icons.Default.PlayArrow
+                                            LocalLibraryStatus.ON_HOLD -> Icons.Default.PauseCircle
+                                            LocalLibraryStatus.WATCHED -> Icons.Default.CheckCircle
+                                        }
+                                        add(
+                                            PosterZoomOverlayAction(
+                                                icon = statusIcon,
+                                                label = status.title,
+                                                onSelected = {
+                                                    LibraryRepository.setLocalStatusIfSaved(item.id, item.type, status)
+                                                },
+                                            ),
+                                        )
+                                    }
+                                }
                                 if (providerId != null && droppedStatusAvailable) {
                                     add(
                                         PosterZoomOverlayAction(
