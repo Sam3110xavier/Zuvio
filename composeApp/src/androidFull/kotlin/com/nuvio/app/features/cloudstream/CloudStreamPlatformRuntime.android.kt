@@ -586,7 +586,304 @@ private class AndroidDexCloudStreamProvider(
             val entries = dex.entries()
             while (entries.hasMoreElements()) {
                 val className = entries.nextElement()
+                if (
+                    className.contains('                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (error: LinkageError) {
+                    log.w(error) { "Skipping CloudStream DEX class with missing dependency: $className" }
+                    continue
+                }
+                if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
+                if (!BasePlugin::class.java.isAssignableFrom(candidate)) {
+                    log.w { "Ignoring annotated CloudStream class that does not extend BasePlugin: $className" }
+                    continue
+                }
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                log.i { "Found CloudStream plugin entry point by DEX scan: $className" }
+                return candidate
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return null
+    }
+
+    private fun findProvider(className: String): MainAPI =
+        providers.firstOrNull { it.javaClass.name == className }
+            ?: error("CloudStream provider is no longer registered")
+
+    private fun SearchResponse.toNuvioSearchItem(api: MainAPI): CloudStreamSearchItem =
+        CloudStreamSearchItem(
+            providerId = this@AndroidDexCloudStreamProvider.id,
+            data = encodeAndroidDexRoute(api.javaClass.name, url),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            year = when (this) {
+                is AnimeSearchResponse -> year
+                is MovieSearchResponse -> year
+                is TvSeriesSearchResponse -> year
+                is LiveSearchResponse -> null
+                else -> null
+            },
+        )
+
+    private fun LoadResponse.toNuvioLoadItem(api: MainAPI): CloudStreamLoadItem {
+        val playbackData = when (this) {
+            is MovieLoadResponse -> dataUrl
+            is LiveStreamLoadResponse -> dataUrl
+            is TorrentLoadResponse -> magnet ?: torrent ?: url
+            else -> url
+        }
+        val episodes = when (this) {
+            is TvSeriesLoadResponse -> episodes.map { episode -> episode.toNuvioEpisode(api) }
+            is AnimeLoadResponse -> episodes.flatMap { (dubStatus, values) ->
+                values.map { episode ->
+                    episode.toNuvioEpisode(api, dubStatus.name.takeUnless { episodes.size == 1 })
+                }
+            }
+            else -> emptyList()
+        }
+        return CloudStreamLoadItem(
+            providerId = id,
+            data = encodeAndroidDexRoute(api.javaClass.name, playbackData),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            backgroundUrl = backgroundPosterUrl,
+            description = plot,
+            year = year,
+            ratingPercent = score?.toInt(100),
+            tags = tags.orEmpty(),
+            episodes = episodes,
+        )
+    }
+
+    private fun com.lagradost.cloudstream3.Episode.toNuvioEpisode(
+        api: MainAPI,
+        variant: String? = null,
+    ): CloudStreamEpisode = CloudStreamEpisode(
+        data = encodeAndroidDexRoute(api.javaClass.name, data),
+        name = listOfNotNull(name?.takeIf(String::isNotBlank), variant).joinToString(" · ")
+            .ifBlank { "Episode ${episode ?: ""}".trim() },
+        season = season,
+        episode = episode,
+        posterUrl = posterUrl,
+        description = description,
+    )
+
+    private companion object {
+        private val IMDB_ID_REGEX = Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE)
+        private fun stageTimeout(providerHint: Long?, hostMaximum: Long): Long =
+            providerHint?.coerceIn(5_000L, hostMaximum) ?: hostMaximum
+
+        private const val DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000L
+        private const val DEFAULT_LOAD_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_LINK_TIMEOUT_MS = 60_000L
+    }
+}
+
+private data class AndroidDexRoute(val providerClassName: String, val data: String)
+
+private fun encodeAndroidDexRoute(providerClassName: String, data: String): String =
+    "nuvio-cs-api:${providerClassName.length}:$providerClassName$data"
+
+private fun decodeAndroidDexRoute(value: String): AndroidDexRoute {
+    val payload = value.removePrefix("nuvio-cs-api:")
+    require(payload != value) { "Invalid CloudStream provider route" }
+    val separator = payload.indexOf(':')
+    require(separator > 0) { "Invalid CloudStream provider route" }
+    val providerLength = payload.substring(0, separator).toIntOrNull()
+        ?: error("Invalid CloudStream provider route")
+    val content = payload.substring(separator + 1)
+    require(providerLength in 1..content.length) { "Invalid CloudStream provider route" }
+    return AndroidDexRoute(
+        providerClassName = content.substring(0, providerLength),
+        data = content.substring(providerLength),
+    )
+}
+
+private fun TvType?.toNuvioTvType(): CloudStreamTvType = when (this) {
+    TvType.Movie -> CloudStreamTvType.Movie
+    TvType.AnimeMovie -> CloudStreamTvType.AnimeMovie
+    TvType.TvSeries -> CloudStreamTvType.TvSeries
+    TvType.Cartoon -> CloudStreamTvType.Cartoon
+    TvType.Anime -> CloudStreamTvType.Anime
+    TvType.OVA -> CloudStreamTvType.Ova
+    TvType.Torrent -> CloudStreamTvType.Torrent
+    TvType.Documentary -> CloudStreamTvType.Documentary
+    TvType.AsianDrama -> CloudStreamTvType.AsianDrama
+    TvType.Live -> CloudStreamTvType.Live
+    TvType.Music, TvType.Audio, TvType.AudioBook, TvType.Podcast -> CloudStreamTvType.Music
+    else -> CloudStreamTvType.Other
+}
+)) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (_: LinkageError) {
+                    continue
+                }
+                if (!ExtractorApi::class.java.isAssignableFrom(candidate)) continue
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                val extractor = runCatching {
+                    candidate.getDeclaredConstructor().newInstance() as ExtractorApi
+                }.getOrNull() ?: continue
+                if (extractor.mainUrl.isNotBlank()) found += extractor
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return found.distinctBy { it.mainUrl.lowercase() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun findAnnotatedPluginClass(loader: PathClassLoader, file: File): Class<*>? {
+        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return null
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
                 if (!className.startsWith("com.")) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (error: LinkageError) {
+                    log.w(error) { "Skipping CloudStream DEX class with missing dependency: $className" }
+                    continue
+                }
+                if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
+                if (!BasePlugin::class.java.isAssignableFrom(candidate)) {
+                    log.w { "Ignoring annotated CloudStream class that does not extend BasePlugin: $className" }
+                    continue
+                }
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                log.i { "Found CloudStream plugin entry point by DEX scan: $className" }
+                return candidate
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return null
+    }
+
+    private fun findProvider(className: String): MainAPI =
+        providers.firstOrNull { it.javaClass.name == className }
+            ?: error("CloudStream provider is no longer registered")
+
+    private fun SearchResponse.toNuvioSearchItem(api: MainAPI): CloudStreamSearchItem =
+        CloudStreamSearchItem(
+            providerId = this@AndroidDexCloudStreamProvider.id,
+            data = encodeAndroidDexRoute(api.javaClass.name, url),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            year = when (this) {
+                is AnimeSearchResponse -> year
+                is MovieSearchResponse -> year
+                is TvSeriesSearchResponse -> year
+                is LiveSearchResponse -> null
+                else -> null
+            },
+        )
+
+    private fun LoadResponse.toNuvioLoadItem(api: MainAPI): CloudStreamLoadItem {
+        val playbackData = when (this) {
+            is MovieLoadResponse -> dataUrl
+            is LiveStreamLoadResponse -> dataUrl
+            is TorrentLoadResponse -> magnet ?: torrent ?: url
+            else -> url
+        }
+        val episodes = when (this) {
+            is TvSeriesLoadResponse -> episodes.map { episode -> episode.toNuvioEpisode(api) }
+            is AnimeLoadResponse -> episodes.flatMap { (dubStatus, values) ->
+                values.map { episode ->
+                    episode.toNuvioEpisode(api, dubStatus.name.takeUnless { episodes.size == 1 })
+                }
+            }
+            else -> emptyList()
+        }
+        return CloudStreamLoadItem(
+            providerId = id,
+            data = encodeAndroidDexRoute(api.javaClass.name, playbackData),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            backgroundUrl = backgroundPosterUrl,
+            description = plot,
+            year = year,
+            ratingPercent = score?.toInt(100),
+            tags = tags.orEmpty(),
+            episodes = episodes,
+        )
+    }
+
+    private fun com.lagradost.cloudstream3.Episode.toNuvioEpisode(
+        api: MainAPI,
+        variant: String? = null,
+    ): CloudStreamEpisode = CloudStreamEpisode(
+        data = encodeAndroidDexRoute(api.javaClass.name, data),
+        name = listOfNotNull(name?.takeIf(String::isNotBlank), variant).joinToString(" · ")
+            .ifBlank { "Episode ${episode ?: ""}".trim() },
+        season = season,
+        episode = episode,
+        posterUrl = posterUrl,
+        description = description,
+    )
+
+    private companion object {
+        private val IMDB_ID_REGEX = Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE)
+        private fun stageTimeout(providerHint: Long?, hostMaximum: Long): Long =
+            providerHint?.coerceIn(5_000L, hostMaximum) ?: hostMaximum
+
+        private const val DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000L
+        private const val DEFAULT_LOAD_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_LINK_TIMEOUT_MS = 60_000L
+    }
+}
+
+private data class AndroidDexRoute(val providerClassName: String, val data: String)
+
+private fun encodeAndroidDexRoute(providerClassName: String, data: String): String =
+    "nuvio-cs-api:${providerClassName.length}:$providerClassName$data"
+
+private fun decodeAndroidDexRoute(value: String): AndroidDexRoute {
+    val payload = value.removePrefix("nuvio-cs-api:")
+    require(payload != value) { "Invalid CloudStream provider route" }
+    val separator = payload.indexOf(':')
+    require(separator > 0) { "Invalid CloudStream provider route" }
+    val providerLength = payload.substring(0, separator).toIntOrNull()
+        ?: error("Invalid CloudStream provider route")
+    val content = payload.substring(separator + 1)
+    require(providerLength in 1..content.length) { "Invalid CloudStream provider route" }
+    return AndroidDexRoute(
+        providerClassName = content.substring(0, providerLength),
+        data = content.substring(providerLength),
+    )
+}
+
+private fun TvType?.toNuvioTvType(): CloudStreamTvType = when (this) {
+    TvType.Movie -> CloudStreamTvType.Movie
+    TvType.AnimeMovie -> CloudStreamTvType.AnimeMovie
+    TvType.TvSeries -> CloudStreamTvType.TvSeries
+    TvType.Cartoon -> CloudStreamTvType.Cartoon
+    TvType.Anime -> CloudStreamTvType.Anime
+    TvType.OVA -> CloudStreamTvType.Ova
+    TvType.Torrent -> CloudStreamTvType.Torrent
+    TvType.Documentary -> CloudStreamTvType.Documentary
+    TvType.AsianDrama -> CloudStreamTvType.AsianDrama
+    TvType.Live -> CloudStreamTvType.Live
+    TvType.Music, TvType.Audio, TvType.AudioBook, TvType.Podcast -> CloudStreamTvType.Music
+    else -> CloudStreamTvType.Other
+}
+) ||
+                    className.startsWith("java.") ||
+                    className.startsWith("android.") ||
+                    className.startsWith("kotlin.")
+                ) continue
                 val candidate = try {
                     loader.loadClass(className)
                 } catch (_: ClassNotFoundException) {
