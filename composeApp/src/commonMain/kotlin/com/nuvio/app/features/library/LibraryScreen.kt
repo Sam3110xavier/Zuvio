@@ -1128,6 +1128,11 @@ private fun LibrarySourceSwitch(
             selected = selectedMode == LibraryViewMode.Cloud,
             onClick = { onModeSelected(LibraryViewMode.Cloud) },
         )
+        LibraryChip(
+            label = "Telegram",
+            selected = selectedMode == LibraryViewMode.Telegram,
+            onClick = { onModeSelected(LibraryViewMode.Telegram) },
+        )
         if (showServers) {
             LibraryChip(
                 label = stringResource(Res.string.library_source_servers),
