@@ -740,10 +740,20 @@ object StreamsRepository {
 
             cloudStreamProviderGroups.forEach { providerGroup ->
                 launch {
-                    val group = resolveCloudStreamProviderStreams(
-                        providerGroup = providerGroup,
-                        request = cloudStreamSearchRequest,
-                    )
+                    val group = try {
+                        resolveCloudStreamProviderStreams(
+                            providerGroup = providerGroup,
+                            request = cloudStreamSearchRequest,
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        log.w(error) { "CloudStream provider group ${providerGroup.addonName} failed unexpectedly" }
+                        CloudStreamProviderStreams(
+                            streams = emptyList(),
+                            error = error.message ?: "CloudStream provider failed unexpectedly",
+                        )
+                    }
                     publishCompletion(
                         StreamLoadCompletion.CloudStreamProvider(
                             addonId = providerGroup.addonId,
