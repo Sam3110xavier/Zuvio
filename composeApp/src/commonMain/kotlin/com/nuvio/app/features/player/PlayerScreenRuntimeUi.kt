@@ -792,18 +792,6 @@ private fun BoxScope.RenderPlaybackOverlays(
     folded: Boolean,
 ) {
     runtime.run {
-        val relatedItems = if (args.onOpenMetaDetails != null) movieRecommendationCandidates else emptyList()
-        val showRelatedTitles = shouldShowMoreLikeThisOverlay(
-            isPlaybackEnded = playbackSnapshot.isEnded,
-            hasRecommendations = relatedItems.isNotEmpty(),
-            isSeries = isSeries,
-            hasNextEpisode = nextEpisodeInfo != null,
-            controlsLocked = playerControlsLocked,
-            dismissed = moreLikeThisDismissed,
-            hasPlaybackError = errorMessage != null,
-            isInPip = isInPip,
-            completionPromptVisible = false,
-        )
         val overlaySnapshot = if (playerControlsLocked && lockedOverlayVisible) {
             playbackSnapshot
         } else {
@@ -917,28 +905,20 @@ private fun BoxScope.RenderPlaybackOverlays(
         } else {
             emptyList()
         },
-        showMovieRecommendationCard = showMovieRecommendationCard && !showRelatedTitles,
+        showMovieRecommendationCard = showMovieRecommendationCard,
         movieRecommendationStage = movieRecommendationStage,
         onOpenMovieRecommendation = { preview ->
             flushWatchProgress()
             args.onOpenMetaDetails?.invoke(preview)
         },
+        onShowMovieRecommendations = {
+            movieRecommendationDismissedStage = 0
+            showMovieRecommendationCard = movieRecommendationStage > 0
+        },
         onDismissMovieRecommendations = {
-            movieRecommendationDismissedStage = PlayerNextEpisodeRules.movieRecommendationStage(
-                positionMs = playbackSnapshot.positionMs,
-                durationMs = playbackSnapshot.durationMs,
-                isEnded = playbackSnapshot.isEnded,
-            )
+            movieRecommendationDismissedStage = movieRecommendationStage
             showMovieRecommendationCard = false
         },
-        moreLikeThisItems = relatedItems,
-        showMoreLikeThis = showRelatedTitles,
-        onOpenMoreLikeThis = { item ->
-            moreLikeThisDismissed = true
-            flushWatchProgress()
-            args.onOpenMetaDetails?.invoke(item)
-        },
-        onDismissMoreLikeThis = { moreLikeThisDismissed = true },
         errorMessage = errorMessage,
             onDismissError = {
                 flushWatchProgress()

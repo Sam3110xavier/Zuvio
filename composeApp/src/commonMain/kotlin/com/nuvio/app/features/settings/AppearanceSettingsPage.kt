@@ -113,7 +113,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = "Netflix-style interface",
-                    description = "Use a Netflix-inspired Home and Details layout. Turn off to restore the standard Zuvio interface.",
+                    description = "Use a Netflix-inspired layout on the Home screen only. The Details page keeps its standard layout.",
                     checked = posterCardStyle.netflixStyleEnabled,
                     isTablet = isTablet,
                     leadingContent = {

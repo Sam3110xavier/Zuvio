@@ -44,6 +44,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -95,6 +96,7 @@ object PartyRepository {
     private var rejoining = false
     private var hostShareAnnouncementSent = false
     private var hostMediaUpdatePending = false
+    private var streamRetryJob: Job? = null
 
     init {
         scope.launch {
@@ -359,6 +361,8 @@ object PartyRepository {
         sessionScope = null
         persistJob?.cancel()
         persistJob = null
+        streamRetryJob?.cancel()
+        streamRetryJob = null
         presenceJob = null
         channel?.close()
         channel = null
@@ -470,6 +474,13 @@ object PartyRepository {
         val party = _state.value.party ?: return
         val presence = party.presence.toMutableMap()
         val left = leaves.keys.filter { it != party.memberId && it !in joins }
+        // The server's member_left broadcast is the primary signal, but presence can
+        // disappear first (or the broadcast can be missed). Treat the host's departure
+        // as authoritative so guests cannot keep watching independently.
+        if (party.hostMemberId != null && party.hostMemberId in left && !_hostUnavailable.value) {
+            pausePlaybackForHostDeparture()
+            _events.tryEmit(PartyEvent.HostLeft)
+        }
         presence -= left.toSet()
         joins.forEach { (key, value) ->
             if (key == party.memberId || key in presence) return@forEach
@@ -492,6 +503,13 @@ object PartyRepository {
         updateParty { it.copy(presence = it.presence + (status.memberId to status)) }
     }
 
+    private fun pausePlaybackForHostDeparture() {
+        _sharedStream.value = null
+        _hostSharingEnabled.value = false
+        _hostUnavailable.value = true
+        _playback.value = pausePartyPlaybackForHostDeparture(_playback.value, clock.nowMs())
+    }
+
     private fun ownPresence(party: ActiveParty): PartyPresence =
         localPresence ?: PartyPresence(memberId = party.memberId)
 
@@ -503,11 +521,8 @@ object PartyRepository {
             return
         }
         val name = party.member(memberId)?.displayName
-        if (memberId == party.hostMemberId) {
-            _sharedStream.value = null
-            _hostSharingEnabled.value = false
-            _hostUnavailable.value = true
-        }
+        val hostDeparted = memberId == party.hostMemberId
+        if (hostDeparted) pausePlaybackForHostDeparture()
         updateParty { current ->
             current.copy(
                 members = current.members.filterNot { it.id == memberId },
@@ -516,6 +531,7 @@ object PartyRepository {
             )
         }
         ignoredWaiting.remove(memberId)
+        if (hostDeparted) _events.tryEmit(PartyEvent.HostLeft)
         if (name != null) _events.tryEmit(PartyEvent.MemberLeft(name))
     }
 
@@ -544,14 +560,12 @@ object PartyRepository {
         }
         val info = snapshot.party ?: return
         val previousHostMemberId = _state.value.party?.hostMemberId
-        if (
-            previousHostMemberId != null &&
-            info.hostMemberId != null &&
-            previousHostMemberId != info.hostMemberId
-        ) {
-            _sharedStream.value = null
-            _hostSharingEnabled.value = false
-            _hostUnavailable.value = true
+        if (previousHostMemberId != null && previousHostMemberId != info.hostMemberId) {
+            // A null host id is also a host departure; do not wait for a replacement host.
+            if (!_hostUnavailable.value) {
+                pausePlaybackForHostDeparture()
+                _events.tryEmit(PartyEvent.HostLeft)
+            }
         }
         updateParty { current ->
             current.copy(
@@ -763,13 +777,36 @@ object PartyRepository {
         val party = _state.value.party ?: return
         _sharedStream.value = stream
         _hostSharingEnabled.value = sharingEnabled
-        hostShareAnnouncementSent = true
         val payload = buildJsonObject {
             put("member_id", party.memberId)
             put("sharing", sharingEnabled)
             put("stream", stream?.let { PartyApi.json.encodeToJsonElement(PartyStream.serializer(), it) } ?: JsonNull)
         }
-        runCatching { channel?.send("stream", payload) }
+
+        streamRetryJob?.cancel()
+        streamRetryJob = null
+        val sent = runCatching { channel?.send("stream", payload) == true }.getOrDefault(false)
+        hostShareAnnouncementSent = sent
+        if (!sent) {
+            // Keep the latest source announcement pending until Realtime is subscribed.
+            // This covers source selection immediately after creating/joining a party.
+            streamRetryJob = sessionScope?.launch {
+                repeat(STREAM_RETRY_COUNT) {
+                    delay(STREAM_RETRY_DELAY)
+                    val currentParty = _state.value.party
+                    if (
+                        currentParty?.id != party.id ||
+                        _sharedStream.value != stream ||
+                        _hostSharingEnabled.value != sharingEnabled
+                    ) return@launch
+                    val delivered = runCatching { channel?.send("stream", payload) == true }.getOrDefault(false)
+                    if (delivered) {
+                        hostShareAnnouncementSent = true
+                        return@launch
+                    }
+                }
+            }
+        }
     }
 
     private fun encodePlayback(playback: PartyPlayback): JsonObject =
@@ -810,6 +847,8 @@ object PartyRepository {
     private val WAIT_LIMIT = 15.seconds
     private val CLOCK_SAMPLE_GAP = 0.4.seconds
     private const val CLOCK_SAMPLES = 4
+    private const val STREAM_RETRY_COUNT = 6
+    private val STREAM_RETRY_DELAY = 500L.milliseconds
 }
 
 fun normalizePartyCode(input: String): String =

@@ -84,6 +84,33 @@ object ProfileRepository {
 
     val activeProfileId: Int get() = activeProfileIndex
 
+    /**
+     * Applies the custom profile background URL received from the account's
+     * profile-settings blob. Built-in background selections intentionally remain
+     * device-local and are not modified by this sync path.
+     */
+    fun applySyncedCustomBackgroundUrl(profileIndex: Int, url: String?) {
+        val current = _state.value
+        val target = current.profiles.firstOrNull { it.profileIndex == profileIndex } ?: return
+        val normalized = normalizedAvatarUrl(url)
+        if (target.profileBackgroundUrl == normalized) return
+        val updatedProfiles = current.profiles.map { profile ->
+            if (profile.profileIndex == profileIndex) {
+                profile.copy(
+                    profileBackgroundId = if (normalized != null) null else profile.profileBackgroundId,
+                    profileBackgroundUrl = normalized,
+                )
+            } else {
+                profile
+            }
+        }
+        _state.value = current.copy(
+            profiles = updatedProfiles,
+            activeProfile = updatedProfiles.firstOrNull { it.profileIndex == activeProfileIndex },
+        )
+        persist()
+    }
+
     fun setRememberLastProfileEnabled(enabled: Boolean) {
         if (_state.value.rememberLastProfileEnabled == enabled) return
 

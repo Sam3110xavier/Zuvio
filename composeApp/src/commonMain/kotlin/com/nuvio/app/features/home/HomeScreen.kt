@@ -1,6 +1,8 @@
 package com.nuvio.app.features.home
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.stopScroll
@@ -16,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -38,6 +41,7 @@ import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberHeroStretchState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
@@ -53,6 +57,7 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
+import com.nuvio.app.features.home.components.MergedHomeRowTabSelector
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
@@ -118,6 +123,7 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -157,6 +163,22 @@ fun HomeScreen(
     val homeListState = rememberLazyListState()
     val continueWatchingListState = rememberLazyListState()
     val upcomingListState = rememberLazyListState()
+    val mergedRowSelectedTabs = remember { mutableStateMapOf<String, String>() }
+    var areMergedRowTabsVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(homeListState) {
+        var previousPosition: Pair<Int, Int>? = null
+        snapshotFlow {
+            homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset
+        }.collect { currentPosition ->
+            val previous = previousPosition
+            if (previous != null && currentPosition != previous) {
+                val scrollingDown = currentPosition.first > previous.first ||
+                    (currentPosition.first == previous.first && currentPosition.second > previous.second)
+                areMergedRowTabsVisible = scrollingDown
+            }
+            previousPosition = currentPosition
+        }
+    }
     ScreenActivityEffect(homeListState, continueWatchingListState, upcomingListState) { active ->
         if (!active) {
             homeListState.stopScroll(MutatePriority.PreventUserInput)
@@ -977,7 +999,7 @@ fun HomeScreen(
             if (!netflixStyleEnabled) {
                 posterCardStyle
             } else {
-                val widthDp = maxOf(posterCardStyle.widthDp, 155)
+                val widthDp = maxOf(posterCardStyle.widthDp, NETFLIX_HOME_POSTER_WIDTH_DP)
                 posterCardStyle.copy(
                     widthDp = widthDp,
                     heightDp = (widthDp * 3) / 2,
@@ -1240,10 +1262,30 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
+                                    if (section.isMergedRow && section.sourceTabs.size > 1) {
+                                        stickyHeader(
+                                            key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
+                                            contentType = "merged_row_tabs",
+                                        ) {
+                                            if (areMergedRowTabsVisible) {
+                                                MergedHomeRowTabSelector(
+                                                    tabs = section.sourceTabs,
+                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                        ?: section.sourceTabs.firstOrNull()?.key,
+                                                    sectionPadding = homeSectionPadding,
+                                                    onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
+                                                )
+                                            }
+                                        }
+                                    }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
                                         HomeCatalogRowSection(
                                             section = section,
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                            selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                ?: section.sourceTabs.firstOrNull()?.key,
+                                            onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
+                                            showTabSelector = !section.isMergedRow,
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
                                             onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {

@@ -203,6 +203,7 @@ object ProfileSettingsSync {
             TrackingSettingsRepository.uiState.map { "trakt_settings" },
             TraktCommentsSettings.enabled.map { "trakt_comments" },
             EpisodeReleaseNotificationsRepository.uiState.map { "episode_release_alerts" },
+            ProfileRepository.state.map { "custom_profile_background_url" },
         )
 
         observeJob = scope.launch {
@@ -270,11 +271,18 @@ object ProfileSettingsSync {
                 notificationsSettings = NotificationsSettingsPayload(
                     episodeReleaseAlertsEnabled = EpisodeReleaseNotificationsRepository.uiState.value.isEnabled,
                 ),
+                customProfileBackgroundUrl = ProfileRepository.state.value.activeProfile?.profileBackgroundUrl,
             ),
         )
     }
 
     private fun applyRemoteBlob(blob: MobileProfileSettingsBlob) {
+        if (blob.version >= 5) {
+            ProfileRepository.applySyncedCustomBackgroundUrl(
+                profileIndex = ProfileRepository.activeProfileId,
+                url = blob.features.customProfileBackgroundUrl,
+            )
+        }
         ThemeSettingsStorage.replaceFromSyncPayload(blob.features.themeSettings)
         ThemeSettingsRepository.onProfileChanged()
 
@@ -382,7 +390,7 @@ object ProfileSettingsSync {
 
 @Serializable
 private data class MobileProfileSettingsBlob(
-    val version: Int = 4,
+    val version: Int = 5,
     val features: MobileProfileSettingsFeatures = MobileProfileSettingsFeatures(),
 )
 
@@ -404,6 +412,7 @@ private data class MobileProfileSettingsFeatures(
     @SerialName("trakt_settings_payload") val traktSettingsPayload: String = "",
     @SerialName("trakt_comments_settings") val traktCommentsSettings: JsonObject = JsonObject(emptyMap()),
     @SerialName("notifications_settings") val notificationsSettings: NotificationsSettingsPayload = NotificationsSettingsPayload(),
+    @SerialName("custom_profile_background_url") val customProfileBackgroundUrl: String? = null,
 )
 
 @Serializable

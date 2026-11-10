@@ -233,7 +233,8 @@ fun MetaDetailsScreen(
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val netflixStyleEnabled = rememberPosterCardStyleUiState().netflixStyleEnabled
+    // Keep the Netflix-inspired preset scoped to Home for now; Details retains its saved layout.
+    val netflixStyleEnabled = false
     val metaScreenSettingsUiState = remember(storedMetaScreenSettingsUiState, netflixStyleEnabled) {
         if (!netflixStyleEnabled) {
             storedMetaScreenSettingsUiState

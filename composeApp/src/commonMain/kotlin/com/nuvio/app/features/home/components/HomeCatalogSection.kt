@@ -1,6 +1,7 @@
 package com.nuvio.app.features.home.components
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,11 +15,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.PosterRowImagePrefetchEffect
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -49,6 +51,9 @@ fun HomeCatalogRowSection(
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    selectedTabKey: String? = null,
+    onTabSelected: ((String) -> Unit)? = null,
+    showTabSelector: Boolean = true,
 ) {
     if (sectionPadding != null) {
         HomeCatalogRowSectionContent(
@@ -61,6 +66,9 @@ fun HomeCatalogRowSection(
             onViewAllClick = onViewAllClick,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
+            selectedTabKey = selectedTabKey,
+            onTabSelected = onTabSelected,
+            showTabSelector = showTabSelector,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -74,6 +82,9 @@ fun HomeCatalogRowSection(
                 onViewAllClick = onViewAllClick,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
+                selectedTabKey = selectedTabKey,
+                onTabSelected = onTabSelected,
+                showTabSelector = showTabSelector,
             )
         }
     }
@@ -90,6 +101,9 @@ private fun HomeCatalogRowSectionContent(
     onViewAllClick: (() -> Unit)?,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
+    selectedTabKey: String?,
+    onTabSelected: ((String) -> Unit)?,
+    showTabSelector: Boolean,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val netflixStyleEnabled = posterCardStyle.netflixStyleEnabled
@@ -97,7 +111,7 @@ private fun HomeCatalogRowSectionContent(
         if (!netflixStyleEnabled) {
             posterCardStyle
         } else {
-            val width = maxOf(posterCardStyle.widthDp, 142)
+            val width = maxOf(posterCardStyle.widthDp, NETFLIX_HOME_POSTER_WIDTH_DP)
             posterCardStyle.copy(
                 widthDp = width,
                 heightDp = (width * 3) / 2,
@@ -110,15 +124,16 @@ private fun HomeCatalogRowSectionContent(
         section.title.contains("top 10", ignoreCase = true) ||
             section.title.contains("top ten", ignoreCase = true)
     }
-    var selectedTabKey by remember(section.key) { mutableStateOf("all") }
-    val selectedTab = section.sourceTabs.firstOrNull { it.key == selectedTabKey }
+    var internalSelectedTabKey by remember(section.key) { mutableStateOf("all") }
+    val activeSelectedTabKey = selectedTabKey ?: internalSelectedTabKey
+    val selectedTab = section.sourceTabs.firstOrNull { it.key == activeSelectedTabKey }
         ?: section.sourceTabs.firstOrNull()
     val previewEntryKeys = remember(entries) { entries.mapTo(hashSetOf()) { it.stableKey() } }
     val visibleEntries = remember(selectedTab, previewEntryKeys, entries) {
         (selectedTab?.items ?: entries).filter { item -> item.stableKey() in previewEntryKeys }
     }
     val rowState = rememberLazyListState()
-    LaunchedEffect(selectedTabKey) {
+    LaunchedEffect(activeSelectedTabKey) {
         rowState.scrollToItem(0)
     }
     val prefetchTargets = remember(visibleEntries, catalogPosterStyle) {
@@ -132,22 +147,15 @@ private fun HomeCatalogRowSectionContent(
     PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
 
     Column(modifier = modifier.fillMaxWidth()) {
-        if (section.sourceTabs.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = sectionPadding),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                section.sourceTabs.forEach { tab ->
-                    FilterChip(
-                        selected = selectedTab?.key == tab.key,
-                        onClick = { selectedTabKey = tab.key },
-                        label = { Text(tab.title) },
-                    )
-                }
-            }
+        if (showTabSelector && section.sourceTabs.size > 1) {
+            MergedHomeRowTabSelector(
+                tabs = section.sourceTabs,
+                selectedTabKey = selectedTab?.key,
+                sectionPadding = sectionPadding,
+                onTabSelected = { key ->
+                    if (onTabSelected != null) onTabSelected(key) else internalSelectedTabKey = key
+                },
+            )
         }
 
         NuvioShelfSection(
@@ -197,6 +205,33 @@ private fun HomeCatalogRowSectionContent(
             } else {
                 poster()
             }
+        }
+    }
+}
+
+
+@Composable
+internal fun MergedHomeRowTabSelector(
+    tabs: List<com.nuvio.app.features.home.HomeCatalogTab>,
+    selectedTabKey: String?,
+    sectionPadding: Dp,
+    onTabSelected: (String) -> Unit,
+) {
+    if (tabs.size <= 1) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = sectionPadding, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        tabs.forEach { tab ->
+            FilterChip(
+                selected = selectedTabKey == tab.key,
+                onClick = { onTabSelected(tab.key) },
+                label = { Text(tab.title) },
+            )
         }
     }
 }
