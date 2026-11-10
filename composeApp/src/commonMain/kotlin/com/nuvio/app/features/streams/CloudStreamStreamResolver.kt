@@ -56,8 +56,11 @@ internal fun buildCloudStreamSearchRequest(
         ?: videoId
     val year = details?.releaseInfo
         ?.let { Regex("\\b(19\\d{2}|20\\d{2})\\b").find(it)?.value?.toIntOrNull() }
-    val episodeDetails = details?.videos
-        ?.firstOrNull { it.season == season && it.episode == episode }
+    val episodeDetails = if (season != null || episode != null) {
+        details?.videos?.firstOrNull { it.season == season && it.episode == episode }
+    } else {
+        null
+    }
     val episodeTitle = episodeDetails?.title?.takeIf(String::isNotBlank)
     val externalId = episodeDetails?.imdbId
         ?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
@@ -318,9 +321,9 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
     val titleMatches = normalizeCloudStreamTitle(name) in requestedTitles
     val loadedYear = year ?: cloudStreamYear(name)
     if (request.year != null && loadedYear != request.year) return false
-    val safeLocalizedMovieFallback = normalizeCloudStreamType(request.type) == "movie" &&
-        request.year != null && loadedYear == request.year
-    return titleMatches || safeLocalizedMovieFallback
+    val safeExternalIdFallback = !request.externalId.isNullOrBlank() &&
+        (request.year == null || loadedYear == null || loadedYear == request.year)
+    return titleMatches || safeExternalIdFallback
 }
 
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.linkDataForCloudStreamRequest(
