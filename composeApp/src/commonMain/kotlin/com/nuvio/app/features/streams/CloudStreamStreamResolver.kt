@@ -272,12 +272,12 @@ internal fun List<CloudStreamSearchItem>.bestCloudStreamMatches(
         .toSet()
     if (requestedTitles.isEmpty()) return emptyList()
     return asSequence()
-        .filter { normalizeCloudStreamType(it.type.nuvioType) == normalizeCloudStreamType(request.type) }
+        .filter { cloudStreamTypeMatches(it.type.nuvioType, request.type) }
         .filter { item ->
             val candidateYear = item.year ?: cloudStreamYear(item.name)
             request.year == null || candidateYear == null || candidateYear == request.year
         }
-        .filter { item -> normalizeCloudStreamTitle(item.name) in requestedTitles }
+        .filter { item -> cloudStreamTitleMatches(item.name, requestedTitles) }
         .sortedByDescending { item ->
             request.year != null && (item.year ?: cloudStreamYear(item.name)) == request.year
         }
@@ -290,13 +290,13 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
     searchItem: CloudStreamSearchItem,
     allowProviderRankedFallback: Boolean = false,
 ): Boolean {
-    if (normalizeCloudStreamType(type.nuvioType) != normalizeCloudStreamType(request.type)) return false
+    if (!cloudStreamTypeMatches(type.nuvioType, request.type)) return false
     val requestedTitles = (listOf(request.title) + request.aliases)
         .map(::normalizeCloudStreamTitle)
         .filter(String::isNotBlank)
         .toSet()
-    val titleMatches = normalizeCloudStreamTitle(name) in requestedTitles ||
-        normalizeCloudStreamTitle(searchItem.name) in requestedTitles
+    val titleMatches = cloudStreamTitleMatches(name, requestedTitles) ||
+        cloudStreamTitleMatches(searchItem.name, requestedTitles)
     val loadedYear = year ?: cloudStreamYear(name)
     val searchedYear = searchItem.year ?: cloudStreamYear(searchItem.name)
     if (request.year != null) {
@@ -313,12 +313,12 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
 internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloudStreamExternalIdRequest(
     request: CloudStreamSearchRequest,
 ): Boolean {
-    if (normalizeCloudStreamType(type.nuvioType) != normalizeCloudStreamType(request.type)) return false
+    if (!cloudStreamTypeMatches(type.nuvioType, request.type)) return false
     val requestedTitles = (listOf(request.title) + request.aliases)
         .map(::normalizeCloudStreamTitle)
         .filter(String::isNotBlank)
         .toSet()
-    val titleMatches = normalizeCloudStreamTitle(name) in requestedTitles
+    val titleMatches = cloudStreamTitleMatches(name, requestedTitles)
     val loadedYear = year ?: cloudStreamYear(name)
     if (request.year != null && loadedYear != request.year) return false
     val safeExternalIdFallback = !request.externalId.isNullOrBlank() &&
@@ -357,6 +357,36 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.linkDataForC
         }?.data
     }
     return null
+}
+
+private fun cloudStreamTypeMatches(actualType: String, requestedType: String): Boolean {
+    val actual = normalizeCloudStreamType(actualType)
+    val requested = normalizeCloudStreamType(requestedType)
+    // CloudStream providers sometimes classify otherwise valid results as Other.
+    // Keep those candidates, but still require title/year validation below.
+    return actual == requested || actual == "other"
+}
+
+private val cloudStreamReleaseSuffixTokens = setOf(
+    "480p", "720p", "1080p", "2160p", "4k", "8k",
+    "hindi", "english", "tamil", "telugu", "malayalam", "kannada", "japanese", "korean",
+    "dub", "dubbed", "sub", "subbed", "dual", "multi", "audio",
+    "web", "webdl", "webrip", "bluray", "brrip", "hdrip", "hdtv", "remux",
+    "x264", "x265", "h264", "h265", "hevc", "av1", "aac", "dts", "hdr", "10bit",
+    "complete", "uncut", "extended", "proper", "repack", "season", "episode",
+)
+
+private fun cloudStreamTitleMatches(value: String, requestedTitles: Set<String>): Boolean {
+    val candidate = normalizeCloudStreamTitle(value)
+    if (candidate.isBlank()) return false
+    return requestedTitles.any { requested ->
+        candidate == requested || (
+            candidate.startsWith("$requested ") &&
+                candidate.removePrefix("$requested ")
+                    .split(Regex("\\s+"))
+                    .all { token -> token in cloudStreamReleaseSuffixTokens }
+            )
+    }
 }
 
 private fun normalizeCloudStreamTitle(value: String): String {
