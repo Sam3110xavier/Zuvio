@@ -66,7 +66,7 @@ internal fun buildCloudStreamSearchRequest(
         ?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
         ?: details?.imdbId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
         ?: parentMetaId?.takeIf { it.matches(Regex("tt\\d{7,10}")) }
-        ?: videoId.takeIf { it.matches(Regex("tt\\d{7,10}") }
+        ?: videoId.takeIf { it.matches(Regex("tt\\d{7,10}")) }
     return CloudStreamSearchRequest(
         title = title,
         type = type,
