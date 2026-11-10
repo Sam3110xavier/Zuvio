@@ -37,6 +37,7 @@ import com.nuvio.app.core.ui.PosterRowImagePrefetchEffect
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.mergedHomeRowPreviewItems
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.watching.application.WatchingState
 
