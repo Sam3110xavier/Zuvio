@@ -39,6 +39,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepositor
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlin.concurrent.Volatile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
