@@ -162,19 +162,23 @@ fun CatalogScreen(
             return@LaunchedEffect
         }
         var previousPosition: Pair<Int, Int>? = null
-        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
-            .collect { currentPosition ->
-                val previous = previousPosition
-                if (previous != null && currentPosition != previous) {
-                    val movingDown = currentPosition.first > previous.first ||
-                        (currentPosition.first == previous.first && currentPosition.second > previous.second)
-                    areMergedSourceTabsVisible = !movingDown
-                }
-                if (currentPosition.first == 0 && currentPosition.second == 0) {
-                    areMergedSourceTabsVisible = true
-                }
-                previousPosition = currentPosition
+        snapshotFlow {
+            gridState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index > 0 }
+                ?.let { it.index to it.offset.y }
+        }.collect { currentPosition ->
+            val previous = previousPosition
+            if (previous != null && currentPosition != null && currentPosition != previous) {
+                // The first regular grid item moves upward (smaller Y) as the user scrolls down.
+                val movingDown = currentPosition.first > previous.first ||
+                    (currentPosition.first == previous.first && currentPosition.second < previous.second)
+                areMergedSourceTabsVisible = !movingDown
             }
+            if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
+                areMergedSourceTabsVisible = true
+            }
+            if (currentPosition != null) previousPosition = currentPosition
+        }
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
