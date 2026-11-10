@@ -6,6 +6,23 @@ import kotlinx.serialization.Serializable
 const val MAX_MERGED_HOME_ROW_SOURCES = 12
 const val HOME_MERGED_ROW_ITEM_LIMIT = 72
 
+internal fun shouldShowMergedRowTabs(
+    isAtTop: Boolean,
+    isScrollInProgress: Boolean,
+    lastScrolledForward: Boolean,
+    currentlyVisible: Boolean,
+): Boolean = when {
+    isAtTop -> true
+    isScrollInProgress -> !lastScrolledForward
+    else -> currentlyVisible
+}
+
+internal fun mergedHomeRowPreviewItems(
+    selectedTab: HomeCatalogTab?,
+    fallbackEntries: List<MetaPreview>,
+): List<MetaPreview> =
+    (selectedTab?.items ?: fallbackEntries).take(fallbackEntries.size)
+
 @Serializable
 data class MergedHomeRowDefinition(
     val id: String,

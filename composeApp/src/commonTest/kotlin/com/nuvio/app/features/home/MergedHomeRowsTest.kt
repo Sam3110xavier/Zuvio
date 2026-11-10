@@ -104,6 +104,85 @@ class MergedHomeRowsTest {
         assertEquals(MergedHomeRowContentType.ALL, row.contentTypeForDisplay())
     }
 
+    @Test
+    fun homeSourceTabPreviewsUseTheSelectedSourceRatherThanIntersectingTheMergedPreview() {
+        val mergedPreview = listOf(item("source-a-1"), item("source-b-1"))
+        val selectedSourceTab = HomeCatalogTab(
+            key = "source-a",
+            title = "Source A",
+            items = listOf(item("source-a-2"), item("source-a-3"), item("source-a-4")),
+        )
+
+        assertEquals(
+            listOf("source-a-2", "source-a-3"),
+            mergedHomeRowPreviewItems(selectedSourceTab, mergedPreview).map { it.id },
+        )
+    }
+
+    @Test
+    fun homeAllTabPreviewRemainsBoundedByTheShelfPreviewSize() {
+        val mergedPreview = listOf(item("a"), item("b"))
+        val allTab = HomeCatalogTab(
+            key = "all",
+            title = "All",
+            items = listOf(item("a"), item("b"), item("c")),
+        )
+
+        assertEquals(listOf("a", "b"), mergedHomeRowPreviewItems(allTab, mergedPreview).map { it.id })
+    }
+
+    @Test
+    fun mergedTabsHideOnTheFirstDownwardScrollEvenWhenForwardWasInitiallyTrue() {
+        assertEquals(
+            false,
+            shouldShowMergedRowTabs(
+                isAtTop = false,
+                isScrollInProgress = true,
+                lastScrolledForward = true,
+                currentlyVisible = true,
+            ),
+        )
+    }
+
+    @Test
+    fun mergedTabsAppearImmediatelyWhenTheUserScrollsBackUp() {
+        assertEquals(
+            true,
+            shouldShowMergedRowTabs(
+                isAtTop = false,
+                isScrollInProgress = true,
+                lastScrolledForward = false,
+                currentlyVisible = false,
+            ),
+        )
+    }
+
+    @Test
+    fun mergedTabsRetainTheirVisibilityWhenScrollingStopsAwayFromTheTop() {
+        assertEquals(
+            false,
+            shouldShowMergedRowTabs(
+                isAtTop = false,
+                isScrollInProgress = false,
+                lastScrolledForward = true,
+                currentlyVisible = false,
+            ),
+        )
+    }
+
+    @Test
+    fun mergedTabsAreAlwaysVisibleAtTheTop() {
+        assertEquals(
+            true,
+            shouldShowMergedRowTabs(
+                isAtTop = true,
+                isScrollInProgress = false,
+                lastScrolledForward = true,
+                currentlyVisible = false,
+            ),
+        )
+    }
+
     private fun item(id: String, type: String = "movie", name: String = id) =
         MetaPreview(id = id, type = type, name = name)
 

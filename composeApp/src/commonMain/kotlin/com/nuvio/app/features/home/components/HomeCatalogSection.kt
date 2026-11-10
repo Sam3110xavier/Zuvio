@@ -128,12 +128,12 @@ private fun HomeCatalogRowSectionContent(
     val activeSelectedTabKey = selectedTabKey ?: internalSelectedTabKey
     val selectedTab = section.sourceTabs.firstOrNull { it.key == activeSelectedTabKey }
         ?: section.sourceTabs.firstOrNull()
-    val previewEntryKeys = remember(entries) { entries.mapTo(hashSetOf()) { it.stableKey() } }
-    val visibleEntries = remember(selectedTab, previewEntryKeys, entries) {
-        (selectedTab?.items ?: entries).filter { item -> item.stableKey() in previewEntryKeys }
+    val effectiveSelectedTabKey = selectedTab?.key
+    val visibleEntries = remember(selectedTab, entries) {
+        mergedHomeRowPreviewItems(selectedTab, entries)
     }
     val rowState = rememberLazyListState()
-    LaunchedEffect(activeSelectedTabKey) {
+    LaunchedEffect(effectiveSelectedTabKey) {
         rowState.scrollToItem(0)
     }
     val prefetchTargets = remember(visibleEntries, catalogPosterStyle) {

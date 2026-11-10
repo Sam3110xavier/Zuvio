@@ -69,6 +69,7 @@ import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MergedHomeRowDisplayMode
+import com.nuvio.app.features.home.shouldShowMergedRowTabs
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.stableKey
@@ -162,22 +163,21 @@ fun CatalogScreen(
             return@LaunchedEffect
         }
 
-        // Use the grid's own scroll-direction signal instead of inferring direction
-        // from visible child offsets. Sticky headers and multi-column grid re-layouts
-        // can keep those offsets unchanged while the user reverses the gesture.
-        snapshotFlow { gridState.lastScrolledForward }
-            .distinctUntilChanged()
-            .collect { scrollingForward ->
-                // Forward = moving deeper into the catalog (finger swipes up): hide.
-                // Backward = returning toward earlier items (finger swipes down): show
-                // immediately, without waiting for the absolute top.
-                areMergedSourceTabsVisible = !scrollingForward
-                if (gridState.firstVisibleItemIndex == 0 &&
-                    gridState.firstVisibleItemScrollOffset == 0
-                ) {
-                    areMergedSourceTabsVisible = true
-                }
-            }
+        snapshotFlow {
+            Triple(
+                gridState.isScrollInProgress,
+                gridState.lastScrolledForward,
+                gridState.firstVisibleItemIndex == 0 &&
+                    gridState.firstVisibleItemScrollOffset == 0,
+            )
+        }.collect { (isScrolling, scrollingForward, isAtTop) ->
+            areMergedSourceTabsVisible = shouldShowMergedRowTabs(
+                isAtTop = isAtTop,
+                isScrollInProgress = isScrolling,
+                lastScrolledForward = scrollingForward,
+                currentlyVisible = areMergedSourceTabsVisible,
+            )
+        }
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
