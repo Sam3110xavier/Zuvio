@@ -342,7 +342,11 @@ private fun MergedHomeRowEditorDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
-                    Text("Hide included source rows from Home")
+                    Text("Move included source rows to Hidden Rows")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hidePosterless, onCheckedChange = { hidePosterless = it })
+                    Text("Hide titles without posters in this merged row")
                 }
                 validationError?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }

@@ -34,6 +34,8 @@ data class HomeCatalogSettingsItem(
     val rowPlacement: HomeCatalogRowPlacement = HomeCatalogRowPlacement.NORMAL,
     val isMergedRow: Boolean = false,
     val mergedRowId: String? = null,
+    /** Hidden only as a standalone row because a merged row already displays this source. */
+    val isHiddenByMergedRow: Boolean = false,
 ) {
     val displayTitle: String
         get() = customTitle.ifBlank { defaultTitle }
@@ -129,7 +131,7 @@ internal data class HomeCatalogSettingsUiState(
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
-                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}:${item.rowPlacement}"
+                    "${item.key}:${item.order}:${item.enabled}:${item.isHiddenByMergedRow}:${item.heroSourceEnabled}:${item.customTitle}:${item.rowPlacement}"
                 }
             )
             append('|')
@@ -951,7 +953,8 @@ object HomeCatalogSettingsRepository {
     fun moveByVisibilityIndex(fromIndex: Int, toIndex: Int, visible: Boolean) {
         ensureLoaded()
         val allItems = _uiState.value.items
-        val groupItems = allItems.filter { it.enabled == visible }
+        fun isHidden(item: HomeCatalogSettingsItem) = !item.enabled || item.isHiddenByMergedRow
+        val groupItems = allItems.filter { isHidden(it) != visible }
         if (fromIndex !in groupItems.indices || toIndex !in groupItems.indices || fromIndex == toIndex) return
         val fromItem = groupItems[fromIndex]
         val toItem = groupItems[toIndex]
@@ -972,7 +975,7 @@ object HomeCatalogSettingsRepository {
         }) return
 
         val reorderedGroup = groupItems.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-        val otherItems = allItems.filter { it.enabled != visible }
+        val otherItems = allItems.filter { isHidden(it) == visible }
         val orderedItems = if (visible) reorderedGroup + otherItems else otherItems + reorderedGroup
         persistVisibleOrder(orderedItems.map { it.key })
         enforcePinnedCollectionsAtTop()
@@ -1152,6 +1155,10 @@ object HomeCatalogSettingsRepository {
 
     private fun publish() {
         val collectionMap = collectionDefinitions.associateBy { it.key }
+        val hiddenByMergedRowKeys = mergedRows.asSequence()
+            .filter { it.hideIncludedRows }
+            .flatMap { it.sourceKeys.asSequence() }
+            .toSet()
         val catalogItems = definitions
             .map { definition ->
                 val preference = preferences[definition.key]
@@ -1168,6 +1175,7 @@ object HomeCatalogSettingsRepository {
                     // Add-on ordering is now controlled by the separate Add-ons Row Order section.
                     // Do not let legacy group modes block individual row pinning or reordering.
                     addonLayoutMode = HomeAddonLayoutMode.NORMAL,
+                    isHiddenByMergedRow = definition.key in hiddenByMergedRowKeys,
                 )
             }
 

@@ -148,8 +148,8 @@ internal fun LazyListScope.homescreenSettingsContent(
     isCatalogLoading: Boolean,
     catalogErrorMessage: String?,
 ) {
-    val visibleItems = items.filter { it.enabled }
-    val hiddenItems = items.filterNot { it.enabled }
+    val visibleItems = items.filter { it.enabled && !it.isHiddenByMergedRow }
+    val hiddenItems = items.filter { !it.enabled || it.isHiddenByMergedRow }
     val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
     val enabledCatalogCount = visibleItems.size
     val showHeroTrailerPlaybackSetting = AppFeaturePolicy.heroTrailerPlaybackSupported &&
@@ -871,11 +871,13 @@ private fun HomescreenCatalogList(
     var expandedKey by remember { mutableStateOf<String?>(null) }
     val hapticFeedback = LocalHapticFeedback.current
     val lazyListState = rememberLazyListState()
+    val latestItems by rememberUpdatedState(items)
     val reorderableLazyListState = rememberReorderableLazyListState(
         lazyListState = lazyListState,
     ) { from, to ->
-        val fromItem = items.getOrNull(from.index)
-        val toItem = items.getOrNull(to.index)
+        val currentItems = latestItems
+        val fromItem = currentItems.getOrNull(from.index)
+        val toItem = currentItems.getOrNull(to.index)
         fun pinSection(item: HomeCatalogSettingsItem?): HomeCatalogRowPlacement? = when {
             item == null -> null
             item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP ||
@@ -891,21 +893,21 @@ private fun HomescreenCatalogList(
             return@rememberReorderableLazyListState
         }
         val rangeStart = minOf(from.index, to.index).coerceAtLeast(0)
-        val rangeEnd = maxOf(from.index, to.index).coerceAtMost(items.lastIndex)
-        val crossesPinnedSection = rangeStart <= rangeEnd && items
+        val rangeEnd = maxOf(from.index, to.index).coerceAtMost(currentItems.lastIndex)
+        val crossesPinnedSection = rangeStart <= rangeEnd && currentItems
             .subList(rangeStart, rangeEnd + 1)
             .any { pinSection(it) != fromSection }
         if (crossesPinnedSection) {
             onPinnedDragAttempt()
             return@rememberReorderableLazyListState
         }
-        val crossesManagedGroup = rangeStart <= rangeEnd && items
+        val crossesManagedGroup = rangeStart <= rangeEnd && currentItems
             .subList(rangeStart, rangeEnd + 1)
             .any { it.addonId != null && it.addonLayoutMode != HomeAddonLayoutMode.NORMAL }
         val staysInsideSameManagedGroup = fromItem?.addonId != null &&
             fromItem.addonId == toItem?.addonId &&
             fromItem.addonLayoutMode != HomeAddonLayoutMode.NORMAL &&
-            rangeStart <= rangeEnd && items.subList(rangeStart, rangeEnd + 1).all {
+            rangeStart <= rangeEnd && currentItems.subList(rangeStart, rangeEnd + 1).all {
                 it.addonId == fromItem.addonId && it.addonLayoutMode != HomeAddonLayoutMode.NORMAL
             }
         // A managed dynamic group can be reordered internally, but cannot be dragged out
