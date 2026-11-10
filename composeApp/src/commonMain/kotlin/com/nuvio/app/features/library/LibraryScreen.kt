@@ -276,7 +276,9 @@ fun LibraryScreen(
         selectedTypeName?.let { runCatching { CloudLibraryItemType.valueOf(it) }.getOrNull() }
     }
     var selectedCloudItemKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var showTorboxConnectDialog by rememberSaveable { mutableStateOf(false) }\n    var telegramEntries by remember { mutableStateOf<List<TelegramLibraryEntry>>(emptyList()) }\n    var telegramSearch by rememberSaveable { mutableStateOf("") }
+    var showTorboxConnectDialog by rememberSaveable { mutableStateOf(false) }
+    var telegramEntries by remember { mutableStateOf<List<TelegramLibraryEntry>>(emptyList()) }
+    var telegramSearch by rememberSaveable { mutableStateOf("") }
     val torboxConnected = cloudSettings.apiKeyFor(DebridProviders.TORBOX_ID).isNotBlank()
     var selectedLibrarySectionKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedLibraryType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -422,7 +424,13 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(sourceMode) {\n        if (sourceMode == LibraryViewMode.Telegram) {\n            telegramEntries = TelegramIntegrationBridge.indexedMedia()\n        }\n    }\n\n    LaunchedEffect(sourceMode, serversUiState.revision, serverShelvesRequest) {
+    LaunchedEffect(sourceMode) {
+        if (sourceMode == LibraryViewMode.Telegram) {
+            telegramEntries = TelegramIntegrationBridge.indexedMedia()
+        }
+    }
+
+    LaunchedEffect(sourceMode, serversUiState.revision, serverShelvesRequest) {
         if (sourceMode == LibraryViewMode.Servers) serverShelves = loadServerShelves()
     }
 
@@ -537,7 +545,14 @@ fun LibraryScreen(
                             )
                         }
                     }
-                    if (sourceMode == LibraryViewMode.Telegram) {\n                telegramLibraryContent(\n                    entries = telegramEntries,\n                    searchQuery = telegramSearch,\n                    onSearchQueryChange = { telegramSearch = it },\n                    onRefresh = { telegramEntries = TelegramIntegrationBridge.indexedMedia() },\n                )\n            } else if (sourceMode == LibraryViewMode.Cloud) {
+                    if (sourceMode == LibraryViewMode.Telegram) {
+                telegramLibraryContent(
+                    entries = telegramEntries,
+                    searchQuery = telegramSearch,
+                    onSearchQueryChange = { telegramSearch = it },
+                    onRefresh = { telegramEntries = TelegramIntegrationBridge.indexedMedia() },
+                )
+            } else if (sourceMode == LibraryViewMode.Cloud) {
                         val cloudSearchLabel = stringResource(Res.string.cloud_library_search_label)
                         IconButton(
                             onClick = {
@@ -3281,6 +3296,7 @@ private fun isoEpochDay(date: String): Long {
 private enum class LibraryViewMode {
     Saved,
     Cloud,
+    Telegram,
     Servers,
 }
 
