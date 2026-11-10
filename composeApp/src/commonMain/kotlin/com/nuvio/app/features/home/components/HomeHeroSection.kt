@@ -136,7 +136,6 @@ private const val MOBILE_PORTRAIT_HERO_WIDTH_RATIO = 1.5f
 private const val MOBILE_HERO_MIN_HEIGHT_DP = 360f
 private const val MOBILE_HERO_MAX_HEIGHT_DP = 760f
 private const val TABLET_LANDSCAPE_HERO_HEIGHT_MULTIPLIER = 1.5f
-private const val HERO_TITLE_LOGO_MIN_ASPECT_RATIO = 1.8f
 
 internal object HomeHeroTrailerPlaybackController {
     private var stopCallback: (() -> Unit)? = null
@@ -898,8 +897,8 @@ private fun HeroContentBlock(
     onItemClick: ((MetaPreview) -> Unit)?,
     onItemLongClick: ((MetaPreview) -> Unit)? = null,
 ) {
-    var logoIsLandscape by remember(item.type, item.id, item.logo) {
-        mutableStateOf<Boolean?>(null)
+    var logoLoadError by remember(item.type, item.id, item.logo) {
+        mutableStateOf(false)
     }
     val logoUrl = item.logo?.takeIf { it.isNotBlank() }
 
@@ -909,31 +908,19 @@ private fun HeroContentBlock(
             .animateContentSize(),
         horizontalAlignment = if (layout.isTablet || showNetflixActions) Alignment.Start else Alignment.CenterHorizontally,
     ) {
-        if (logoUrl != null && logoIsLandscape != false) {
+        if (logoUrl != null && !logoLoadError) {
             AsyncImage(
                 model = logoUrl,
                 contentDescription = item.name,
                 modifier = Modifier
                     .fillMaxWidth(layout.logoWidthFraction)
                     .aspectRatio(2.6f)
-                    .graphicsLayer {
-                        // Keep unvalidated artwork invisible until its intrinsic dimensions
-                        // confirm it is a wide title logo; this prevents a portrait poster
-                        // flashing in the logo slot while Coil finishes decoding it.
-                        alpha = if (logoIsLandscape == true) 1f else 0f
-                    }
-                    .clickable(enabled = onItemClick != null && logoIsLandscape == true) {
+                    .clickable(enabled = onItemClick != null) {
                         onItemClick?.invoke(item)
                     },
                 alignment = if (layout.isTablet || showNetflixActions) Alignment.CenterStart else Alignment.Center,
                 contentScale = ContentScale.Fit,
-                onSuccess = { state ->
-                    val imageWidth = state.result.image.width
-                    val imageHeight = state.result.image.height
-                    logoIsLandscape = imageHeight > 0 &&
-                        imageWidth.toFloat() / imageHeight.toFloat() >= HERO_TITLE_LOGO_MIN_ASPECT_RATIO
-                },
-                onError = { logoIsLandscape = false },
+                onError = { logoLoadError = true },
             )
         } else {
             Text(
