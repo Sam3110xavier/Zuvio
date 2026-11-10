@@ -270,6 +270,16 @@ private fun TelegramSettingsContent(isTablet: Boolean) {
                         "${state.selectedChatIds.size} source(s) selected",
                         style = MaterialTheme.typography.labelMedium,
                     )
+                    OutlinedButton(
+                        onClick = { scope.launch { TelegramIntegrationBridge.indexSelectedChats() } },
+                        enabled = state.selectedChatIds.isNotEmpty() && !state.isBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (state.indexedFileCount > 0) "Build / update media index" else "Build media index") }
+                    Text(
+                        "${state.indexedFileCount} media files indexed · ${state.indexStatus}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

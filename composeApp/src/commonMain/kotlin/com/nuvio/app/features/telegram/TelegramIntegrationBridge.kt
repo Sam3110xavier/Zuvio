@@ -26,6 +26,8 @@ data class TelegramIntegrationSnapshot(
     val chats: List<TelegramChatSource> = emptyList(),
     val selectedChatIds: Set<Long> = emptySet(),
     val cacheSizeBytes: Long = 0L,
+    val indexedFileCount: Int = 0,
+    val indexStatus: String = "Not indexed yet",
 )
 
 interface TelegramPlatformAdapter {
@@ -40,6 +42,7 @@ interface TelegramPlatformAdapter {
     suspend fun refreshChats()
     suspend fun addChatSource(identifier: String): Boolean
     suspend fun toggleChatSource(chatId: Long, selected: Boolean)
+    suspend fun indexSelectedChats()
     suspend fun clearCache()
     suspend fun disconnect()
     suspend fun resolveStreams(
@@ -108,6 +111,10 @@ object TelegramIntegrationBridge {
 
     suspend fun toggleChatSource(chatId: Long, selected: Boolean) {
         adapter?.toggleChatSource(chatId, selected)
+    }
+
+    suspend fun indexSelectedChats() {
+        adapter?.indexSelectedChats()
     }
 
     suspend fun clearCache() {
