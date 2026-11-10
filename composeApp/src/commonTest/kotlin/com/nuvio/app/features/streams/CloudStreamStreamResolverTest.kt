@@ -127,6 +127,74 @@ class CloudStreamStreamResolverTest {
         assertEquals("episode-s1e1", selected)
     }
 
+
+    @Test
+    fun `matches a small title typo without accepting unrelated titles`() {
+        val matches = listOf(
+            searchItem(name = "Invincibl", year = 2021),
+            searchItem(name = "Atom Eve", year = 2021),
+        ).bestCloudStreamMatches(
+            CloudStreamSearchRequest(title = "Invincible", type = "movie", year = 2021),
+        )
+
+        assertEquals(listOf("Invincibl"), matches.map { it.name })
+    }
+
+    @Test
+    fun `allows one year of provider release metadata variance`() {
+        val matches = listOf(
+            searchItem(name = "Dune", year = 2020),
+        ).bestCloudStreamMatches(
+            CloudStreamSearchRequest(title = "Dune", type = "movie", year = 2021),
+        )
+
+        assertEquals(1, matches.size)
+    }
+
+    @Test
+    fun `maps anime tracker IDs to absolute episode numbers`() {
+        assertEquals(
+            null to 68,
+            cloudStreamEpisodeCoordinates("mal:63375:68", season = 2, episode = 10),
+        )
+        assertEquals(
+            null to 12,
+            cloudStreamEpisodeCoordinates("anilist:12345:12", season = 1, episode = 12),
+        )
+        assertEquals(
+            2 to 10,
+            cloudStreamEpisodeCoordinates("tmdb:12345:2:10", season = 2, episode = 10),
+        )
+    }
+
+    @Test
+    fun `rejects malformed anime tracker IDs`() {
+        assertEquals(null, absoluteCloudStreamAnimeEpisodeNumber("mal::68"))
+        assertEquals(null, absoluteCloudStreamAnimeEpisodeNumber("mal:63375:0"))
+        assertEquals(null, absoluteCloudStreamAnimeEpisodeNumber("tmdb:12345:2:10"))
+    }
+
+    @Test
+    fun `prefers seasonless entry for absolute episode lookup`() {
+        val loaded = CloudStreamLoadItem(
+            providerId = "test-provider",
+            data = "series-data",
+            name = "Anime",
+            type = CloudStreamTvType.Anime,
+            episodes = listOf(
+                CloudStreamEpisode(data = "s2e10", name = "Episode 10", season = 2, episode = 10),
+                CloudStreamEpisode(data = "absolute-68", name = "Episode 68", season = null, episode = 68),
+                CloudStreamEpisode(data = "s1e68", name = "Episode 68", season = 1, episode = 68),
+            ),
+        )
+
+        val selected = loaded.linkDataForCloudStreamRequest(
+            CloudStreamSearchRequest(title = "Anime", type = "series", season = null, episode = 68),
+        )
+
+        assertEquals("absolute-68", selected)
+    }
+
     private fun searchItem(
         name: String,
         year: Int? = null,
