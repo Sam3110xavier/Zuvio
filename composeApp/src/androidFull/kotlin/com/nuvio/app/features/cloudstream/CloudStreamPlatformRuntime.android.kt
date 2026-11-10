@@ -178,6 +178,7 @@ internal actual object CloudStreamPlatformRuntime {
         val providersBefore = APIHolder.allProviders.toSet()
         val extractorsBefore = extractorApis.toSet()
         var instance: BasePlugin? = null
+        var fallbackExtractorsAdded: List<ExtractorApi> = emptyList()
         PluginManager.currentlyLoading = item.metadata.internalName
         try {
             val declaredPluginClass = declaredPluginClassName?.let { className ->
@@ -211,7 +212,6 @@ internal actual object CloudStreamPlatformRuntime {
             var registeredExtractors = extractorApis
                 .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
-            var fallbackExtractorsAdded = emptyList<ExtractorApi>()
             if (registeredExtractors.isEmpty()) {
                 // Some extensions package ExtractorApi classes but do not register them
                 // through BasePlugin.load(). Discover those classes as a last resort.
