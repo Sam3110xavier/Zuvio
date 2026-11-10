@@ -1268,22 +1268,20 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
-                                    if (
-                                        section.isMergedRow &&
-                                        section.sourceTabs.size > 1 &&
-                                        (!isHomeScrolling || isHomeScrollingUp)
-                                    ) {
+                                    if (section.isMergedRow && section.sourceTabs.size > 1) {
                                         stickyHeader(
                                             key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
                                             contentType = "merged_row_tabs",
                                         ) {
-                                            MergedHomeRowTabSelector(
-                                                tabs = section.sourceTabs,
-                                                selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                    ?: section.sourceTabs.firstOrNull()?.key,
-                                                sectionPadding = homeSectionPadding,
-                                                onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                            )
+                                            if (!isHomeScrolling || isHomeScrollingUp) {
+                                                MergedHomeRowTabSelector(
+                                                    tabs = section.sourceTabs,
+                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                        ?: section.sourceTabs.firstOrNull()?.key,
+                                                    sectionPadding = homeSectionPadding,
+                                                    onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
+                                                )
+                                            }
                                         }
                                     }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
