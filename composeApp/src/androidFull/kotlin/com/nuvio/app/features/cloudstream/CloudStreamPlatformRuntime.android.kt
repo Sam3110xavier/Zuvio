@@ -83,26 +83,34 @@ internal actual object CloudStreamPlatformRuntime {
         else -> null
     }
 
-    actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
-        if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex) return null
+    private suspend fun loadPluginIfNeeded(plugin: CloudStreamPluginItem): LoadedPlugin? {
+        if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex || !plugin.isInstalled) {
+            return null
+        }
         return withContext(Dispatchers.IO) {
             loadMutex.withLock {
                 synchronized(loadedLock) {
-                    loaded[plugin.metadata.id.value]?.provider
-                        ?: loadPlugin(plugin).also { loaded[plugin.metadata.id.value] = it }.provider
+                    loaded[plugin.metadata.id.value]
+                        ?: loadPlugin(plugin).also { loaded[plugin.metadata.id.value] = it }
                 }
             }
         }
     }
 
+    actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
+        val loadedPlugin = loadPluginIfNeeded(plugin) ?: return null
+        // Settings-only and extractor-only plugins are loadable, but must not be
+        // advertised as catalogue providers when they registered no MainAPI.
+        return loadedPlugin.provider.takeIf { loadedPlugin.providers.isNotEmpty() }
+    }
+
     actual suspend fun hasSettings(plugin: CloudStreamPluginItem): Boolean {
-        if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex || !plugin.isInstalled) {
-            return false
-        }
+        if (!plugin.isInstalled) return false
         return try {
-            provider(plugin)
-            val instance = synchronized(loadedLock) { loaded[plugin.metadata.id.value]?.instance }
-            (instance as? Plugin)?.openSettings != null
+            // Load the plugin independently of catalogue-provider availability:
+            // CloudStream exposes settings through Plugin.openSettings.
+            val loadedPlugin = loadPluginIfNeeded(plugin) ?: return false
+            (loadedPlugin.instance as? Plugin)?.openSettings != null
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             log.w(error) { "Could not inspect CloudStream settings capability id=${plugin.metadata.id.value}" }
