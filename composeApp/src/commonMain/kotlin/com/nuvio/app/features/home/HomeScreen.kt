@@ -1,6 +1,8 @@
 package com.nuvio.app.features.home
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.stopScroll
@@ -16,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -54,6 +57,7 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
+import com.nuvio.app.features.home.components.MergedHomeRowTabSelector
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
@@ -119,6 +123,7 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -158,6 +163,26 @@ fun HomeScreen(
     val homeListState = rememberLazyListState()
     val continueWatchingListState = rememberLazyListState()
     val upcomingListState = rememberLazyListState()
+    val mergedRowSelectedTabs = remember { mutableStateMapOf<String, String>() }
+    var isHomeScrollingUp by remember { mutableStateOf(false) }
+    LaunchedEffect(homeListState) {
+        var previousPosition: Pair<Int, Int>? = null
+        snapshotFlow {
+            Triple(
+                homeListState.firstVisibleItemIndex,
+                homeListState.firstVisibleItemScrollOffset,
+                homeListState.isScrollInProgress,
+            )
+        }.collect { (index, offset, isScrolling) ->
+            val currentPosition = index to offset
+            val previous = previousPosition
+            if (isScrolling && previous != null && currentPosition != previous) {
+                val movingDown = index > previous.first || (index == previous.first && offset > previous.second)
+                isHomeScrollingUp = !movingDown
+            }
+            previousPosition = currentPosition
+        }
+    }
     ScreenActivityEffect(homeListState, continueWatchingListState, upcomingListState) { active ->
         if (!active) {
             homeListState.stopScroll(MutatePriority.PreventUserInput)
@@ -1241,10 +1266,29 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
+                                    if (section.isMergedRow && section.sourceTabs.size > 1) {
+                                        stickyHeader(
+                                            key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
+                                            contentType = "merged_row_tabs",
+                                        ) {
+                                            if (isHomeScrollingUp) {
+                                                MergedHomeRowTabSelector(
+                                                    tabs = section.sourceTabs,
+                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                        ?: section.sourceTabs.firstOrNull()?.key,
+                                                    sectionPadding = homeSectionPadding,
+                                                    onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
+                                                )
+                                            }
+                                        }
+                                    }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
                                         HomeCatalogRowSection(
                                             section = section,
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                            selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                ?: section.sourceTabs.firstOrNull()?.key,
+                                            onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
                                             onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
