@@ -43,6 +43,8 @@ import nuvio.composeapp.generated.resources.settings_advanced_debugging_clear_lo
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_copy_logs
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_copy_logs_description
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_empty
+import nuvio.composeapp.generated.resources.settings_debug_logs_export_title
+import nuvio.composeapp.generated.resources.settings_debug_logs_export_description
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_all
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_category
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_level
@@ -136,9 +138,9 @@ private fun DebugLogsSection(isTablet: Boolean) {
             )
             SettingsGroupDivider(isTablet = isTablet)
             SettingsNavigationRow(
-                title = stringResource(Res.string.settings_advanced_debugging_export),
+                title = stringResource(Res.string.settings_debug_logs_export_title),
                 description = stringResource(
-                    Res.string.settings_advanced_debugging_export_description,
+                    Res.string.settings_debug_logs_export_description,
                     filteredEntries.size,
                     savedCrashReportCount,
                 ),
