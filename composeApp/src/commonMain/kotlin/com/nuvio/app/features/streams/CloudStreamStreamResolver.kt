@@ -319,7 +319,7 @@ internal fun com.nuvio.app.features.cloudstream.CloudStreamLoadItem.matchesCloud
         .toSet()
     val titleMatches = cloudStreamTitleMatches(name, requestedTitles)
     val loadedYear = year ?: cloudStreamYear(name)
-    if (request.year != null && loadedYear != request.year) return false
+    if (request.year != null && loadedYear != null && loadedYear != request.year) return false
     val safeExternalIdFallback = !request.externalId.isNullOrBlank() &&
         (request.year == null || loadedYear == null || loadedYear == request.year)
     return titleMatches || safeExternalIdFallback
