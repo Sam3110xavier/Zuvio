@@ -2069,6 +2069,7 @@
     <string name="auth_account_deletion_failed">Account deletion failed</string>
     <string name="auth_sign_in_failed">Sign-in failed</string>
     <string name="auth_sign_out_failed">Sign-out failed</string>
+    <string name="auth_notice_signed_out">You have been signed out of Nuvio. Please sign in again.</string>
     <string name="auth_sign_up_failed">Sign-up failed</string>
     <string name="catalog_load_failed">Unable to load catalog items.</string>
     <string name="continue_watching_up_next">Next Up</string>
@@ -2784,7 +2785,7 @@
     <string name="settings_nav_bar_position_bottom">Bottom</string>
     <string name="settings_nav_bar_position_top">Top</string>
     <string name="settings_appearance_liquid_glass_effects">Liquid glass effects</string>
-    <string name="settings_appearance_liquid_glass_effects_description">Glass on the navigation bar, sheets, player controls and cinematic screens. Turn off for solid surfaces.</string>
+    <string name="settings_appearance_liquid_glass_effects_description">Live glass on the navigation bar, sheets, player controls and cinematic screens. Off by default with Glass UI, which then uses lighter static glass; otherwise off gives solid surfaces.</string>
     <string name="settings_nav_bar_glass">Liquid glass</string>
     
     <string name="settings_nav_bar_glass_material_liquid">Liquid</string>
