@@ -54,6 +54,12 @@ import com.kyant.backdrop.isRenderEffectSupported
 import com.kyant.backdrop.isRuntimeShaderSupported
 import com.kyant.backdrop.shadow.Shadow
 
+/**
+ * Liquid Glass (Kyant backdrop) re-captures and blurs the content behind every glass surface,
+ * which costs several hundred MB on iOS. When Glass UI (app background) is active, the default is
+ * its static glass (the pre-blurred background slice) on every platform; Liquid Glass stays
+ * available as an explicit opt-in. [userChoice] is the stored setting, null when never changed.
+ */
 object LiquidGlassSettings {
     var userChoice: Boolean? by mutableStateOf(null)
     var glassUiActive: Boolean by mutableStateOf(false)
@@ -281,6 +287,8 @@ internal fun Modifier.liquidGlassSurface(
     backdropOpacity: Float = 1f,
 ): Modifier =
     if (backdrop == null || !isLiquidGlassSupported()) {
+        // Static Glass UI: when an app background with Glass UI is active, show its pre-blurred
+        // slice behind the fallback tint (no-op otherwise).
         val staticGlass = clip(shape).composed { appGlassBackdrop(shape) }
         if (fallbackBrush != null) staticGlass.background(fallbackBrush) else staticGlass.background(fallback)
     } else {

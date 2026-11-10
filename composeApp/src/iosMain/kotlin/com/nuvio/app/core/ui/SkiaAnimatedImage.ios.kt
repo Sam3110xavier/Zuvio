@@ -382,6 +382,7 @@ private class SharedAnimation(
     val key: String,
     animation: AnimationFrames,
 ) {
+    /** Null once dropped for playback; the frames are then free to be collected. */
     var animation: AnimationFrames? = animation
     var refCount: Int = 0
     var job: Job? = null
@@ -395,10 +396,17 @@ private val pending = mutableMapOf<String, Deferred<SharedAnimation?>>()
 private var budgetUsedBytes = 0L
 private var animationsPaused = false
 
+/**
+ * While a player is open (> 0) every decoded animation is dropped and no new one is decoded: the
+ * screens underneath stay composed but are not visible, and their frames (up to the 120 MB budget
+ * plus GPU textures) are the headroom 4K HDR/DV playback needs. Bumping [playbackGeneration] on
+ * resume makes visible composables acquire (decode from the disk cache) again.
+ */
 private var playbackSuspensions = 0
 private val playbackGeneration = mutableStateOf(0)
 
 internal fun suspendAnimatedImagesForPlayback() {
+    // A resume still waiting from the previous player is superseded by this one.
     pendingResume?.cancel()
     pendingResume = null
     playbackSuspensions++
@@ -426,6 +434,12 @@ internal fun suspendAnimatedImagesForPlayback() {
 private const val ResumeAfterPlaybackDelayMillis = 3_000L
 private var pendingResume: Job? = null
 
+/**
+ * Re-decoding right away crashed the app on closing a 4K player: the mpv core is torn down
+ * asynchronously (~1 s) and the screen underneath reloads its images at the same moment, so up to
+ * 120 MB of GIF frames landed on top of a still-alive 4K player. Wait a few seconds, and decode
+ * at most [MaxConcurrentDecodes] animations at a time.
+ */
 internal fun resumeAnimatedImagesAfterPlayback() {
     if (playbackSuspensions == 0) return
     playbackSuspensions--
@@ -438,6 +452,7 @@ internal fun resumeAnimatedImagesAfterPlayback() {
     }
 }
 
+/** True while a player is open or the post-playback grace period has not ended. */
 private val animationsHeldForPlayback: Boolean
     get() = playbackSuspensions > 0 || pendingResume?.isActive == true
 private var lifecycleObserversInstalled = false
@@ -561,6 +576,7 @@ private fun startIfNeeded(shared: SharedAnimation) {
 private fun releaseShared(shared: SharedAnimation) {
     shared.refCount--
     if (shared.refCount > 0) return
+    // Dropped for playback: no longer in the registry, nothing to evict.
     if (shared.animation == null || registry[shared.key] !== shared) return
 
     shared.idleEviction?.cancel()

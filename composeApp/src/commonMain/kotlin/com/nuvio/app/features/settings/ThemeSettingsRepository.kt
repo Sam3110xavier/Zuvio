@@ -397,6 +397,10 @@ object ThemeSettingsRepository {
         _liquidGlassEffectsEnabled.value = LiquidGlassSettings.enabled
     }
 
+    /**
+     * Glass UI (app background) switched on or off. Without an explicit choice, Liquid Glass then
+     * follows its default: off while Glass UI is active (static glass), on otherwise.
+     */
     fun onGlassUiActiveChanged(active: Boolean) {
         if (LiquidGlassSettings.glassUiActive == active) return
         LiquidGlassSettings.glassUiActive = active

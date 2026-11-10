@@ -533,6 +533,10 @@ final class MPVPlayerViewController: UIViewController {
 
     // MARK: - Lifecycle
 
+    // MARK: - Memory diagnostics (debugging jetsam after long sessions)
+
+    private static var livePlayerCount = 0
+
     private final class WeakPlayer {
         weak var value: MPVPlayerViewController?
         init(_ value: MPVPlayerViewController) { self.value = value }
@@ -540,6 +544,9 @@ final class MPVPlayerViewController: UIViewController {
 
     private static var livePlayers: [WeakPlayer] = []
 
+    /// Switching source/episode creates the new player before the old route is gone, so two mpv
+    /// cores (two 4K HDR swapchains) briefly coexist and can exceed the jetsam limit. A full player
+    /// starting up retires every other full player that is not parked in Picture in Picture.
     private func retireOtherPlayers() {
         guard !isEmbeddedPreviewMode else { return }
         let others = Self.livePlayers.compactMap(\.value).filter { other in
@@ -551,15 +558,199 @@ final class MPVPlayerViewController: UIViewController {
         Self.livePlayers.removeAll { $0.value == nil }
         Self.livePlayers.append(WeakPlayer(self))
         for other in others {
+            Self.writeMemoryLog("event=retire player=\(other.memoryDiagnosticsId) by=\(memoryDiagnosticsId)")
             other.destroyPlayer()
         }
+        // A player parked in Picture in Picture is still a full mpv core; starting another one
+        // next to it (4K in PiP + a new film) crossed the jetsam limit. Close the PiP session first.
         if PlayerPictureInPictureParking.shared.hasParkedPlayer {
+            Self.writeMemoryLog("event=retire-parked by=\(memoryDiagnosticsId)")
             PlayerPictureInPictureParking.shared.closeParked()
+        }
+    }
+    private var memoryDiagnosticsTimer: Timer?
+    private let memoryDiagnosticsId = String(UUID().uuidString.prefix(6))
+
+    static func appFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return -1 }
+        return Double(info.phys_footprint) / 1_048_576
+    }
+
+    /// vmmap-style breakdown that works on an installed (non-Xcode) build: task ledgers for
+    /// graphics/media memory plus dirty+compressed bytes per VM user tag, largest first.
+    static func memoryBreakdown() -> String {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        func mb(_ value: UInt64) -> Int { Int(value / 1_048_576) }
+        var parts: [String] = []
+        if kr == KERN_SUCCESS {
+            parts.append("internal=\(mb(info.internal)) compressed=\(mb(info.compressed))")
+            parts.append("purgeableNonVolatile=\(mb(UInt64(max(0, info.ledger_purgeable_nonvolatile + info.ledger_purgeable_novolatile_compressed))))")
+            parts.append("limitRemaining=\(mb(info.limit_bytes_remaining))")
+        }
+
+        var byTag: [UInt32: UInt64] = [:]
+        var address: vm_address_t = 0
+        var size: vm_size_t = 0
+        var depth: natural_t = 0
+        let pageSize = UInt64(vm_kernel_page_size)
+        while true {
+            var region = vm_region_submap_info_data_64_t()
+            var regionCount = mach_msg_type_number_t(MemoryLayout<vm_region_submap_info_data_64_t>.size / MemoryLayout<natural_t>.size)
+            let result = withUnsafeMutablePointer(to: &region) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(regionCount)) {
+                    vm_region_recurse_64(mach_task_self_, &address, &size, &depth, $0, &regionCount)
+                }
+            }
+            if result != KERN_SUCCESS { break }
+            if region.is_submap != 0 {
+                depth += 1
+                continue
+            }
+            let dirty = UInt64(region.pages_dirtied) + UInt64(region.pages_swapped_out)
+            if dirty > 0 { byTag[region.user_tag, default: 0] += dirty * pageSize }
+            address += size
+        }
+        let names: [UInt32: String] = [
+            1: "malloc", 2: "malloc_small", 3: "malloc_large", 4: "malloc_huge", 7: "malloc_tiny",
+            11: "malloc_nano", 12: "malloc_medium", 21: "iokit", 30: "stack", 51: "layerkit",
+            52: "cgimage", 54: "cg_data", 60: "dyld", 66: "glsl", 70: "imageio", 74: "libdispatch",
+            82: "swift_runtime", 88: "iosurface", 90: "audio", 91: "videobitstream",
+            94: "cm_memorypool", 95: "cm_readcache", 100: "ioaccelerator", 106: "cm_hls",
+        ]
+        let top = byTag.sorted { $0.value > $1.value }.prefix(10).map { tag, bytes in
+            "\(names[tag] ?? "tag\(tag)")=\(mb(bytes))"
+        }
+        parts.append("tags[" + top.joined(separator: " ") + "]")
+        parts.append(MemoryHintsKt.memoryHints())
+        return parts.joined(separator: " ")
+    }
+
+    private func logMemory(_ event: String) {
+        var details = "event=\(event) player=\(memoryDiagnosticsId) live=\(Self.livePlayerCount) " +
+            String(format: "footprint=%.0fMB", Self.appFootprintMB())
+        if isViewLoaded {
+            let layerSize = metalLayer.bounds.size
+            let drawable = metalLayer.drawableSize
+            details += " view=\(Int(view.bounds.width))x\(Int(view.bounds.height))" +
+                " inWindow=\(view.window != nil) host=\(parent.map { String(describing: type(of: $0)) } ?? "-")" +
+                " hostView=\(Int(parent?.view.bounds.width ?? -1))x\(Int(parent?.view.bounds.height ?? -1))" +
+                " layerAttached=\(metalLayer.superlayer != nil) layer=\(Int(layerSize.width))x\(Int(layerSize.height))" +
+                " drawable=\(Int(drawable.width))x\(Int(drawable.height)) hidden=\(view.isHidden || metalLayer.isHidden)" +
+                " ext=\(externallyManagedViewSize.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-")"
+        }
+        if mpv != nil {
+            details += " hwdec=\(getString("hwdec-current") ?? "-")" +
+                " demuxCacheSec=\(String(format: "%.0f", getDouble("demuxer-cache-duration")))" +
+                " size=\(getInt("width"))x\(getInt("height"))"
+        }
+        if event == "create" || event == "destroy" || event == "deinit" || event == "tick" || event.hasPrefix("startup") {
+            details += " " + Self.memoryBreakdown()
+        }
+        Self.writeMemoryLog(details)
+    }
+
+    /// Written to Documents/Diagnostics/mpv-memory.log (visible in the Files app) instead of the
+    /// in-app log, whose ring buffer is flooded by other tags during long sessions.
+    private static let memoryLogQueue = DispatchQueue(label: "nuvio.mpv-memory-log")
+    private static let memoryLogMaxBytes = 2 * 1024 * 1024
+
+    static func writeMemoryLog(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        memoryLogQueue.async {
+            let fm = FileManager.default
+            guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+            let dir = docs.appendingPathComponent("Diagnostics", isDirectory: true)
+            let url = dir.appendingPathComponent("mpv-memory.log")
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int, size > memoryLogMaxBytes {
+                let old = dir.appendingPathComponent("mpv-memory.old.log")
+                try? fm.removeItem(at: old)
+                try? fm.moveItem(at: url, to: old)
+            }
+            guard let data = line.data(using: .utf8) else { return }
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            } else {
+                try? data.write(to: url)
+            }
+        }
+    }
+
+    /// After destroy the controller should be released within seconds. If it is still alive,
+    /// record where it still hangs in the UIKit hierarchy to find what retains it.
+    private func scheduleLeakCheck() {
+        let id = memoryDiagnosticsId
+        for delay in [15.0, 60.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                var parents: [String] = []
+                var parent = self.parent
+                while let current = parent {
+                    parents.append(String(describing: type(of: current)))
+                    parent = current.parent
+                }
+                var supers: [String] = []
+                var superview = self.viewIfLoaded?.superview
+                while let current = superview, supers.count < 8 {
+                    supers.append(String(describing: type(of: current)))
+                    superview = current.superview
+                }
+                Self.writeMemoryLog(
+                    "event=still-alive after=\(Int(delay))s player=\(id) live=\(Self.livePlayerCount) " +
+                        "inWindow=\(self.viewIfLoaded?.window != nil) " +
+                        "parents=[\(parents.joined(separator: ">"))] supers=[\(supers.joined(separator: ">"))] " +
+                        String(format: "footprint=%.0fMB", Self.appFootprintMB())
+                )
+            }
+        }
+    }
+
+    private func startMemoryDiagnostics() {
+        // Dense samples while the first frames, GPU resources and demuxer cache are set up.
+        for delay in [2.0, 5.0, 10.0, 20.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.memoryDiagnosticsTimer != nil else { return }
+                self.logMemory("startup+\(Int(delay))s")
+            }
+        }
+        memoryDiagnosticsTimer?.invalidate()
+        memoryDiagnosticsTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            self?.logMemory("tick")
+        }
+    }
+
+    deinit {
+        memoryDiagnosticsTimer?.invalidate()
+        let id = memoryDiagnosticsId
+        DispatchQueue.main.async {
+            Self.livePlayerCount -= 1
+            Self.writeMemoryLog(
+                "event=deinit player=\(id) live=\(Self.livePlayerCount) " +
+                    String(format: "footprint=%.0fMB", Self.appFootprintMB())
+            )
         }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        Self.livePlayerCount += 1
+        logMemory("create")
+        startMemoryDiagnostics()
         view.backgroundColor = .black
         view.layer.masksToBounds = true
 
@@ -794,6 +985,7 @@ final class MPVPlayerViewController: UIViewController {
         setSetupOption("gpu-context", "moltenvk")
         setSetupOption("hwdec", "videotoolbox")
         setSetupOption("hwdec-software-fallback", "300")
+        setSetupOption("hwdec-extra-frames", "3")
         setSetupOption("hwdec-extra-frames", Self.isMemoryConstrained ? "1" : "3")
         setSetupOption("ao", Self.defaultAudioOutput)
         setSetupOption("audio-exclusive", "yes")
@@ -1916,8 +2108,14 @@ final class MPVPlayerViewController: UIViewController {
     }
 
     func destroyPlayer() {
+        // May already have been retired early by a newer player (see retireOtherPlayers); a second
+        // pass would deactivate the audio session the new player just activated.
         guard !isPlayerDestroyed else { return }
         Self.livePlayers.removeAll { $0.value == nil || $0.value === self }
+        memoryDiagnosticsTimer?.invalidate()
+        memoryDiagnosticsTimer = nil
+        logMemory("destroy")
+        scheduleLeakCheck()
         pictureInPictureController?.invalidate()
         pictureInPictureController = nil
         NotificationCenter.default.removeObserver(self)
@@ -2929,6 +3127,8 @@ final class MPVPlayerViewController: UIViewController {
 
 // MARK: - Host (what Compose holds)
 
+/// Thin container handed to Compose. It forwards the status bar, home indicator and edge-gesture
+/// preferences to the player and lets go of it in `detachPlayer()`.
 final class PlayerHostViewController: UIViewController {
     private var player: MPVPlayerViewController?
 
@@ -2947,6 +3147,10 @@ final class PlayerHostViewController: UIViewController {
         view.backgroundColor = .black
         guard let player else { return }
         addChild(player)
+        // No autoresizing: the player also sizes its own view from the size Compose reports
+        // (applyExternallyManagedViewSize), and autoresizing applied the rotation delta a second
+        // time (390x844 -> 1298x0). With masksToBounds the video was clipped away: blank picture
+        // on the first play after rotating to landscape. The host owns the frame instead.
         player.view.autoresizingMask = []
         player.view.frame = view.bounds
         view.addSubview(player.view)
@@ -2993,6 +3197,7 @@ final class MPVPlayerBridgeCreator: NSObject, NuvioPlayerBridgeCreator {
     func closeParkedPictureInPicture() {
         DispatchQueue.main.async {
             guard PlayerPictureInPictureParking.shared.hasParkedPlayer else { return }
+            MPVPlayerViewController.writeMemoryLog("event=close-parked reason=streams")
             PlayerPictureInPictureParking.shared.closeParked()
         }
     }

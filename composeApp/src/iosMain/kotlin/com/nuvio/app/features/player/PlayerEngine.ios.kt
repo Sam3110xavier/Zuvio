@@ -82,6 +82,7 @@ actual fun PlatformPlayerSurface(
     var subtitleText by remember(sourceUrl) { mutableStateOf("") }
     var subtitleStyle by remember { mutableStateOf(SubtitleStyleState.DEFAULT) }
 
+    // Make room for the player's GPU/decoder memory (4K HDR/DV needs well over 1 GB).
     LaunchedEffect(Unit) { trimImageMemoryForPlayback() }
     DisposableEffect(Unit) { onDispose { collectAfterPlayback() } }
     val bridge = remember {

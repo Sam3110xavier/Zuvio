@@ -10,6 +10,11 @@ import platform.UIKit.UIApplicationDidReceiveMemoryWarningNotification
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPhone
 
+/**
+ * Coil's default memory cache on iOS is a share of the device's physical RAM (well over 1 GB on
+ * 8 GB iPhones). Images alone kept the app at 1.1-1.4 GB, leaving too little headroom under the
+ * ~2.3 GB jetsam limit for a 4K HDR/DV player. Cap it and give memory back on warnings.
+ */
 private const val IosImageMemoryCacheBytes = 256L * 1024 * 1024
 private const val IosPhoneImageMemoryCacheBytes = 160L * 1024 * 1024
 private const val IosImageMemoryCacheDuringPlaybackBytes = 64L * 1024 * 1024
@@ -43,6 +48,11 @@ private fun installMemoryWarningObserver() {
     }
 }
 
+/**
+ * Called when a player starts: decoded posters/backdrops are cheap to reload afterwards, and a
+ * full Kotlin GC returns garbage the scheduler has not collected yet (the Kotlin heap, VM tag 246,
+ * held 380-490 MB before playback in the memory logs).
+ */
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
 fun trimImageMemoryForPlayback() {
     val memoryCache = SingletonImageLoader.get(PlatformContext.INSTANCE).memoryCache
@@ -52,6 +62,7 @@ fun trimImageMemoryForPlayback() {
     if (isPhone) kotlin.native.runtime.GC.collect()
 }
 
+/** After a player is gone its Kotlin-side state (snapshots, track lists, bridges) is garbage. */
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
 fun collectAfterPlayback() {
     kotlin.native.runtime.GC.collect()
