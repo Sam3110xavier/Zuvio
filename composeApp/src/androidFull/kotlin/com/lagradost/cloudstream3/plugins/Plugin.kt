@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.plugins
 
+import android.app.Activity
 import android.content.Context
 import android.content.res.Resources
 import com.lagradost.cloudstream3.actions.VideoClickAction
@@ -7,9 +8,19 @@ import com.lagradost.cloudstream3.actions.VideoClickActionHolder
 
 /** Android host ABI used by standard CloudStream .cs3 packages. */
 abstract class Plugin : BasePlugin() {
+    /**
+     * CloudStream Android plugins may override load(Activity?) rather than load(Context).
+     * Keep both JVM entry points and dispatch Context calls to the Activity overload when
+     * the host has an Activity, while preserving the no-argument BasePlugin fallback.
+     */
+    @Throws(Throwable::class)
+    open fun load(activity: Activity?) {
+        load()
+    }
+
     @Throws(Throwable::class)
     open fun load(context: Context) {
-        load()
+        load(context as? Activity)
     }
 
     fun registerVideoClickAction(element: VideoClickAction) {

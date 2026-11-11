@@ -9,6 +9,7 @@ import android.content.res.Resources
 import co.touchlab.kermit.Logger
 import com.lagradost.api.setContext
 import com.lagradost.cloudstream3.APIHolder
+import com.lagradost.cloudstream3.AcraApplication
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.AnimeSearchResponse
 import com.lagradost.cloudstream3.CloudStreamApp
@@ -27,6 +28,12 @@ import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.actions.VideoClickActionHolder
+import com.lagradost.cloudstream3.app
+import okhttp3.Cache
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
 import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
@@ -67,13 +74,34 @@ internal actual object CloudStreamPlatformRuntime {
     private val loaded = linkedMapOf<String, LoadedPlugin>()
     private var appContext: Context? = null
     private var activityReference: WeakReference<Activity>? = null
+    @Volatile private var cloudStreamHttpClient: OkHttpClient? = null
+
+    private val cloudStreamCookieJar = object : CookieJar {
+        private val lock = Any()
+        private val cookiesByHost = mutableMapOf<String, List<Cookie>>()
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = synchronized(lock) {
+            val existing = cookiesByHost[url.host].orEmpty()
+            val retained = existing.filterNot { old ->
+                cookies.any { it.name == old.name && it.domain == old.domain && it.path == old.path }
+            }
+            cookiesByHost[url.host] = retained + cookies
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(lock) {
+            cookiesByHost.values.flatten().filter { it.matches(url) }
+        }
+    }
 
     actual fun initialize(context: Any?) {
         val androidContext = context as? Context ?: return
         appContext = androidContext.applicationContext
+        ensureCloudStreamHttpClient(androidContext.applicationContext)
+        AcraApplication.context = androidContext.applicationContext
         findActivity(androidContext)?.let { activity ->
             activityReference = WeakReference(activity)
             CommonActivity.setActivityInstance(activity)
+            AcraApplication.setActivity(activity)
         }
     }
 
@@ -217,14 +245,57 @@ internal actual object CloudStreamPlatformRuntime {
             applyHostCompatibilityDefaults(pluginClassName)
             if (manifest.requiresResources) pluginInstance.attachResources(identityContext, file)
 
-            if (pluginInstance is Plugin) pluginInstance.load(identityContext) else pluginInstance.load()
-            val providers = APIHolder.allProviders
+            var pluginLoadFailure: Throwable? = null
+            try {
+                if (pluginInstance is Plugin) {
+                    // Some Android CloudStream plugins override load(Activity?) only.
+                    pluginInstance.load(activityReference?.get() ?: identityContext)
+                } else {
+                    pluginInstance.load()
+                }
+            } catch (error: Exception) {
+                pluginLoadFailure = error
+                log.w(error) { "CloudStream plugin ${item.metadata.internalName} partially failed during load(); preserving registrations" }
+            } catch (error: LinkageError) {
+                pluginLoadFailure = error
+                log.w(error) { "CloudStream plugin ${item.metadata.internalName} hit a linkage error during load(); preserving registrations" }
+            }
+            var providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
+            // Recover provider classes only when plugin initialization failed before registration.
+            // A successful settings-only plugin must remain settings-only.
+            if (providers.isEmpty() && pluginLoadFailure != null) {
+                val recovered = findMainApisInDex(loader, file)
+                recovered.forEach { api ->
+                    api.sourcePlugin = file.absolutePath
+                    if (APIHolder.allProviders.none { it === api }) {
+                        APIHolder.allProviders.add(api)
+                        APIHolder.addPluginMapping(api)
+                    }
+                }
+                providers = APIHolder.allProviders
+                    .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
+                    .distinct()
+                if (recovered.isNotEmpty()) {
+                    log.i { "Recovered ${recovered.size} MainAPI provider(s) from ${item.metadata.internalName}" }
+                }
+            }
             if (providers.isEmpty()) {
                 log.w { "CloudStream plugin ${item.metadata.internalName} loaded without catalogue providers; retaining plugin settings if exposed" }
             }
-            providers.forEach(MainAPI::init)
+            providers.forEach { api ->
+                try {
+                    api.init()
+                } catch (error: Exception) {
+                    log.w(error) { "CloudStream provider initialization failed api=${api.name}" }
+                } catch (error: LinkageError) {
+                    log.w(error) { "CloudStream provider linkage failed api=${api.name}" }
+                }
+            }
+            if (pluginLoadFailure != null && providers.isEmpty()) {
+                log.w { "CloudStream plugin ${item.metadata.internalName} has no registered MainAPI after partial initialization; settings/extractors remain available if exposed" }
+            }
             var registeredExtractors = extractorApis
                 .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
@@ -290,10 +361,30 @@ internal actual object CloudStreamPlatformRuntime {
         }
     }
 
+    private fun ensureCloudStreamHttpClient(context: Context) {
+        synchronized(this) {
+            val client = cloudStreamHttpClient ?: run {
+                val cacheDirectory = File(context.cacheDir, "cloudstream_http_cache").apply { mkdirs() }
+                OkHttpClient.Builder()
+                    .cookieJar(cloudStreamCookieJar)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .cache(Cache(cacheDirectory, 50L * 1024L * 1024L))
+                    .build()
+                    .also { cloudStreamHttpClient = it }
+            }
+            app.baseClient = client
+        }
+    }
+
     private fun prepareHostContext(context: Context) {
-        activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        AcraApplication.context = context.applicationContext
         CloudStreamApp.context = context
         setContext(WeakReference(context))
+        activityReference?.get()?.let { activity ->
+            CommonActivity.setActivityInstance(activity)
+            AcraApplication.setActivity(activity)
+        }
     }
 
     /**
@@ -349,6 +440,34 @@ internal actual object CloudStreamPlatformRuntime {
             VideoClickActionHolder.allVideoClickActions.removeAll { it.sourcePlugin == path }
             PluginManager.unregister(path)
         }
+    }
+    @Suppress("DEPRECATION")
+    private fun findMainApisInDex(loader: PathClassLoader, file: File): List<MainAPI> {
+        val dex = runCatching { DexFile(file.absolutePath) }.getOrNull() ?: return emptyList()
+        val found = mutableListOf<MainAPI>()
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (className.indexOf('$') >= 0) continue
+                val candidate = try {
+                    loader.loadClass(className)
+                } catch (_: ClassNotFoundException) {
+                    continue
+                } catch (_: LinkageError) {
+                    continue
+                }
+                if (!MainAPI::class.java.isAssignableFrom(candidate)) continue
+                if (java.lang.reflect.Modifier.isAbstract(candidate.modifiers) || candidate.isInterface) continue
+                val api = runCatching {
+                    candidate.getDeclaredConstructor().newInstance() as MainAPI
+                }.getOrNull() ?: continue
+                if (runCatching { api.mainUrl.isNotBlank() }.getOrDefault(false)) found.add(api)
+            }
+        } finally {
+            runCatching { dex.close() }
+        }
+        return found.distinctBy { it.javaClass.name + "|" + it.mainUrl.lowercase() }
     }
     @Suppress("DEPRECATION")
     private fun findExtractorApisInDex(loader: PathClassLoader, file: File): List<ExtractorApi> {

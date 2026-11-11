@@ -9,6 +9,9 @@ import com.lagradost.cloudstream3.utils.DataStore
 /** Host-context ABI used by a small subset of CloudStream extensions. */
 class CloudStreamApp {
     companion object {
+        @JvmStatic
+        var cfUserAgent: String = USER_AGENT
+
         private var contextReference: WeakReference<Context>? = null
 
         var context: Context?
