@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -289,17 +290,11 @@ object StreamsRepository {
             repositories = pluginUiState.repositories,
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
-        val cloudStreamSearchRequest = buildCloudStreamSearchRequest(
-            type = type,
-            videoId = videoId,
-            parentMetaId = parentMetaId,
-            parentMetaType = null,
-            season = season,
-            episode = episode,
-            searchTitle = null,
-        )
+        // Provider groups can be prepared from the media type immediately. Resolve
+        // title/episode metadata asynchronously inside the stream job so a cold metadata
+        // cache does not silently disable CloudStream or delay other stream providers.
         val cloudStreamProviderGroups = if (AppFeaturePolicy.pluginsEnabled && !isNativeServerRequest) {
-            cloudStreamProviderGroupsForRequest(type, cloudStreamSearchRequest)
+            cloudStreamProviderGroupsForRequest(type, request = null)
         } else {
             emptyList()
         }
@@ -396,6 +391,21 @@ object StreamsRepository {
         )
 
         activeJob = scope.launch {
+            val cloudStreamSearchRequest = if (cloudStreamProviderGroups.isNotEmpty()) {
+                async {
+                    buildCloudStreamSearchRequest(
+                        type = type,
+                        videoId = videoId,
+                        parentMetaId = parentMetaId,
+                        parentMetaType = null,
+                        season = season,
+                        episode = episode,
+                        searchTitle = null,
+                    )
+                }
+            } else {
+                null
+            }
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
             val pluginRemainingByAddonId = pluginProviderGroups
                 .associate { it.addonId to it.scrapers.size }
@@ -743,7 +753,7 @@ object StreamsRepository {
                     val group = try {
                         resolveCloudStreamProviderStreams(
                             providerGroup = providerGroup,
-                            request = cloudStreamSearchRequest,
+                            request = cloudStreamSearchRequest?.await(),
                         )
                     } catch (cancelled: CancellationException) {
                         throw cancelled

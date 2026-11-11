@@ -171,6 +171,20 @@ enum class CloudStreamRuntimeKind {
     UnsupportedAndroidDex,
 }
 
+/**
+ * Whether the Android runtime can safely inspect an installed package for its optional
+ * settings callback. The runtime performs archive/checksum validation before loading it;
+ * a stale persisted verification flag must not hide settings on an otherwise valid install.
+ */
+internal fun canProbeCloudStreamPluginSettings(
+    isInstalled: Boolean,
+    runtimeKind: CloudStreamRuntimeKind,
+    supportsAndroidDex: Boolean,
+): Boolean =
+    isInstalled &&
+        runtimeKind == CloudStreamRuntimeKind.AndroidDex &&
+        supportsAndroidDex
+
 enum class CloudStreamPlatformSupport {
     AndroidAndIos,
     AndroidOnly,

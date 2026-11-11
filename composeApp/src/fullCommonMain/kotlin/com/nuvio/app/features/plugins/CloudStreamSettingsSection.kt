@@ -56,6 +56,7 @@ import com.nuvio.app.features.cloudstream.AddCloudStreamRepositoryResult
 import com.nuvio.app.features.cloudstream.CloudStreamBulkInstallResult
 import com.nuvio.app.features.cloudstream.CloudStreamInstallResult
 import com.nuvio.app.features.cloudstream.CloudStreamPlatformRuntime
+import com.nuvio.app.features.cloudstream.canProbeCloudStreamPluginSettings
 import com.nuvio.app.features.cloudstream.CloudStreamPlatformSupport
 import com.nuvio.app.features.cloudstream.CloudStreamPluginItem
 import com.nuvio.app.features.cloudstream.CloudStreamRepository
@@ -448,11 +449,17 @@ private fun CloudStreamPluginCard(
     // Settings capability belongs to the installed package, not just its repository
     // identity/version. Include the installed checksum so a replaced package cannot
     // inherit a stale settings button from the previous runtime instance.
+    val settingsRuntimeKind = plugin.compatibility.runtimeKind
+    val supportsAndroidDex = CloudStreamPlatformRuntime.supportsAndroidDex
     var hasPluginSettings by remember(
         plugin.metadata.id.value,
         plugin.installedVersion,
         plugin.installedFileHash,
         plugin.metadata.packageUrl,
+        plugin.isInstalled,
+        plugin.verified,
+        settingsRuntimeKind,
+        supportsAndroidDex,
     ) { mutableStateOf(false) }
 
     LaunchedEffect(
@@ -461,14 +468,17 @@ private fun CloudStreamPluginCard(
         plugin.installedFileHash,
         plugin.metadata.packageUrl,
         plugin.isInstalled,
+        plugin.verified,
+        settingsRuntimeKind,
+        supportsAndroidDex,
     ) {
-        // Hide the control immediately while the new package's capability is checked.
-        hasPluginSettings = false
-        hasPluginSettings = plugin.isInstalled &&
-            plugin.verified &&
-            plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
-            CloudStreamPlatformRuntime.supportsAndroidDex &&
-            CloudStreamPlatformRuntime.hasSettings(plugin)
+        // Do not use the persisted "verified" display flag as a capability gate. The
+        // runtime re-inspects the installed archive and enforces its stored checksum.
+        hasPluginSettings = canProbeCloudStreamPluginSettings(
+            isInstalled = plugin.isInstalled,
+            runtimeKind = settingsRuntimeKind,
+            supportsAndroidDex = supportsAndroidDex,
+        ) && CloudStreamPlatformRuntime.hasSettings(plugin)
     }
 
     NuvioSurfaceCard {

@@ -51,7 +51,7 @@ internal data class CloudStreamProviderStreams(
 internal fun cloudStreamAddonId(providerId: String): String =
     "cloudstream:${sha256Hex(providerId.encodeToByteArray()).take(16)}"
 
-internal fun buildCloudStreamSearchRequest(
+internal suspend fun buildCloudStreamSearchRequest(
     type: String,
     videoId: String,
     parentMetaId: String?,
@@ -62,8 +62,15 @@ internal fun buildCloudStreamSearchRequest(
 ): CloudStreamSearchRequest? {
     val metaLookupType = parentMetaType?.trim()?.takeIf(String::isNotBlank) ?: type
     val metaLookupId = parentMetaId?.trim()?.takeIf(String::isNotBlank) ?: videoId
+    // Metadata screens usually populate this cache, but stream resolution must also work
+    // when the user opens playback directly (deep link, autoplay, or cold launch).
     val details = MetaDetailsRepository.peek(metaLookupType, metaLookupId)
-        ?: MetaDetailsRepository.peek(type, videoId)
+        ?: MetaDetailsRepository.fetch(metaLookupType, metaLookupId)
+        ?: if (metaLookupType != type || metaLookupId != videoId) {
+            MetaDetailsRepository.peek(type, videoId) ?: MetaDetailsRepository.fetch(type, videoId)
+        } else {
+            null
+        }
     val title = searchTitle?.trim()?.takeIf(String::isNotBlank)
         ?: details?.name?.trim()?.takeIf(String::isNotBlank)
         ?: return null

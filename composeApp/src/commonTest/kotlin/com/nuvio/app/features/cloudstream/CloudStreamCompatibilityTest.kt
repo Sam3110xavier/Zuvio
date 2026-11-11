@@ -29,6 +29,45 @@ class CloudStreamCompatibilityTest {
     }
 
     @Test
+    fun installedAndroidDexPluginCanBeInspectedForItsSettingsCapability() {
+        assertTrue(
+            canProbeCloudStreamPluginSettings(
+                isInstalled = true,
+                runtimeKind = CloudStreamRuntimeKind.AndroidDex,
+                supportsAndroidDex = true,
+            ),
+        )
+    }
+
+    @Test
+    fun settingsCapabilityProbeRejectsUninstalledOrUnsupportedPlugins() {
+        assertEquals(
+            false,
+            canProbeCloudStreamPluginSettings(
+                isInstalled = false,
+                runtimeKind = CloudStreamRuntimeKind.AndroidDex,
+                supportsAndroidDex = true,
+            ),
+        )
+        assertEquals(
+            false,
+            canProbeCloudStreamPluginSettings(
+                isInstalled = true,
+                runtimeKind = CloudStreamRuntimeKind.UnsupportedAndroidDex,
+                supportsAndroidDex = true,
+            ),
+        )
+        assertEquals(
+            false,
+            canProbeCloudStreamPluginSettings(
+                isInstalled = true,
+                runtimeKind = CloudStreamRuntimeKind.AndroidDex,
+                supportsAndroidDex = false,
+            ),
+        )
+    }
+
+    @Test
     fun standardCs3IsRunnableOnlyWhenAndroidDexRuntimeIsAvailable() {
         val plugin = metadata()
 
