@@ -11,7 +11,6 @@ import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_label
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_label
-import com.nuvio.app.features.streams.StreamAutoPlayPreferredQuality
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeMark
@@ -53,7 +52,6 @@ data class PlayerLaunch(
     val subtitleExtras: SubtitleRequestExtras? = null,
     val sourceFilename: String? = null,
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
-    val semiAutoSelectedQuality: StreamAutoPlayPreferredQuality? = null,
 )
 
 object PlayerLaunchStore {
@@ -307,6 +305,22 @@ data class PlayerPlaybackSnapshot(
     val castAvailable: Boolean = false,
     val castDeviceName: String? = null,
     val animeEnhancement: AnimeEnhancementStatus? = null,
+    val discTitles: List<PlayerDiscTitle> = emptyList(),
+    val activeDiscTitleIndex: Int = -1,
+    val discExtraPlaying: Boolean = false,
+    val discFeaturePositionMs: Long = 0L,
+) {
+    val itemPositionMs: Long
+        get() = if (discExtraPlaying) discFeaturePositionMs else positionMs
+}
+
+data class PlayerDiscTitle(
+    val name: String,
+    val durationMs: Long,
+    val clipCount: Int,
+    val isFeature: Boolean,
+    val audioLanguages: List<String> = emptyList(),
+    val subtitleLanguages: List<String> = emptyList(),
 )
 
 data class AnimeEnhancementStatus(

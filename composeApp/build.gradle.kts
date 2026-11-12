@@ -1,12 +1,12 @@
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.tasks.OutputFile
-import org.gradle.api.tasks.TaskAction
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.TaskAction
 import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable
@@ -316,6 +316,7 @@ val iosDistributionSourceDir = if (iosDistribution == "full") {
 val iosFrameworkBundleId = "com.nuvio.media"
 val nuvioEngineAppleFramework = rootProject.file("../nuvio-engine/platform/apple/NuvioEngine.xcframework")
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
+
 val cloudStreamRuntimeAar =
     layout.projectDirectory.file("libs/cloudstream-runtime-api-4.8.0-3496e5f.aar")
 val downloadCloudStreamRuntime =
@@ -566,6 +567,7 @@ kotlin {
                 implementation(libs.mpv.android.lib)
                 implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
                 if (androidDistribution == "full") {
+                    implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
                     implementation("org.tukaani:xz:1.10")
                     implementation(files(cloudStreamRuntimeAar).builtBy(downloadCloudStreamRuntime))
                     // CloudStream sources use Jackson's JsonMapper and Blatzar NiceHttp APIs.
@@ -576,20 +578,13 @@ kotlin {
                     implementation("me.xdrop:fuzzywuzzy:1.4.0")
                     implementation("org.mozilla:rhino:1.8.1")
                     implementation("com.uwetrottmann.tmdb2:tmdb-java:2.13.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-core:0.6.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.6.0")
                     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3") {
                         exclude(group = "org.mozilla", module = "rhino-engine")
                     }
-                    implementation("com.github.capullo-tech:lib-tdlib-android:11850efeb5791d4fd386c0eeec1ebce4c5080435")
-                    implementation("io.ktor:ktor-server-core:${libs.versions.ktor.get()}")
-                    implementation("io.ktor:ktor-server-cio:${libs.versions.ktor.get()}")
-                    implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
-                    implementation(libs.ksoup)
-                    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
-                    // Supabase Auth 3.4.1 references the pre-0.6 key API
-                    // removed those types; use the compatible 0.5.x API for Android Full.
-                    implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")
-                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.5.0")
                     implementation(kotlin("reflect"))
+                    implementation(libs.ksoup)
                 }
             }
         }

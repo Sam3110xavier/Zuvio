@@ -7,6 +7,8 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.fetchAddonResponseText
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
+import com.nuvio.app.features.cloudstream.parseCloudStreamRouteId
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
@@ -17,8 +19,6 @@ import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.servers.ServerStreams
-import com.nuvio.app.features.telegram.TelegramIntegrationBridge
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,8 +41,6 @@ object StreamsRepository {
 
     private var activeJob: Job? = null
     private var activeRequestKey: String? = null
-    private var qualityAutoPlayRequestToken: String? = null
-    private val qualityAutoPlayAttemptedKeys = mutableSetOf<String>()
 
     fun requestToken(
         type: String,
@@ -50,12 +48,10 @@ object StreamsRepository {
         season: Int? = null,
         episode: Int? = null,
         manualSelection: Boolean = false,
-        qualitySelectionMode: Boolean = false,
     ): String =
-        if (qualitySelectionMode) "$type::$videoId::$season::$episode::$manualSelection::quality-first"
-        else "$type::$videoId::$season::$episode::$manualSelection"
+        "$type::$videoId::$season::$episode::$manualSelection"
 
-    fun load(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, qualitySelectionMode: Boolean = false) {
+    fun load(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
         PluginRepository.setLocalPluginSearchPaused(false)
         load(
             type = type,
@@ -65,11 +61,10 @@ object StreamsRepository {
             episode = episode,
             manualSelection = manualSelection,
             forceRefresh = false,
-            qualitySelectionMode = qualitySelectionMode,
         )
     }
 
-    fun reload(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, qualitySelectionMode: Boolean = false) {
+    fun reload(type: String, videoId: String, parentMetaId: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false) {
         PluginRepository.setLocalPluginSearchPaused(false)
         load(
             type = type,
@@ -79,11 +74,10 @@ object StreamsRepository {
             episode = episode,
             manualSelection = manualSelection,
             forceRefresh = true,
-            qualitySelectionMode = qualitySelectionMode,
         )
     }
 
-    private fun load(type: String, videoId: String, parentMetaId: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, qualitySelectionMode: Boolean) {
+    private fun load(type: String, videoId: String, parentMetaId: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean) {
         val pluginUiState = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.uiState.value
@@ -96,13 +90,14 @@ object StreamsRepository {
             season = season,
             episode = episode,
             manualSelection = manualSelection,
-            qualitySelectionMode = qualitySelectionMode,
         )
-        val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
-        InAppLogger.info(
-            "Streams/StreamsRepository",
-            "Loading streams type=$type id=$videoId season=${season ?: -1} episode=${episode ?: -1} manual=$manualSelection force=$forceRefresh",
-        )
+        val cloudStreamGroupByRepository = if (AppFeaturePolicy.pluginsEnabled) {
+            CloudStreamRepository.initialize()
+            CloudStreamRepository.uiState.value.groupStreamsByRepository
+        } else {
+            false
+        }
+        val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}::cloudStreamGrouped=$cloudStreamGroupByRepository"
         val currentState = _uiState.value
         if (
             !forceRefresh &&
@@ -115,8 +110,6 @@ object StreamsRepository {
 
         activeRequestKey = requestKey
         activeJob?.cancel()
-        qualityAutoPlayRequestToken = null
-        qualityAutoPlayAttemptedKeys.clear()
         _uiState.value = StreamsUiState(requestToken = requestToken)
 
         PlayerSettingsRepository.ensureLoaded()
@@ -129,9 +122,7 @@ object StreamsRepository {
                 "manual=$manualSelection force=$forceRefresh",
         )
         val autoPlayMode = playerSettings.streamAutoPlayMode
-        val isAutoPlayEnabled = !qualitySelectionMode && !manualSelection &&
-            autoPlayMode != StreamAutoPlayMode.MANUAL &&
-            autoPlayMode != StreamAutoPlayMode.SEMI_AUTOMATIC &&
+        val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
                 !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
 
@@ -151,7 +142,7 @@ object StreamsRepository {
 
         // Enable direct auto-play flow if normal auto-play is enabled,
         // OR if we have a persisted binge group in MANUAL mode
-        val bingeGroupDirectFlow = !qualitySelectionMode && !manualSelection &&
+        val bingeGroupDirectFlow = !manualSelection &&
             persistedBingeGroup != null &&
             autoPlayMode == StreamAutoPlayMode.MANUAL
         val isDirectAutoPlayFlow = isAutoPlayEnabled || bingeGroupDirectFlow
@@ -165,10 +156,87 @@ object StreamsRepository {
             )
         }
 
+        val cloudStreamRoute = parseCloudStreamRouteId(videoId)
+        if (cloudStreamRoute != null) {
+            CloudStreamRepository.initialize()
+            val providerItem = CloudStreamRepository.uiState.value.plugins
+                .firstOrNull { it.metadata.id.value == cloudStreamRoute.providerId }
+            val providerName = providerItem?.metadata?.name ?: "CloudStream"
+            val providerAddonId = cloudStreamAddonId(cloudStreamRoute.providerId)
+            _uiState.value = StreamsUiState(
+                requestToken = requestToken,
+                groups = listOf(
+                    AddonStreamGroup(
+                        addonName = providerName,
+                        addonId = providerAddonId,
+                        streams = emptyList(),
+                        isLoading = true,
+                    ),
+                ),
+                activeAddonIds = setOf(providerAddonId),
+                isAnyLoading = true,
+            )
+            activeJob = scope.launch {
+                resolveCloudStreamDirectRoute(
+                    providerId = cloudStreamRoute.providerId,
+                    providerName = providerName,
+                    data = cloudStreamRoute.data,
+                ).fold(
+                    onSuccess = { streams ->
+                        _uiState.update { current ->
+                            if (current.requestToken != requestToken) {
+                                current
+                            } else {
+                                StreamsUiState(
+                                    requestToken = requestToken,
+                                    groups = listOf(
+                                        AddonStreamGroup(
+                                            addonName = providerName,
+                                            addonId = providerAddonId,
+                                            streams = streams,
+                                            isLoading = false,
+                                            error = if (streams.isEmpty()) "No links found" else null,
+                                        ),
+                                    ),
+                                    activeAddonIds = setOf(providerAddonId),
+                                    isAnyLoading = false,
+                                    emptyStateReason = if (streams.isEmpty()) StreamsEmptyStateReason.NoStreamsFound else null,
+                                )
+                            }
+                        }
+                    },
+                    onFailure = { error ->
+                        log.w(error) { "CloudStream link resolution failed provider=${cloudStreamRoute.providerId}" }
+                        _uiState.update { current ->
+                            if (current.requestToken != requestToken) {
+                                current
+                            } else {
+                                StreamsUiState(
+                                    requestToken = requestToken,
+                                    groups = listOf(
+                                        AddonStreamGroup(
+                                            addonName = providerName,
+                                            addonId = providerAddonId,
+                                            streams = emptyList(),
+                                            isLoading = false,
+                                            error = error.message ?: "CloudStream link resolution failed",
+                                        ),
+                                    ),
+                                    activeAddonIds = setOf(providerAddonId),
+                                    isAnyLoading = false,
+                                    emptyStateReason = StreamsEmptyStateReason.StreamFetchFailed,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+            return
+        }
         val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
         if (embeddedStreams.isNotEmpty()) {
-            InAppLogger.info("Streams/StreamsRepository", "Using embedded streams count=${embeddedStreams.size} type=$type id=$videoId")
             log.d { "Using ${embeddedStreams.size} embedded streams for type=$type id=$videoId" }
+            InAppLogger.info("Streams/StreamsRepository", "Using embedded streams count=${embeddedStreams.size} type=$type id=$videoId")
             val group = AddonStreamGroup(
                 addonName = embeddedStreams.first().addonName,
                 addonId = "embedded",
@@ -191,7 +259,6 @@ object StreamsRepository {
 
         val isNativeServerRequest = ServerStreams.isNativeRequest(videoId)
         val serverSources = ServerStreams.sources(type, videoId, season, episode, forceRefresh)
-        val telegramAvailable = !isNativeServerRequest && TelegramIntegrationBridge.isAuthenticated()
         val preferredGroupIds = serverSources.filter { it.preferred }.mapTo(mutableSetOf()) { it.addonId }
         val installedAddons = if (isNativeServerRequest) emptyList() else AddonRepository.uiState.value.addons.enabledAddons()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled && !isNativeServerRequest) {
@@ -203,8 +270,23 @@ object StreamsRepository {
             repositories = pluginUiState.repositories,
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
-        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
-            InAppLogger.warn("Streams/StreamsRepository", "No stream addons, plugin scrapers installed for type=$type id=$videoId")
+        val cloudStreamSearchRequest = buildCloudStreamSearchRequest(
+            type = type,
+            videoId = videoId,
+            parentMetaId = parentMetaId,
+            parentMetaType = null,
+            season = season,
+            episode = episode,
+            searchTitle = null,
+        )
+        val cloudStreamProviderGroups = if (AppFeaturePolicy.pluginsEnabled && !isNativeServerRequest) {
+            cloudStreamProviderGroupsForRequest(type, cloudStreamSearchRequest)
+        } else {
+            emptyList()
+        }
+
+        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty()) {
+            InAppLogger.warn("Streams/StreamsRepository", "No stream addons or plugin scrapers installed for type=$type id=$videoId")
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
                 isAnyLoading = false,
@@ -233,7 +315,7 @@ object StreamsRepository {
                 "for type=$type id=$videoId",
         )
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
+        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty()) {
             InAppLogger.warn("Streams/StreamsRepository", "No compatible stream addon/plugin for type=$type id=$videoId")
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
@@ -246,36 +328,28 @@ object StreamsRepository {
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(
-            groups = streamAddons.map { addon ->
-                AddonStreamGroup(
-                    addonName = addon.addonName,
-                    addonId = addon.addonId,
-                    streams = emptyList(),
-                    isLoading = true,
-                )
-            } + pluginProviderGroups.map { providerGroup ->
-                AddonStreamGroup(
-                    addonName = providerGroup.addonName,
-                    addonId = providerGroup.addonId,
-                    streams = emptyList(),
-                    isLoading = true,
-                )
-            } + serverSources.map { it.loadingGroup() } + if (telegramAvailable) {
-                listOf(
-                    AddonStreamGroup(
-                        addonName = "Telegram",
-                        addonId = "telegram_native",
-                        streams = emptyList(),
-                        isLoading = true,
-                    ),
-                )
-            } else {
-                emptyList()
-            },
-            installedOrder = installedAddonOrder,
-            preferredGroupIds = preferredGroupIds,
-        )
+        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
+            AddonStreamGroup(
+                addonName = addon.addonName,
+                addonId = addon.addonId,
+                streams = emptyList(),
+                isLoading = true,
+            )
+        } + pluginProviderGroups.map { providerGroup ->
+            AddonStreamGroup(
+                addonName = providerGroup.addonName,
+                addonId = providerGroup.addonId,
+                streams = emptyList(),
+                isLoading = true,
+            )
+        } + cloudStreamProviderGroups.distinctBy { it.addonId }.map { providerGroup ->
+            AddonStreamGroup(
+                addonName = providerGroup.addonName,
+                addonId = providerGroup.addonId,
+                streams = emptyList(),
+                isLoading = true,
+            )
+        } + serverSources.map { it.loadingGroup() }, installedAddonOrder, preferredGroupIds)
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
@@ -294,11 +368,13 @@ object StreamsRepository {
                 .associate { it.addonId to it.scrapers.size }
                 .toMutableMap()
             val pluginFirstErrorByAddonId = mutableMapOf<String, String>()
+            val cloudStreamRemainingByAddonId = cloudStreamProviderGroups.groupingBy { it.addonId }.eachCount().toMutableMap()
+            val cloudStreamFirstErrorByAddonId = mutableMapOf<String, String>()
             val seenStreamIdentities = mutableSetOf<String>()
             val totalTasks = streamAddons.size +
                 pluginProviderGroups.sumOf { it.scrapers.size } +
-                serverSources.size +
-                if (telegramAvailable) 1 else 0
+                cloudStreamProviderGroups.size +
+                serverSources.size
 
             val installedAddonNames = installedAddonOrder.toSet()
             val installedAddonIds = streamAddons.map { it.addonId }.toSet()
@@ -574,109 +650,60 @@ object StreamsRepository {
                             "Streams/PluginFetch",
                             "Executing scraper=${scraper.name} provider=${providerGroup.addonName} type=$type id=$videoId season=${season ?: -1} episode=${episode ?: -1}",
                         )
-                        val completion = try {
-                            PluginRepository.executeScraper(
-                                scraper = scraper,
-                                tmdbId = pluginContentId(
-                                    videoId = videoId,
-                                    season = season,
-                                    episode = episode,
-                                ),
-                                mediaType = type,
+                        val completion = PluginRepository.executeScraper(
+                            scraper = scraper,
+                            tmdbId = pluginContentId(
+                                videoId = videoId,
                                 season = season,
                                 episode = episode,
-                            ).fold(
-                                onSuccess = { results ->
-                                    InAppLogger.info("Streams/PluginFetch", "Scraper loaded scraper=${scraper.name} provider=${providerGroup.addonName} count=${results.size}")
-                                    StreamLoadCompletion.PluginScraper(
-                                        addonId = providerGroup.addonId,
-                                        streams = results.map { result ->
-                                            result.toStreamItem(
-                                                scraper = scraper,
-                                                addonName = providerGroup.addonName,
-                                                addonId = providerGroup.addonId,
-                                                includeScraperNameInSubtitle = includeScraperNameInSubtitle,
-                                            )
-                                        },
-                                        error = null,
-                                    )
-                                },
-                                onFailure = { error ->
-                                    InAppLogger.warn("Streams/PluginFetch", "Scraper failed scraper=${scraper.name} provider=${providerGroup.addonName} error=${InAppLogger.throwableSummary(error)}")
-                                    StreamLoadCompletion.PluginScraper(
-                                        addonId = providerGroup.addonId,
-                                        streams = emptyList(),
-                                        error = error.message ?: getString(Res.string.streams_failed_to_load_scraper, scraper.name),
-                                    )
-                                },
-                            )
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            log.w(error) { "Plugin provider ${scraper.name} failed before publishing its result" }
-                            StreamLoadCompletion.PluginScraper(
-                                addonId = providerGroup.addonId,
-                                streams = emptyList(),
-                                error = error.message ?: getString(Res.string.streams_failed_to_load_scraper, scraper.name),
-                            )
-                        }
+                            ),
+                            mediaType = type,
+                            season = season,
+                            episode = episode,
+                        ).fold(
+                            onSuccess = { results ->
+                                InAppLogger.info("Streams/PluginFetch", "Scraper loaded scraper=${scraper.name} provider=${providerGroup.addonName} count=${results.size}")
+                                StreamLoadCompletion.PluginScraper(
+                                    addonId = providerGroup.addonId,
+                                    streams = results.map { result ->
+                                        result.toStreamItem(
+                                            scraper = scraper,
+                                            addonName = providerGroup.addonName,
+                                            addonId = providerGroup.addonId,
+                                            includeScraperNameInSubtitle = includeScraperNameInSubtitle,
+                                        )
+                                    },
+                                    error = null,
+                                )
+                            },
+                            onFailure = { error ->
+                                InAppLogger.warn("Streams/PluginFetch", "Scraper failed scraper=${scraper.name} provider=${providerGroup.addonName} error=${InAppLogger.throwableSummary(error)}")
+                                StreamLoadCompletion.PluginScraper(
+                                    addonId = providerGroup.addonId,
+                                    streams = emptyList(),
+                                    error = error.message ?: getString(Res.string.streams_failed_to_load_scraper, scraper.name),
+                                )
+                            },
+                        )
                         publishCompletion(completion)
                     }
                 }
             }
 
-            if (telegramAvailable) {
+            cloudStreamProviderGroups.forEach { providerGroup ->
                 launch {
-                    val completion = try {
-                        val details = MetaDetailsRepository.peek(type, parentMetaId ?: videoId)
-                            ?: MetaDetailsRepository.peek(type, videoId)
-                        val searchTitle = details?.name?.takeIf { it.isNotBlank() }
-                        val year = details?.releaseInfo
-                            ?.let { Regex("\\b(19\\d{2}|20\\d{2})\\b").find(it)?.value?.toIntOrNull() }
-                        val selectedChats = TelegramIntegrationBridge.snapshot.value.selectedChatIds
-                        val streams = if (searchTitle.isNullOrBlank() || selectedChats.isEmpty()) {
-                            emptyList()
-                        } else {
-                            TelegramIntegrationBridge.resolveStreams(
-                                type = type,
-                                videoId = videoId,
-                                title = searchTitle,
-                                year = year,
-                                season = season,
-                                episode = episode,
-                                imdbId = details?.imdbId,
-                            )
-                        }
-                        val noResultReason = when {
-                            searchTitle.isNullOrBlank() -> "Media title is not available for Telegram search."
-                            selectedChats.isEmpty() -> "No Telegram channels or groups are selected. Configure sources in Settings > Integrations > Telegram."
-                            streams.isEmpty() -> "No matching Telegram video was found in the selected sources."
-                            else -> null
-                        }
-                        StreamLoadCompletion.Addon(
-                            AddonStreamGroup(
-                                addonName = "Telegram",
-                                addonId = "telegram_native",
-                                streams = streams,
-                                isLoading = false,
-                                error = noResultReason,
-                            ),
-                        )
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        log.w(error) { "Telegram stream lookup failed for $videoId" }
-                        StreamLoadCompletion.Addon(
-                            AddonStreamGroup(
-                                addonName = "Telegram",
-                                addonId = "telegram_native",
-                                streams = emptyList(),
-                                isLoading = false,
-                                error = error.message ?: "Telegram search failed.",
-                            ),
-                        )
-                    }
-                    publishCompletion(completion)
+                    val group = resolveCloudStreamProviderStreams(
+                        providerGroup = providerGroup,
+                        request = cloudStreamSearchRequest,
+                    )
+                    publishCompletion(
+                        StreamLoadCompletion.CloudStreamProvider(
+                            addonId = providerGroup.addonId,
+                            addonName = providerGroup.addonName,
+                            streams = group.streams,
+                            error = group.error,
+                        ),
+                    )
                 }
             }
 
@@ -687,17 +714,54 @@ object StreamsRepository {
                         publishAddonGroupAfterCacheCheck(result)
                     }
 
-                    is StreamLoadCompletion.PluginScraper -> {
-                        val uniquePluginStreams = completion.streams.filter { stream ->
-                            seenStreamIdentities.add(pluginStreamIdentity(stream))
+                    is StreamLoadCompletion.CloudStreamProvider -> {
+                        val remaining = (cloudStreamRemainingByAddonId[completion.addonId] ?: 1) - 1
+                        cloudStreamRemainingByAddonId[completion.addonId] = remaining.coerceAtLeast(0)
+                        if (!completion.error.isNullOrBlank() &&
+                            cloudStreamFirstErrorByAddonId[completion.addonId].isNullOrBlank()
+                        ) {
+                            cloudStreamFirstErrorByAddonId[completion.addonId] = completion.error
                         }
-                        val presentedPluginStreams = presentStreamGroup(
-                            AddonStreamGroup(
-                                addonName = completion.addonId,
-                                addonId = completion.addonId,
-                                streams = uniquePluginStreams,
-                            ),
-                        ).streams
+                        val uniqueCloudStreamItems = completion.streams.filter { stream ->
+                            seenStreamIdentities.add(crossProviderStreamIdentity(stream))
+                        }
+                        _uiState.update { current ->
+                            val updated = StreamAutoPlaySelector.orderAddonStreams(
+                                groups = current.groups.map { group ->
+                                    if (group.addonId != completion.addonId) {
+                                        group
+                                    } else {
+                                        val mergedStreams = group.streams + uniqueCloudStreamItems
+                                        val stillLoading = remaining > 0
+                                        val orderedStreams = if (stillLoading) mergedStreams else mergedStreams.sortedForGroupedDisplay()
+                                        val presented = presentStreamGroup(
+                                            group.copy(
+                                                streams = orderedStreams,
+                                                isLoading = stillLoading,
+                                                error = if (mergedStreams.isEmpty() && !stillLoading) {
+                                                    cloudStreamFirstErrorByAddonId[completion.addonId]
+                                                } else {
+                                                    null
+                                                },
+                                            ),
+                                        )
+                                        presented
+                                    }
+                                },
+                                installedOrder = installedAddonOrder,
+                                preferredGroupIds = preferredGroupIds,
+                            )
+                            val anyLoading = updated.any { it.isLoading }
+                            current.copy(
+                                groups = updated,
+                                isAnyLoading = anyLoading,
+                                emptyStateReason = updated.toEmptyStateReason(anyLoading),
+                            )
+                        }
+                        updateAutoPlayAfterStreamsChanged()
+                    }
+
+                    is StreamLoadCompletion.PluginScraper -> {
                         val remaining = (pluginRemainingByAddonId[completion.addonId] ?: 1) - 1
                         pluginRemainingByAddonId[completion.addonId] = remaining.coerceAtLeast(0)
                         if (!completion.error.isNullOrBlank() && pluginFirstErrorByAddonId[completion.addonId].isNullOrBlank()) {
@@ -710,12 +774,11 @@ object StreamsRepository {
                                     if (group.addonId != completion.addonId) {
                                         group
                                     } else {
-                                        val combinedStreams = group.streams + presentedPluginStreams
-                                        // Keep progressive results cheap; sort once when this provider group finishes.
-                                        val mergedStreams = if (remaining > 0) {
-                                            combinedStreams
+                                        val mergedStreams = if (completion.streams.isEmpty()) {
+                                            group.streams
                                         } else {
-                                            combinedStreams.sortedForGroupedDisplay()
+                                            (group.streams + StreamBadgePresentation.applyToStreams(completion.streams, streamBadgeRules))
+                                                .sortedForGroupedDisplay()
                                         }
                                         val stillLoading = remaining > 0
                                         val finalError = if (mergedStreams.isEmpty() && !stillLoading) {
@@ -789,74 +852,7 @@ object StreamsRepository {
         _uiState.update { it.copy(selectedFilter = addonId) }
     }
 
-    /**
-     * Starts quality-first autoplay from an ordered snapshot of selectable sources.
-     * Provider fetches may continue in the background while normal playback fallback
-     * advances through the selected candidate list.
-     */
-    fun beginQualityFirstAutoPlay(
-        expectedRequestToken: String,
-        candidates: List<StreamItem>,
-    ): Boolean {
-        if (candidates.isEmpty()) return false
-        var started = false
-        _uiState.update { current ->
-            if (current.requestToken != expectedRequestToken) {
-                current
-            } else {
-                started = true
-                current.copy(
-                    autoPlayDecided = true,
-                    autoPlayStream = candidates.first(),
-                    autoPlayCandidates = candidates,
-                    isDirectAutoPlayFlow = true,
-                    showDirectAutoPlayOverlay = true,
-                    overlayMessage = null,
-                )
-            }
-        }
-        if (started) {
-            qualityAutoPlayRequestToken = expectedRequestToken
-            qualityAutoPlayAttemptedKeys.clear()
-        }
-        return started
-    }
-
-    /**
-     * Updates the active quality-first fallback queue when slower providers finish
-     * after playback has already started. The current candidate is never displaced,
-     * and streams already failed in this request are never reinserted.
-     */
-    fun refreshQualityFirstAutoPlayCandidates(
-        expectedRequestToken: String,
-        discoveredCandidates: List<StreamItem>,
-    ) {
-        if (qualityAutoPlayRequestToken != expectedRequestToken) return
-        _uiState.update { current ->
-            if (current.requestToken != expectedRequestToken) {
-                current
-            } else {
-                val refreshed = QualityFirstAutoPlayPolicy.refreshedFallbackCandidates(
-                    current = current.autoPlayStream,
-                    discovered = discoveredCandidates,
-                    attemptedKeys = qualityAutoPlayAttemptedKeys,
-                )
-                val nextStream = refreshed.firstOrNull()
-                current.copy(
-                    autoPlayDecided = true,
-                    autoPlayStream = nextStream,
-                    autoPlayCandidates = refreshed,
-                    isDirectAutoPlayFlow = nextStream != null,
-                    showDirectAutoPlayOverlay = nextStream != null,
-                    overlayMessage = null,
-                )
-            }
-        }
-    }
-
     fun consumeAutoPlay() {
-        qualityAutoPlayRequestToken = null
-        qualityAutoPlayAttemptedKeys.clear()
         activeRequestKey = null
         _uiState.update {
             it.copy(
@@ -869,10 +865,6 @@ object StreamsRepository {
     }
 
     fun skipAutoPlayStream(stream: StreamItem): Boolean {
-        val currentRequestToken = _uiState.value.requestToken
-        if (qualityAutoPlayRequestToken == currentRequestToken) {
-            qualityAutoPlayAttemptedKeys += QualityFirstAutoPlayPolicy.candidateIdentityKey(stream)
-        }
         var hasNext = false
         _uiState.update { current ->
             val failedIndex = current.autoPlayCandidates.indexOf(stream)
@@ -894,8 +886,6 @@ object StreamsRepository {
     }
 
     fun cancelLoading() {
-        qualityAutoPlayRequestToken = null
-        qualityAutoPlayAttemptedKeys.clear()
         PluginRepository.setLocalPluginSearchPaused(true)
         activeJob?.cancel()
         activeJob = null
@@ -920,8 +910,6 @@ object StreamsRepository {
     }
 
     fun clear() {
-        qualityAutoPlayRequestToken = null
-        qualityAutoPlayAttemptedKeys.clear()
         PluginRepository.setLocalPluginSearchPaused(true)
         activeJob?.cancel()
         activeJob = null
