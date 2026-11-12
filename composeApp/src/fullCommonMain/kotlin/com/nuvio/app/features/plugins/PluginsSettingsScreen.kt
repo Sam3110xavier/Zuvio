@@ -88,6 +88,7 @@ fun PluginsSettingsPageContent(
 
     val uiState by PluginRepository.uiState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
+    val unavailableSettingsVersions = remember { mutableStateMapOf<String, String>() }
 
     var repositoryUrl by rememberSaveable { mutableStateOf("") }
     var message by rememberSaveable { mutableStateOf<String?>(null) }
@@ -391,13 +392,16 @@ fun PluginsSettingsPageContent(
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (scraper.hasSettings) {
+                            if (scraper.hasSettings && unavailableSettingsVersions[scraper.id] != scraper.version) {
                                 IconButton(onClick = {
                                     coroutineScope.launch {
                                         val layout = PluginRuntime.getPluginSettingsLayout(scraper.code, scraper.id)
-                                        if (layout != null) {
+                                        if (layout != null && hasUsablePluginSettingsLayout(layout)) {
+                                            unavailableSettingsVersions.remove(scraper.id)
                                             configuringScraper = scraper
                                             configuringLayout = layout
+                                        } else {
+                                            unavailableSettingsVersions[scraper.id] = scraper.version
                                         }
                                     }
                                 }) {
