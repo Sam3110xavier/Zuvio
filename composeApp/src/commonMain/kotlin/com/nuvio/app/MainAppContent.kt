@@ -1731,7 +1731,11 @@ internal fun MainAppContent(
                                 onEditProfile = pushEditProfile,
                                 onSettingsPageClick = if (useNativeNavigation && !isTabletLayout) {
                                     { pageName, title ->
-                                        navController.navigate(SettingsPageRoute(pageName, title))
+                                        if (pageName == "CloudStream") {
+                                            navController.navigate(CloudStreamSettingsRoute(title))
+                                        } else {
+                                            navController.navigate(SettingsPageRoute(pageName, title))
+                                        }
                                     }
                                 } else {
                                     null
