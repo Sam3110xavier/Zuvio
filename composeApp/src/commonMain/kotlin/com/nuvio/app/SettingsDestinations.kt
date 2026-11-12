@@ -79,6 +79,26 @@ internal fun SettingsRootDestination(
     )
 }
 
+
+@Composable
+internal fun CloudStreamSettingsDestination(
+    route: CloudStreamSettingsRoute,
+    navController: NuvioNavigator,
+    useNativeNavigation: Boolean,
+) {
+    val onBack = rememberGuardedPopBackStack(navController, route)
+    SettingsScreen(
+        modifier = Modifier.fillMaxSize(),
+        initialPageName = "CloudStream",
+        rootActionsEnabled = false,
+        onNavigatePage = { pageName, title ->
+            navController.navigate(SettingsPageRoute(pageName, title))
+        },
+        onExternalBack = onBack,
+        showInternalHeader = !useNativeNavigation,
+    )
+}
+
 @Composable
 internal fun CollectionsDestination(
     route: CollectionsRoute,
