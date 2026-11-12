@@ -29,7 +29,7 @@ dependencyResolutionManagement {
         // Include all GitHub-backed transitive coordinates (including TeamNewPipe:nanojson).
         maven("https://jitpack.io") {
             content {
-                includeGroupByRegex("com\\\\.github\\\\..*")
+                includeGroupByRegex("com\\.github\\..*")
             }
         }
     }
