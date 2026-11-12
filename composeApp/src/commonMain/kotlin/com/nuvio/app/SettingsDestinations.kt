@@ -15,6 +15,7 @@ import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.CollectionEditorPageRoute
+import com.nuvio.app.navigation.CloudStreamSettingsRoute
 import com.nuvio.app.navigation.CollectionEditorRoute
 import com.nuvio.app.navigation.CollectionsRoute
 import com.nuvio.app.navigation.DetailRoute
@@ -54,7 +55,11 @@ internal fun SettingsRootDestination(
         initialPageName = route.pageName,
         rootActionsEnabled = false,
         onNavigatePage = { pageName, title ->
-            navController.navigate(SettingsPageRoute(pageName, title))
+            if (pageName == "CloudStream") {
+                navController.navigate(CloudStreamSettingsRoute(title))
+            } else {
+                navController.navigate(SettingsPageRoute(pageName, title))
+            }
         },
         onExternalBack = onBack,
         showInternalHeader = !useNativeNavigation,
