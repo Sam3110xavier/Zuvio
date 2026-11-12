@@ -16,6 +16,7 @@ import com.nuvio.app.features.collection.CollectionMobileSettingsStorage
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.CollectionStorage
+import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -31,6 +32,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -63,6 +65,32 @@ class HomeCatalogSettingsRepositoryTest {
         HomeCatalogSettingsRepository.clearLocalState()
         CollectionRepository.clearLocalState()
         HomeRepository.clear()
+    }
+
+    @Test
+    fun cloudStreamCatalogRowsAreExposedAndKeepTheirHomeVisibilityPreference() {
+        val providerId = "https://example.com/repo.json#Provider"
+        val section = HomeCatalogSection(
+            key = "cloudstream:$providerId:Anime",
+            title = "Anime",
+            subtitle = "Example Provider",
+            addonName = "Example Provider",
+            target = CatalogTarget.CloudStream(providerId, "Anime", "series"),
+            items = listOf(MetaPreview(id = "show-1", type = "series", name = "Example Show")),
+        )
+
+        HomeCatalogSettingsRepository.syncCloudStreamCatalogs(listOf(section))
+        val initial = HomeCatalogSettingsRepository.uiState.value.items.single()
+        assertEquals(section.key, initial.key)
+        assertEquals("Example Provider", initial.addonName)
+        assertFalse(initial.heroSourceEnabled)
+
+        HomeCatalogSettingsRepository.setEnabled(section.key, false)
+        HomeCatalogSettingsRepository.syncCloudStreamCatalogs(listOf(section.copy(title = "Anime Updated")))
+
+        val updated = HomeCatalogSettingsRepository.uiState.value.items.single()
+        assertFalse(updated.enabled)
+        assertEquals("Anime Updated", updated.defaultTitle)
     }
 
     @Test
