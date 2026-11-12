@@ -572,6 +572,17 @@ kotlin {
                     // CloudStream sources use Jackson's JsonMapper and Blatzar NiceHttp APIs.
                     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
                     implementation("com.github.Blatzar:NiceHttp:0.4.18")
+                    implementation("androidx.annotation:annotation:1.10.0")
+                    implementation("org.jsoup:jsoup:1.22.1")
+                    implementation("me.xdrop:fuzzywuzzy:1.4.0")
+                    implementation("org.mozilla:rhino:1.8.1")
+                    implementation("com.uwetrottmann.tmdb2:tmdb-java:2.13.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-core:0.6.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.6.0")
+                    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3") {
+                        exclude(group = "org.mozilla", module = "rhino-engine")
+                    }
+                    implementation(kotlin("reflect"))
                     implementation(libs.ksoup)
                 }
             }
