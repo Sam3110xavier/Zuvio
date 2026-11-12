@@ -1731,11 +1731,7 @@ internal fun MainAppContent(
                                 onEditProfile = pushEditProfile,
                                 onSettingsPageClick = if (useNativeNavigation && !isTabletLayout) {
                                     { pageName, title ->
-                                        if (pageName == "CloudStream") {
-                                            navController.navigate(CloudStreamSettingsRoute(title))
-                                        } else {
-                                            navController.navigate(SettingsPageRoute(pageName, title))
-                                        }
+                                        navController.navigate(SettingsPageRoute(pageName, title))
                                     }
                                 } else {
                                     null
@@ -1974,12 +1970,6 @@ internal fun MainAppContent(
                         SettingsDestination(route, navController) { onBack ->
                             PluginsSettingsScreen(onBack = onBack)
                         }
-                    }
-                    entry<CloudStreamSettingsRoute> { route ->
-                        CloudStreamSettingsDestination(
-                            route = route,
-                            navController = navController,
-                        )
                     }
                 }
                 entry<PartyRoute> { route ->
