@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.cloudstream.CloudStreamPluginItem
@@ -44,6 +45,7 @@ import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 object HomeRepository {
+    private val log = Logger.withTag("HomeRepository")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -289,6 +291,7 @@ object HomeRepository {
                                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                     throw cancelled
                                 } catch (error: Throwable) {
+                                    log.w(error) { "CloudStream home catalog fetch failed provider=${plugin.metadata.name}" }
                                     Result.failure(error)
                                 }
                             }
