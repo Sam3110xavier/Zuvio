@@ -568,6 +568,7 @@ kotlin {
                 implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("lib-*.aar"))))
                 if (androidDistribution == "full") {
                     implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+                    implementation("org.tukaani:xz:1.10")
                     implementation(files(cloudStreamRuntimeAar).builtBy(downloadCloudStreamRuntime))
                     // CloudStream sources use Jackson's JsonMapper and Blatzar NiceHttp APIs.
                     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
