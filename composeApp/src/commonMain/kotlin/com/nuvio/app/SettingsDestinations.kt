@@ -26,6 +26,8 @@ import com.nuvio.app.navigation.PartyRoute
 import com.nuvio.app.navigation.SettingsPageRoute
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.party_title
+import nuvio.composeapp.generated.resources.compose_settings_page_plugins
+import nuvio.composeapp.generated.resources.compose_settings_page_cloudstream
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -64,6 +66,21 @@ internal fun SettingsRootDestination(
         },
         onExternalBack = onBack,
         showInternalHeader = !useNativeNavigation,
+        onPluginsClick = {
+            navController.navigate(
+                SettingsPageRoute(
+                    pageName = "Plugins",
+                    title = stringResource(Res.string.compose_settings_page_plugins),
+                ),
+            )
+        },
+        onCloudStreamClick = {
+            navController.navigate(
+                CloudStreamSettingsRoute(
+                    title = stringResource(Res.string.compose_settings_page_cloudstream),
+                ),
+            )
+        },
         onSwitchProfile = onSwitchProfile,
         onEditProfile = onEditProfile,
         onPosterClick = { meta ->
