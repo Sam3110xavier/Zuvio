@@ -12,11 +12,9 @@ import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.FolderDetailRepository
 import com.nuvio.app.features.collection.FolderDetailScreen
 import com.nuvio.app.features.home.HomeCatalogSection
-import com.nuvio.app.features.settings.CloudStreamSettingsScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.CollectionEditorPageRoute
-import com.nuvio.app.navigation.CloudStreamSettingsRoute
 import com.nuvio.app.navigation.CollectionEditorRoute
 import com.nuvio.app.navigation.CollectionsRoute
 import com.nuvio.app.navigation.DetailRoute
@@ -27,7 +25,6 @@ import com.nuvio.app.navigation.SettingsPageRoute
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.party_title
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
-import nuvio.composeapp.generated.resources.compose_settings_page_cloudstream
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -53,36 +50,15 @@ internal fun SettingsRootDestination(
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
     val watchPartyTitle = stringResource(Res.string.party_title)
-    val pluginsTitle = stringResource(Res.string.compose_settings_page_plugins)
-    val cloudStreamTitle = stringResource(Res.string.compose_settings_page_cloudstream)
     SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         initialPageName = route.pageName,
         rootActionsEnabled = false,
         onNavigatePage = { pageName, title ->
-            if (pageName == "CloudStream") {
-                navController.navigate(CloudStreamSettingsRoute(title))
-            } else {
-                navController.navigate(SettingsPageRoute(pageName, title))
-            }
+            navController.navigate(SettingsPageRoute(pageName, title))
         },
         onExternalBack = onBack,
         showInternalHeader = !useNativeNavigation,
-        onPluginsClick = {
-            navController.navigate(
-                SettingsPageRoute(
-                    pageName = "Plugins",
-                    title = pluginsTitle,
-                ),
-            )
-        },
-        onCloudStreamClick = {
-            navController.navigate(
-                CloudStreamSettingsRoute(
-                    title = cloudStreamTitle,
-                ),
-            )
-        },
         onSwitchProfile = onSwitchProfile,
         onEditProfile = onEditProfile,
         onPosterClick = { meta ->
@@ -97,16 +73,6 @@ internal fun SettingsRootDestination(
         onCheckForUpdatesClick = onCheckForUpdates,
         onTestUpdateBannerClick = onTestUpdateBanner,
     )
-}
-
-
-@Composable
-internal fun CloudStreamSettingsDestination(
-    route: CloudStreamSettingsRoute,
-    navController: NuvioNavigator,
-) {
-    val onBack = rememberGuardedPopBackStack(navController, route)
-    CloudStreamSettingsScreen(onBack = onBack)
 }
 
 @Composable
