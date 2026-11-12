@@ -3101,4 +3101,5 @@
     <string name="settings_glass_ui_style_dark">Dark</string>
     <string name="settings_glass_ui_style_balanced">Balanced</string>
     <string name="settings_glass_ui_style_vivid">Vivid</string>
+    <string name="addons_and_plugins_refreshed">Addons and plugins refreshed</string>
 </resources>
