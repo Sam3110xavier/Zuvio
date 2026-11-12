@@ -80,6 +80,9 @@ android {
     productFlavors {
         create("full") {
             dimension = "distribution"
+            // CloudStream providers are loaded from external DEX packages at runtime.
+            // Keep their ABI names stable in Full release APKs after R8 shrinking.
+            proguardFiles("../composeApp/proguard-cloudstream-full.pro")
         }
         create("playstore") {
             dimension = "distribution"
