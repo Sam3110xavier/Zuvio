@@ -25,6 +25,14 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        // CloudStream's NiceHttp and NewPipeExtractor artifacts are published via JitPack.
+        maven {
+            url = uri("https://jitpack.io")
+            content {
+                includeGroup("com.github.Blatzar")
+                includeGroup("com.github.teamnewpipe")
+            }
+        }
     }
 }
 
