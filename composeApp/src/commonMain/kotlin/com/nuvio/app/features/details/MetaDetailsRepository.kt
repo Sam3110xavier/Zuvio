@@ -284,6 +284,13 @@ object MetaDetailsRepository {
     private val backgroundBackoffUntilByHost = mutableMapOf<String, Long>()
 
     internal suspend fun fetchLightweight(type: String, id: String): MetaLookupOutcome {
+        parseCloudStreamRouteId(id)?.let { route ->
+            val meta = runCatching {
+                CloudStreamRepository.initialize()
+                CloudStreamRepository.load(route.providerId, route.data).getOrThrow().toMetaDetails()
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+            return meta?.let(MetaLookupOutcome::Loaded) ?: MetaLookupOutcome.Failed
+        }
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
         val manifests = findReadyMetaManifests(type = type, id = metaLookupId)
         if (manifests.isEmpty()) {
