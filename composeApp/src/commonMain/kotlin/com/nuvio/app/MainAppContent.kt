@@ -403,7 +403,6 @@ internal fun MainAppContent(
     val downloadsTitle = stringResource(Res.string.compose_settings_root_downloads_title)
     val addonsSettingsTitle = stringResource(Res.string.compose_settings_page_addons)
     val pluginsSettingsTitle = stringResource(Res.string.compose_settings_page_plugins)
-    val cloudStreamSettingsTitle = stringResource(Res.string.compose_settings_page_cloudstream)
     val accountSettingsTitle = stringResource(Res.string.compose_settings_page_account)
     val editProfileTitle = stringResource(Res.string.profile_edit_edit_title)
     val pushEditProfile: () -> Unit = { navController.navigate(ProfileEditRoute(editProfileTitle)) }
