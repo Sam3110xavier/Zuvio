@@ -370,6 +370,7 @@ object StreamsRepository {
             val pluginFirstErrorByAddonId = mutableMapOf<String, String>()
             val cloudStreamRemainingByAddonId = cloudStreamProviderGroups.groupingBy { it.addonId }.eachCount().toMutableMap()
             val cloudStreamFirstErrorByAddonId = mutableMapOf<String, String>()
+            val seenStreamIdentities = mutableSetOf<String>()
             val totalTasks = streamAddons.size +
                 pluginProviderGroups.sumOf { it.scrapers.size } +
                 cloudStreamProviderGroups.size +
