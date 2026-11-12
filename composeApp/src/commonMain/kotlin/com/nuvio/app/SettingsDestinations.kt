@@ -57,15 +57,7 @@ internal fun SettingsRootDestination(
         initialPageName = route.pageName,
         rootActionsEnabled = false,
         onNavigatePage = { pageName, title ->
-            when (pageName) {
-                SettingsPage.CloudStream.name -> {
-                    navController.navigate(CloudStreamSettingsRoute(title))
-                }
-                SettingsPage.Plugins.name -> {
-                    navController.navigate(PluginsSettingsRoute(title))
-                }
-                else -> navController.navigate(SettingsPageRoute(pageName, title))
-            }
+            navController.navigate(settingsDestinationRoute(pageName, title))
         },
         onExternalBack = onBack,
         showInternalHeader = !useNativeNavigation,
@@ -183,3 +175,11 @@ internal fun FolderDestination(
         onPosterClick = rememberOpenMeta(navController),
     )
 }
+
+
+internal fun settingsDestinationRoute(pageName: String, title: String): AppRoute =
+    when (pageName) {
+        SettingsPage.CloudStream.name -> CloudStreamSettingsRoute(title)
+        SettingsPage.Plugins.name -> PluginsSettingsRoute(title)
+        else -> SettingsPageRoute(pageName, title)
+    }
