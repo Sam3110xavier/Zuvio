@@ -509,23 +509,11 @@ kotlin {
                     implementation("io.ktor:ktor-server-cio:${libs.versions.ktor.get()}")
                     implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
                     implementation(libs.ksoup)
-                    implementation("androidx.annotation:annotation:1.10.0")
-                    implementation("com.google.guava:guava:33.3.1-android")
-                    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
-                    implementation("org.jsoup:jsoup:1.22.1")
                     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
-                    implementation("com.github.Blatzar:NiceHttp:0.4.18")
-                    implementation("me.xdrop:fuzzywuzzy:1.4.0")
-                    implementation("org.mozilla:rhino:1.8.1")
-                    implementation("com.uwetrottmann.tmdb2:tmdb-java:2.13.0")
                     // Supabase Auth 3.4.1 references the pre-0.6 key API
                     // removed those types; use the compatible 0.5.x API for Android Full.
                     implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")
                     implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.5.0")
-                    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3") {
-                        exclude(group = "org.mozilla", module = "rhino-engine")
-                    }
-                    implementation("org.tukaani:xz:1.10")
                     implementation(kotlin("reflect"))
                 }
             }
