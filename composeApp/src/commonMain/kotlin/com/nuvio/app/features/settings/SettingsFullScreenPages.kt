@@ -193,28 +193,6 @@ fun PluginsSettingsScreen(
 }
 
 @Composable
-fun CloudStreamSettingsScreen(
-    onBack: () -> Unit,
-) {
-    if (!AppFeaturePolicy.pluginsEnabled) {
-        AddonsSettingsScreen(onBack = onBack)
-        return
-    }
-
-    NuvioScreen(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        stickyHeader {
-            NuvioScreenHeader(
-                title = stringResource(Res.string.compose_settings_page_cloudstream),
-                onBack = onBack,
-            )
-        }
-        cloudStreamSettingsContent()
-    }
-}
-
-@Composable
 fun AccountSettingsScreen(
     onBack: () -> Unit,
 ) {
