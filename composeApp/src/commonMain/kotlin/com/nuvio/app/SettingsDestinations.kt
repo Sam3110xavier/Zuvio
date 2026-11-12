@@ -13,17 +13,14 @@ import com.nuvio.app.features.collection.FolderDetailRepository
 import com.nuvio.app.features.collection.FolderDetailScreen
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.settings.SettingsScreen
-import com.nuvio.app.features.settings.SettingsPage
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.CollectionEditorPageRoute
 import com.nuvio.app.navigation.CollectionEditorRoute
 import com.nuvio.app.navigation.CollectionsRoute
-import com.nuvio.app.navigation.CloudStreamSettingsRoute
 import com.nuvio.app.navigation.DetailRoute
 import com.nuvio.app.navigation.FolderDetailRoute
 import com.nuvio.app.navigation.NuvioNavigator
 import com.nuvio.app.navigation.PartyRoute
-import com.nuvio.app.navigation.PluginsSettingsRoute
 import com.nuvio.app.navigation.SettingsPageRoute
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.party_title
@@ -57,7 +54,7 @@ internal fun SettingsRootDestination(
         initialPageName = route.pageName,
         rootActionsEnabled = false,
         onNavigatePage = { pageName, title ->
-            navController.navigate(settingsDestinationRoute(pageName, title))
+            navController.navigate(SettingsPageRoute(pageName, title))
         },
         onExternalBack = onBack,
         showInternalHeader = !useNativeNavigation,
@@ -175,11 +172,3 @@ internal fun FolderDestination(
         onPosterClick = rememberOpenMeta(navController),
     )
 }
-
-
-internal fun settingsDestinationRoute(pageName: String, title: String): AppRoute =
-    when (pageName) {
-        SettingsPage.CloudStream.name -> CloudStreamSettingsRoute(title)
-        SettingsPage.Plugins.name -> PluginsSettingsRoute(title)
-        else -> SettingsPageRoute(pageName, title)
-    }
