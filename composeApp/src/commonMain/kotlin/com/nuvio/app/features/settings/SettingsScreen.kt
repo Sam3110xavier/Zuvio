@@ -351,7 +351,11 @@ fun SettingsScreen(
         val openCloudStream = if (onNavigatePage != null) {
             { openPage(SettingsPage.CloudStream) }
         } else {
-            onCloudStreamClick
+            // CloudStream is an in-screen settings destination when native route navigation
+            // is not active. Do not delegate to the optional external callback here: the
+            // root Settings tab does not provide it, which made the row consume taps but
+            // leave the user on Content & Discovery.
+            { openPage(SettingsPage.CloudStream) }
         }
         val openAccount = if (onNavigatePage != null) {
             { openPage(SettingsPage.Account) }
