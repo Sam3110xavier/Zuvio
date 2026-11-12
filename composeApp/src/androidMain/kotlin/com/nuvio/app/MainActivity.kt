@@ -26,6 +26,7 @@ import com.nuvio.app.core.ui.glass.rememberNuvioBackdrop
 import com.nuvio.app.core.ui.PosterCardStyleStorage
 import com.nuvio.app.features.addons.AddonHttpClientProvider
 import com.nuvio.app.features.addons.AddonStorage
+import com.nuvio.app.features.cloudstream.CloudStreamPlatformStorage
 import com.nuvio.app.features.collection.CollectionMobileSettingsStorage
 import com.nuvio.app.features.collection.CollectionStorage
 import com.nuvio.app.features.debrid.DebridSettingsStorage
@@ -123,6 +124,8 @@ open class MainActivity : AppCompatActivity() {
         SyncClientIdentityStorage.initialize(applicationContext)
         AddonHttpClientProvider.initialize(applicationContext)
         AddonStorage.initialize(applicationContext)
+        // Provide the Activity context required by CloudStream's CommonActivity compatibility layer.
+        CloudStreamPlatformStorage.initialize(this)
         AuthStorage.initialize(applicationContext)
         ServerConfigurationStorage.initialize(applicationContext)
         LibraryStorage.initialize(applicationContext)
