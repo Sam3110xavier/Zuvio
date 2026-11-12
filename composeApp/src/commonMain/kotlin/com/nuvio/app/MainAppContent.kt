@@ -1979,7 +1979,6 @@ internal fun MainAppContent(
                         CloudStreamSettingsDestination(
                             route = route,
                             navController = navController,
-                            useNativeNavigation = useNativeNavigation,
                         )
                     }
                 }
