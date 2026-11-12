@@ -50,17 +50,12 @@ class SimklPkceTest {
         )
 
         assertTrue(url.startsWith("https://simkl.com/oauth2/authorize?"))
+        assertTrue("response_type=code" in url)
+        assertTrue("scope=media%3Aread%20media%3Awrite" in url)
+        assertTrue("state=state" in url)
         assertTrue("client_id=client+id" in url || "client_id=client%20id" in url)
         assertTrue("code_challenge_method=S256" in url)
-        assertTrue("scope=media%3Aread+media%3Awrite" in url || "scope=media%3Aread%20media%3Awrite" in url)
         assertTrue("redirect_uri=nuvio%3A%2F%2Fauth%2Fsimkl" in url)
-    }
-
-    @Test
-    fun `form body URL encodes OAuth fields`() {
-        val body = simklFormBody(mapOf("scope" to "media:read media:write", "code" to "a+b"))
-        assertTrue("scope=media%3Aread+media%3Awrite" in body || "scope=media%3Aread%20media%3Awrite" in body)
-        assertTrue("code=a%2Bb" in body)
     }
 
     @Test

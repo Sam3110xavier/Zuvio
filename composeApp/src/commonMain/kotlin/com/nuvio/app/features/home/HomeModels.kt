@@ -37,14 +37,6 @@ enum class PosterShape {
     Landscape,
 }
 
-data class HomeCatalogTab(
-    val key: String,
-    val title: String,
-    val items: List<MetaPreview>,
-    val availableItemCount: Int = items.size,
-    val hasMore: Boolean = false,
-)
-
 data class HomeCatalogSection(
     val key: String,
     val title: String,
@@ -54,14 +46,12 @@ data class HomeCatalogSection(
     val items: List<MetaPreview>,
     val availableItemCount: Int = items.size,
     val hasMore: Boolean = false,
-    val isMergedRow: Boolean = false,
-    val displayMode: String? = null,
-    val sourceTabs: List<HomeCatalogTab> = emptyList(),
+    // Some catalog sources can render a row without exposing a destination for all items.
     val supportsViewAll: Boolean = true,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
-    supportsViewAll && (isMergedRow || availableItemCount > previewLimit || hasMore)
+    supportsViewAll && (availableItemCount > previewLimit || hasMore)
 
 data class HomeUiState(
     val isLoading: Boolean = false,
