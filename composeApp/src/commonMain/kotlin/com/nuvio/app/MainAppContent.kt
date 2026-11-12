@@ -91,6 +91,8 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.features.addons.AddAddonResult
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
+import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
 import com.nuvio.app.features.catalog.CatalogTarget
@@ -264,6 +266,13 @@ internal fun MainAppContent(
             }
             remember {
                 ProfileSettingsSync.startObserving()
+            }
+            if (AppFeaturePolicy.pluginsEnabled) {
+                remember {
+                    PluginRepository.initialize()
+                    CloudStreamRepository.initialize()
+                    CloudStreamRepository.refreshAll(force = false)
+                }
             }
         }
         val hapticFeedback = LocalHapticFeedback.current
