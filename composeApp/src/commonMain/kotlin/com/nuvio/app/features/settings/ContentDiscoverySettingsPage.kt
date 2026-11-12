@@ -77,20 +77,23 @@ internal fun LazyListScope.contentDiscoveryContent(
                     isTablet = isTablet,
                     onClick = onMediaServersClick,
                 )
+                // CloudStream is part of the full plugins-enabled distribution. Keep its
+                // visibility tied to that capability as a fallback so a stale/miswired
+                // CloudStream-specific flag cannot silently hide the entry.
+                if (showCloudStreamEntry || showPluginsEntry) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_cloudstream),
+                        description = stringResource(Res.string.settings_content_discovery_cloudstream_description),
+                        isTablet = isTablet,
+                        onClick = onCloudStreamClick,
+                    )
+                }
                 if (showPluginsEntry) {
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_plugins),
                         description = stringResource(Res.string.settings_content_discovery_plugins_description),
                         isTablet = isTablet,
                         onClick = onPluginsClick,
-                    )
-                }
-                if (showCloudStreamEntry) {
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_cloudstream),
-                        description = stringResource(Res.string.settings_content_discovery_cloudstream_description),
-                        isTablet = isTablet,
-                        onClick = onCloudStreamClick,
                     )
                 }
             }
