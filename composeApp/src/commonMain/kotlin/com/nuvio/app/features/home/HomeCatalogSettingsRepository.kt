@@ -1173,7 +1173,7 @@ object HomeCatalogSettingsRepository {
             items = catalogItems + collectionItems + mergedItems,
             addonIdByCatalogKey = definitions
                 .filterNot { ServerCatalog.isServerKey(it.key) }
-                .associate { definition -> definition.key to definition.addonGroupId() } +
+                .associate { definition -> definition.key to definition.addonGroupId() },
             addonLayouts = addonLayouts.mapValues { (_, stored) ->
                 HomeAddonLayoutPreference(
                     mode = HomeAddonLayoutMode.fromStorage(stored.mode),
