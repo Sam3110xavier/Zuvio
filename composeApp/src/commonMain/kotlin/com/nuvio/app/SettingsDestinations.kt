@@ -53,6 +53,8 @@ internal fun SettingsRootDestination(
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
     val watchPartyTitle = stringResource(Res.string.party_title)
+    val pluginsTitle = stringResource(Res.string.compose_settings_page_plugins)
+    val cloudStreamTitle = stringResource(Res.string.compose_settings_page_cloudstream)
     SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         initialPageName = route.pageName,
@@ -70,14 +72,14 @@ internal fun SettingsRootDestination(
             navController.navigate(
                 SettingsPageRoute(
                     pageName = "Plugins",
-                    title = stringResource(Res.string.compose_settings_page_plugins),
+                    title = pluginsTitle,
                 ),
             )
         },
         onCloudStreamClick = {
             navController.navigate(
                 CloudStreamSettingsRoute(
-                    title = stringResource(Res.string.compose_settings_page_cloudstream),
+                    title = cloudStreamTitle,
                 ),
             )
         },
