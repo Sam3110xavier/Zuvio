@@ -36,6 +36,16 @@ class HomeCatalogSectionTest {
         assertFalse(section.canOpenCatalog(previewLimit = 18))
     }
 
+    @Test
+    fun `cannot open catalog when view all is explicitly unsupported`() {
+        val section = section(
+            availableItemCount = 30,
+            hasMore = true,
+        ).copy(supportsViewAll = false)
+
+        assertFalse(section.canOpenCatalog(previewLimit = 18))
+    }
+
     private fun section(
         availableItemCount: Int,
         hasMore: Boolean,

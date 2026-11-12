@@ -10,12 +10,17 @@ import kotlin.test.assertTrue
 
 class CatalogPaginationStateTest {
     @Test
-    fun cloudStreamPaginationUsesOneBasedPagesAndStopsOnEmptyPage() {
+    fun `CloudStream page cursor maps zero based skip to one based page numbers`() {
         assertEquals(1, cloudStreamPageNumber(0))
         assertEquals(2, cloudStreamPageNumber(1))
-        assertEquals(0, cloudStreamNextPageSkip(0, 20))
-        assertEquals(1, cloudStreamNextPageSkip(1, 20))
-        assertNull(cloudStreamNextPageSkip(1, 0))
+        assertEquals(3, cloudStreamPageNumber(2))
+    }
+
+    @Test
+    fun `CloudStream exposes another page after non empty results and stops on empty page`() {
+        assertEquals(1, cloudStreamNextPageSkip(0, 8))
+        assertEquals(2, cloudStreamNextPageSkip(1, 12))
+        assertNull(cloudStreamNextPageSkip(2, 0))
     }
 
     @Test

@@ -1,11 +1,9 @@
 package com.nuvio.app.features.home
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.stopScroll
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,11 +15,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -40,7 +36,6 @@ import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberHeroStretchState
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
-import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
@@ -56,7 +51,6 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
-import com.nuvio.app.features.home.components.MergedHomeRowTabSelector
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
@@ -78,7 +72,6 @@ import com.nuvio.app.features.watchprogress.CachedNextUpItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
-import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
@@ -103,6 +96,7 @@ import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
 import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
 import kotlinx.coroutines.Dispatchers
@@ -122,7 +116,6 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -131,9 +124,6 @@ fun HomeScreen(
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
-    onSearchClick: () -> Unit = {},
-    onDownloadsClick: () -> Unit = {},
-    onProfileClick: (() -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     continueWatchingDisintegrationRequest: DisintegrationRequest<String>? = null,
@@ -143,6 +133,8 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         AddonRepository.initialize()
         CollectionRepository.initialize()
+        CloudStreamRepository.initialize()
+        HomeRepository.applyCurrentSettings()
         ContinueWatchingPreferencesRepository.ensureLoaded()
         WatchedRepository.ensureLoaded()
         WatchProgressRepository.ensureLoaded()
@@ -162,22 +154,6 @@ fun HomeScreen(
     val homeListState = rememberLazyListState()
     val continueWatchingListState = rememberLazyListState()
     val upcomingListState = rememberLazyListState()
-    val mergedRowSelectedTabs = remember { mutableStateMapOf<String, String>() }
-    var areMergedRowTabsVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(homeListState) {
-        var previousPosition: Pair<Int, Int>? = null
-        snapshotFlow {
-            homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset
-        }.collect { currentPosition ->
-            val previous = previousPosition
-            if (previous != null && currentPosition != previous) {
-                val scrollingDown = currentPosition.first > previous.first ||
-                    (currentPosition.first == previous.first && currentPosition.second > previous.second)
-                areMergedRowTabsVisible = scrollingDown
-            }
-            previousPosition = currentPosition
-        }
-    }
     ScreenActivityEffect(homeListState, continueWatchingListState, upcomingListState) { active ->
         if (!active) {
             homeListState.stopScroll(MutatePriority.PreventUserInput)
@@ -218,6 +194,7 @@ fun HomeScreen(
             NetworkCondition.Online -> {
                 if (observedOfflineState) {
                     observedOfflineState = false
+                    CloudStreamRepository.refreshAll()
                     HomeRepository.refresh(addonsUiState.addons.enabledAddons(), force = true)
                 }
             }
@@ -977,12 +954,12 @@ fun HomeScreen(
     val hasRenderableHomeRows = homeUiState.sections.isNotEmpty() || hasRenderableCollectionRows
     val showHeroSlot = shouldShowHomeHeroSlot(
         heroEnabled = homeSettingsUiState.heroEnabled,
-        hasHeroItems = homeHeroState.items.isNotEmpty(),
+        hasHeroItems = homeUiState.heroItems.isNotEmpty(),
         isResolvingHeroSources = isResolvingHeroSources,
         hasRenderableHomeRows = hasRenderableHomeRows,
     )
     val showHeroSkeleton = showHeroSlot &&
-        homeHeroState.items.isEmpty() &&
+        homeUiState.heroItems.isEmpty() &&
         isResolvingHeroSources
     val isInitialHomeContentLoading = shouldShowInitialHomeLoading(
         hasRenderableHomeRows = hasRenderableHomeRows,
@@ -993,25 +970,7 @@ fun HomeScreen(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
         val posterCardStyle = rememberPosterCardStyleUiState()
-        val netflixStyleEnabled = posterCardStyle.netflixStyleEnabled
-        val presentationPosterCardStyle = remember(posterCardStyle, netflixStyleEnabled) {
-            if (!netflixStyleEnabled) {
-                posterCardStyle
-            } else {
-                val widthDp = maxOf(posterCardStyle.widthDp, NETFLIX_HOME_POSTER_WIDTH_DP)
-                posterCardStyle.copy(
-                    widthDp = widthDp,
-                    heightDp = (widthDp * 3) / 2,
-                    cornerRadiusDp = minOf(posterCardStyle.cornerRadiusDp, 8),
-                )
-            }
-        }
-        val presentationContinueWatchingPreferences = if (netflixStyleEnabled) {
-            continueWatchingPreferences.copy(style = ContinueWatchingSectionStyle.Poster)
-        } else {
-            continueWatchingPreferences
-        }
-        val continueWatchingLayout = rememberContinueWatchingLayout(maxWidth.value, presentationPosterCardStyle)
+        val continueWatchingLayout = rememberContinueWatchingLayout(maxWidth.value, posterCardStyle)
         val nativeBottomNavigationOverlayHeight =
             if (LocalNuvioBottomNavigationOverlayPadding.current > 0.dp) {
                 nuvioSafeBottomPadding()
@@ -1020,22 +979,22 @@ fun HomeScreen(
             }
         val mobileHeroBelowSectionHeightHint = remember(
             maxWidth.value,
-            presentationContinueWatchingPreferences.isVisible,
-            presentationContinueWatchingPreferences.style,
+            continueWatchingPreferences.isVisible,
+            continueWatchingPreferences.style,
             hasContinueWatchingRows,
             continueWatchingLayout,
-            presentationPosterCardStyle.widthDp,
+            posterCardStyle.widthDp,
             nativeBottomNavigationOverlayHeight,
         ) {
             if (
                 maxWidth.value < 600f &&
-                presentationContinueWatchingPreferences.isVisible &&
+                continueWatchingPreferences.isVisible &&
                 hasContinueWatchingRows
             ) {
                 continueWatchingHeroViewportReserveHeight(
-                    style = presentationContinueWatchingPreferences.style,
+                    style = continueWatchingPreferences.style,
                     layout = continueWatchingLayout,
-                    basePosterWidthDp = presentationPosterCardStyle.widthDp,
+                    basePosterWidthDp = posterCardStyle.widthDp,
                 ) + nativeBottomNavigationOverlayHeight
             } else {
                 null
@@ -1054,9 +1013,9 @@ fun HomeScreen(
             { url -> activeHeroArtworkUrl = url }
         }
 
-        DynamicArtworkBackground(artworkUrl = activeHeroArtworkUrl.takeUnless { netflixStyleEnabled }) {
+        DynamicArtworkBackground(artworkUrl = activeHeroArtworkUrl) {
             NuvioScreen(
-                modifier = Modifier.fillMaxSize().then(if (netflixStyleEnabled) Modifier.background(Color.Black) else Modifier).then(heroStretchModifier),
+                modifier = Modifier.fillMaxSize().then(heroStretchModifier),
                 horizontalPadding = 0.dp,
                 topPadding = if (showHeroSlot) 0.dp else null,
                 listState = homeListState,
@@ -1075,16 +1034,15 @@ fun HomeScreen(
                                     modifier = Modifier,
                                     viewportHeight = maxHeight,
                                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                    heroStyle = if (netflixStyleEnabled) HomeHeroStyle.FULL_BLEED else homeSettingsUiState.heroStyle,
+                                    heroStyle = homeSettingsUiState.heroStyle,
                                 )
 
-                                homeHeroState.items.isNotEmpty() -> HomeHeroSection(
+                                homeUiState.heroItems.isNotEmpty() -> HomeHeroSection(
                                     items = homeHeroState.items,
                                     modifier = Modifier,
                                     viewportHeight = maxHeight,
                                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                    heroStyle = if (netflixStyleEnabled) HomeHeroStyle.FULL_BLEED else homeSettingsUiState.heroStyle,
-                                    netflixStyleEnabled = netflixStyleEnabled,
+                                    heroStyle = homeSettingsUiState.heroStyle,
                                     listState = homeListState,
                                     stretchPx = { heroStretchState.stretchPx },
                                     // animateCollectionGifs doubles as "Home is the visible route" — it already
@@ -1097,10 +1055,6 @@ fun HomeScreen(
                                     showImdbRating = homeHeroState.showImdbRating,
                                     showMdbListRatings = homeHeroState.showMdbListRatings,
                                     onItemClick = onPosterClick,
-                                    onItemLongClick = onPosterLongClick,
-                                    onSearchClick = onSearchClick,
-                                    onDownloadsClick = onDownloadsClick,
-                                    onProfileClick = onProfileClick,
                                     onActiveArtworkChange = onActiveHeroArtworkChange,
                                 )
 
@@ -1108,7 +1062,7 @@ fun HomeScreen(
                                     modifier = Modifier,
                                     viewportHeight = maxHeight,
                                     mobileBelowSectionHeightHint = mobileHeroBelowSectionHeightHint,
-                                    heroStyle = if (netflixStyleEnabled) HomeHeroStyle.FULL_BLEED else homeSettingsUiState.heroStyle,
+                                    heroStyle = homeSettingsUiState.heroStyle,
                                 )
                             }
                         }
@@ -1118,7 +1072,7 @@ fun HomeScreen(
                 when {
                     isInitialHomeContentLoading -> {
                         homeContinueWatchingSections(
-                            preferences = presentationContinueWatchingPreferences,
+                            preferences = continueWatchingPreferences,
                             continueWatchingItems = continueWatchingItems,
                             upcomingItems = upcomingItems,
                             dataSourceKey = effectiveWatchProgressSource,
@@ -1139,7 +1093,7 @@ fun HomeScreen(
 
                     !hasActiveAddons && !hasServerLibraries && !hasRenderableCollectionRows -> {
                         homeContinueWatchingSections(
-                            preferences = presentationContinueWatchingPreferences,
+                            preferences = continueWatchingPreferences,
                             continueWatchingItems = continueWatchingItems,
                             upcomingItems = upcomingItems,
                             dataSourceKey = effectiveWatchProgressSource,
@@ -1189,7 +1143,7 @@ fun HomeScreen(
                     }
 
                     homeUiState.sections.isEmpty() && homeUiState.heroItems.isEmpty() &&
-                        (!presentationContinueWatchingPreferences.isVisible || !hasContinueWatchingRows) &&
+                        (!continueWatchingPreferences.isVisible || !hasContinueWatchingRows) &&
                         !hasRenderableCollectionRows -> {
                         item {
                             val loadFailed = !homeUiState.errorMessage.isNullOrBlank()
@@ -1230,7 +1184,7 @@ fun HomeScreen(
 
                     else -> {
                         homeContinueWatchingSections(
-                            preferences = presentationContinueWatchingPreferences,
+                            preferences = continueWatchingPreferences,
                             continueWatchingItems = continueWatchingItems,
                             upcomingItems = upcomingItems,
                             dataSourceKey = effectiveWatchProgressSource,
@@ -1261,30 +1215,10 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
-                                    if (section.isMergedRow && section.sourceTabs.size > 1) {
-                                        stickyHeader(
-                                            key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
-                                            contentType = "merged_row_tabs",
-                                        ) {
-                                            if (areMergedRowTabsVisible) {
-                                                MergedHomeRowTabSelector(
-                                                    tabs = section.sourceTabs,
-                                                    selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                        ?: section.sourceTabs.firstOrNull()?.key,
-                                                    sectionPadding = homeSectionPadding,
-                                                    onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                                )
-                                            }
-                                        }
-                                    }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
                                         HomeCatalogRowSection(
                                             section = section,
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
-                                            selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                ?: section.sourceTabs.firstOrNull()?.key,
-                                            onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                            showTabSelector = !section.isMergedRow,
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
                                             onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
