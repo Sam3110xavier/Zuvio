@@ -25,6 +25,8 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        // CloudStream Full distribution dependencies hosted on JitPack.
+        // Include all GitHub-backed transitive coordinates (including TeamNewPipe:nanojson).
         maven("https://jitpack.io") {
             content {
                 includeGroupByRegex("com\\.github\\..*")

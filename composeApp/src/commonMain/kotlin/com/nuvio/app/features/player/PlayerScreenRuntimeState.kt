@@ -75,8 +75,6 @@ internal class PlayerScreenRuntime(
     val torrentTrackers: List<String> get() = args.torrentTrackers
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
-    val onFollowPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit
-        get() = args.onFollowPartyMedia
     var externalSubtitles by mutableStateOf(args.externalSubtitles)
     val isSeries: Boolean get() = parentMetaType == "series"
     val isLiveTvPlayback: Boolean get() = contentType == "live"
@@ -125,8 +123,6 @@ internal class PlayerScreenRuntime(
             sourceUrl.contains(".m3u8", ignoreCase = true)
 
     var activeSourceUrl by mutableStateOf(sourceUrl)
-    /** Monotonic token that prevents stale resolver callbacks overriding a newer source. */
-    var sourceSwitchGeneration: Long = 0L
     var selectedPlayerQualityId by mutableStateOf<String?>(null)
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
 
@@ -147,10 +143,9 @@ internal class PlayerScreenRuntime(
     var activeTorrentTrackers by mutableStateOf(torrentTrackers)
     var p2pResolvedSourceUrl by mutableStateOf<String?>(null)
     var activeSourceIdentityKey by mutableStateOf(
-        args.stream?.playerSourceIdentityKey()
-            ?: torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
-                "torrent:$hash:${torrentFileIdx ?: -1}"
-            } ?: sourceUrl.trim().takeIf { it.isNotBlank() }?.let { url -> "url:$url" },
+        torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
+            "torrent:$hash:${torrentFileIdx ?: -1}"
+        } ?: sourceUrl.trim().takeIf { it.isNotBlank() }?.let { url -> "url:$url" },
     )
     var activeStreamTitle by mutableStateOf(streamTitle)
     var activeStreamSubtitle by mutableStateOf(streamSubtitle)
@@ -160,7 +155,6 @@ internal class PlayerScreenRuntime(
     var activeProviderAddonId by mutableStateOf(providerAddonId)
     var activeLogo by mutableStateOf(logo)
     var activeStream by mutableStateOf(args.stream)
-    var deadLinkStatusMessage by mutableStateOf<String?>(null)
     var currentStreamBingeGroup by mutableStateOf(initialBingeGroup)
     var currentStreamFilename by mutableStateOf(args.stream?.behaviorHints?.filename)
     var currentStreamInfoHash by mutableStateOf(args.stream?.infoHash)
@@ -215,6 +209,7 @@ internal class PlayerScreenRuntime(
     var showSpeedPanel by mutableStateOf(false)
     var showEpisodesPanel by mutableStateOf(false)
     var showChaptersPanel by mutableStateOf(false)
+    var showDiscTitlesPanel by mutableStateOf(false)
     var showLiveChannelsPanel by mutableStateOf(false)
     /** The file's chapters, sorted; empty when it has fewer than two. */
     var chapters by mutableStateOf<List<PlayerChapter>>(emptyList())
@@ -278,7 +273,7 @@ internal class PlayerScreenRuntime(
             showPartyPanel || showSourcesPanel || showEpisodesPanel || showSubmitIntroModal ||
             // Fork panels
             showChaptersPanel || showQualityPanel || showSpeedPanel || showLiveChannelsPanel ||
-            showStreamInfoModal || showUserRatingSheet
+            showDiscTitlesPanel || showStreamInfoModal || showUserRatingSheet
     var partyBehind by mutableStateOf(false)
     var partyBehindMs by mutableStateOf<Long?>(null)
     var partyRateNudge: Float? = null
@@ -339,6 +334,7 @@ internal class PlayerScreenRuntime(
             showSpeedPanel ||
             showEpisodesPanel ||
             showChaptersPanel ||
+            showDiscTitlesPanel ||
             showLiveChannelsPanel ||
             showSubmitIntroModal ||
             showParentalGuide ||
