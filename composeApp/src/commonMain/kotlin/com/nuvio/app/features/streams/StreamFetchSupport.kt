@@ -27,12 +27,6 @@ internal data class PluginProviderGroup(
 )
 
 internal sealed interface StreamLoadCompletion {
-    data class CloudStreamProvider(
-        val addonId: String,
-        val addonName: String,
-        val streams: List<StreamItem>,
-        val error: String?,
-    ) : StreamLoadCompletion
     data class Addon(val group: AddonStreamGroup) : StreamLoadCompletion
     data class PluginScraper(
         val addonId: String,

@@ -544,31 +544,6 @@ object PlayerStreamsRepository {
                         publishStreamGroupAfterCacheCheck(completion.group)
                     }
 
-                    is StreamLoadCompletion.CloudStreamProvider -> {
-                        val group = presentStreamGroup(
-                            AddonStreamGroup(
-                                addonName = completion.addonName,
-                                addonId = completion.addonId,
-                                streams = filterDeadSources(stateFlow, completion.streams),
-                                isLoading = false,
-                                error = completion.error,
-                            ),
-                        )
-                        stateFlow.update { current ->
-                            val updated = StreamAutoPlaySelector.orderAddonStreams(
-                                groups = current.groups.filterNot { it.addonId == group.addonId } + group,
-                                installedOrder = installedAddonOrder,
-                                preferredGroupIds = preferredGroupIds,
-                            )
-                            val anyLoading = updated.any { it.isLoading }
-                            current.copy(
-                                groups = updated,
-                                isAnyLoading = anyLoading,
-                                emptyStateReason = updated.toEmptyStateReason(anyLoading),
-                            )
-                        }
-                    }
-
                     is StreamLoadCompletion.PluginScraper -> {
                         val remaining = (pluginRemainingByAddonId[completion.addonId] ?: 1) - 1
                         pluginRemainingByAddonId[completion.addonId] = remaining.coerceAtLeast(0)

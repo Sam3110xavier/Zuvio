@@ -50,14 +50,6 @@ sealed interface CatalogTarget {
         override val supportsPagination: Boolean = false,
     ) : CatalogTarget
 
-    data class CloudStream(
-        val providerId: String,
-        val sectionName: String,
-        override val contentType: String,
-    ) : CatalogTarget {
-        override val supportsPagination: Boolean = true
-    }
-
     data class MergedRow(
         val rowId: String,
     ) : CatalogTarget {
