@@ -1971,6 +1971,13 @@ internal fun MainAppContent(
                             PluginsSettingsScreen(onBack = onBack)
                         }
                     }
+                    entry<CloudStreamSettingsRoute> { route ->
+                        CloudStreamSettingsDestination(
+                            route = route,
+                            navController = navController,
+                            useNativeNavigation = useNativeNavigation,
+                        )
+                    }
                 }
                 entry<PartyRoute> { route ->
                     SettingsDestination(route, navController) { onBack ->
