@@ -85,7 +85,6 @@ internal fun SettingsRootDestination(
 internal fun CloudStreamSettingsDestination(
     route: CloudStreamSettingsRoute,
     navController: NuvioNavigator,
-    useNativeNavigation: Boolean,
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
     CloudStreamSettingsScreen(onBack = onBack)
