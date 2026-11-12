@@ -31,6 +31,8 @@ dependencyResolutionManagement {
             content {
                 includeGroup("com.github.Blatzar")
                 includeGroup("com.github.teamnewpipe")
+                // NewPipeExtractor pulls nanojson from the TeamNewPipe GitHub organization.
+                includeGroup("com.github.TeamNewPipe")
             }
         }
     }
