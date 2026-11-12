@@ -46,10 +46,12 @@ data class HomeCatalogSection(
     val items: List<MetaPreview>,
     val availableItemCount: Int = items.size,
     val hasMore: Boolean = false,
+    // Some catalog sources can render a row without exposing a destination for all items.
+    val supportsViewAll: Boolean = true,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
-    availableItemCount > previewLimit || hasMore
+    supportsViewAll && (availableItemCount > previewLimit || hasMore)
 
 data class HomeUiState(
     val isLoading: Boolean = false,
