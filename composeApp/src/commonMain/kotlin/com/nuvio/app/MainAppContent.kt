@@ -93,6 +93,8 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.features.addons.AddAddonResult
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.cloudstream.CloudStreamRepository
+import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
 import com.nuvio.app.features.catalog.CatalogTarget
@@ -173,6 +175,7 @@ import com.nuvio.app.features.settings.HomescreenSettingsScreen
 import com.nuvio.app.features.settings.LicensesAttributionsSettingsScreen
 import com.nuvio.app.features.settings.MetaScreenSettingsScreen
 import com.nuvio.app.features.settings.PluginsSettingsScreen
+import com.nuvio.app.features.settings.CloudStreamSettingsScreen
 import com.nuvio.app.features.settings.SupportersContributorsSettingsScreen
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.whatsnew.WhatsNewSettingsScreen
@@ -268,6 +271,13 @@ internal fun MainAppContent(
             }
             remember {
                 ProfileSettingsSync.startObserving()
+            }
+            if (AppFeaturePolicy.pluginsEnabled) {
+                remember {
+                    PluginRepository.initialize()
+                    CloudStreamRepository.initialize()
+                    CloudStreamRepository.refreshAll(force = false)
+                }
             }
         }
         val hapticFeedback = LocalHapticFeedback.current
@@ -1980,6 +1990,11 @@ internal fun MainAppContent(
                     entry<PluginsSettingsRoute> { route ->
                         SettingsDestination(route, navController) { onBack ->
                             PluginsSettingsScreen(onBack = onBack)
+                        }
+                    }
+                    entry<CloudStreamSettingsRoute> { route ->
+                        SettingsDestination(route, navController) { onBack ->
+                            CloudStreamSettingsScreen(onBack = onBack)
                         }
                     }
                 }
