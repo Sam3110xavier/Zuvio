@@ -12,6 +12,7 @@ import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.FolderDetailRepository
 import com.nuvio.app.features.collection.FolderDetailScreen
 import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.settings.CloudStreamSettingsScreen
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.CollectionEditorPageRoute
@@ -87,16 +88,7 @@ internal fun CloudStreamSettingsDestination(
     useNativeNavigation: Boolean,
 ) {
     val onBack = rememberGuardedPopBackStack(navController, route)
-    SettingsScreen(
-        modifier = Modifier.fillMaxSize(),
-        initialPageName = "CloudStream",
-        rootActionsEnabled = false,
-        onNavigatePage = { pageName, title ->
-            navController.navigate(SettingsPageRoute(pageName, title))
-        },
-        onExternalBack = onBack,
-        showInternalHeader = !useNativeNavigation,
-    )
+    CloudStreamSettingsScreen(onBack = onBack)
 }
 
 @Composable
