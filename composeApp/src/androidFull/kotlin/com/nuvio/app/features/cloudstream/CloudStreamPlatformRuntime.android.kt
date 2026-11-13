@@ -34,8 +34,9 @@ import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.syncproviders.SyncIdName
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.extractorApis
-import dalvik.system.PathClassLoader
+import dalvik.system.DexClassLoader
 import java.io.File
 import java.lang.ref.WeakReference
 import java.security.Security
@@ -204,7 +205,16 @@ internal actual object CloudStreamPlatformRuntime {
         }
         val pluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
             ?: error("CloudStream manifest has no pluginClassName")
-        val loader = PathClassLoader(file.absolutePath, context.classLoader)
+        // Match the production sideload loaders used by NuvioTV and ARVIO. DexClassLoader
+        // writes optimized DEX artifacts into the app-private code cache and is the
+        // supported loader for downloaded .cs3 archives.
+        val optimizedDirectory = File(context.codeCacheDir, "cloudstream_dex_cache").apply { mkdirs() }
+        val loader = DexClassLoader(
+            file.absolutePath,
+            optimizedDirectory.absolutePath,
+            null,
+            context.classLoader,
+        )
         // AtomicList iterators are deliberately not synchronized. Take stable
         // snapshots under each registry's lock before comparing plugin registrations.
         val providersBefore = APIHolder.allProviders.withLock { APIHolder.allProviders.toSet() }
@@ -242,9 +252,467 @@ internal actual object CloudStreamPlatformRuntime {
             val providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
-            val registeredExtractors = extractorApis
-                .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
-                .distinct()
+            val registeredExtractors = extractorApis.withLock {
+                extractorApis
+                    .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
+                    .distinct()
+            }.toMutableList()
+
+            // Some real-world .cs3 packages contain ExtractorApi implementations but
+            // fail to expose them through BasePlugin.registerExtractorAPI(). NuvioTV
+            // and ARVIO both fall back to scanning the DEX in this case. Register those
+            // classes into CloudStream's global registry so MainAPI.loadLinks() can
+            // resolve links delegated to another plugin's extractor.
+            if (registeredExtractors.none { it.sourcePlugin == file.absolutePath }) {
+                val dexFile = dalvik.system.DexFile(file)
+                try {
+                    val entries = dexFile.entries()
+                    while (entries.hasMoreElements()) {
+                        val className = entries.nextElement()
+                        if (' Do not reject a
+            // valid .cs3 package just because it does not register a MainAPI provider.
+            providers.forEach(MainAPI::init)
+            log.i {
+                "Loaded ${item.metadata.internalName}: ${providers.size} provider(s), " +
+                    "${registeredExtractors.size} extractor(s)"
+            }
+            return LoadedPlugin(
+                id = item.metadata.id.value,
+                path = file.absolutePath,
+                context = identityContext,
+                instance = pluginInstance,
+                providers = providers,
+                extractors = registeredExtractors,
+                provider = AndroidDexCloudStreamProvider(item.metadata.id.value, providers),
+            )
+        } catch (error: Throwable) {
+            log.e(error) { "Failed to load ${item.metadata.internalName}" }
+            runCatching { instance?.beforeUnload() }
+            val addedProviders = APIHolder.allProviders.filter {
+                it !in providersBefore && it.sourcePlugin == file.absolutePath
+            }
+            addedProviders.forEach(APIHolder::removePluginMapping)
+            APIHolder.allProviders.removeAll { it !in providersBefore && it.sourcePlugin == file.absolutePath }
+            extractorApis.removeAll { it !in extractorsBefore && it.sourcePlugin == file.absolutePath }
+            VideoClickActionHolder.allVideoClickActions.removeAll { it.sourcePlugin == file.absolutePath }
+            PluginManager.unregister(file.absolutePath)
+            prepareHostContext(context)
+            throw error
+        } finally {
+            PluginManager.currentlyLoading = null
+        }
+    }
+
+    private fun prepareHostContext(context: Context) {
+        activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        activityReference?.get()?.let(AcraApplication::setActivity)
+        AcraApplication.context = context.applicationContext
+        initializeCloudStreamNetworking(context.applicationContext)
+        CloudStreamApp.context = context
+        setContext(WeakReference(context))
+    }
+
+    /**
+     * CineStream's optional Simkl catalogue eagerly constructs CloudStream account-sync APIs.
+     * Those APIs are application services rather than extension APIs and are intentionally not
+     * embedded in Nuvio. The catalogue does not participate in CineStream's source extraction;
+     * disabling it lets the primary CineStream/TMDB catalogues and every built-in link provider
+     * load exactly as configured by the extension.
+     */
+    private fun applyHostCompatibilityDefaults(pluginClassName: String) {
+        if (pluginClassName != CINESTREAM_PLUGIN_CLASS) return
+        val preferences = appContext?.getSharedPreferences(
+            com.lagradost.cloudstream3.utils.PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        ) ?: return
+        if (preferences.getString(CINESTREAM_SIMKL_PROVIDER_KEY, null) != "false") {
+            CloudStreamApp.setKey(CINESTREAM_SIMKL_PROVIDER_KEY, false)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun BasePlugin.attachResources(context: Context, file: File) {
+        val plugin = this as? Plugin ?: return
+        val assets = AssetManager::class.java.getDeclaredConstructor().newInstance()
+        AssetManager::class.java.getMethod("addAssetPath", String::class.java)
+            .invoke(assets, file.absolutePath)
+        plugin.resources = Resources(
+            assets,
+            context.resources.displayMetrics,
+            context.resources.configuration,
+        )
+    }
+
+    private const val CINESTREAM_PLUGIN_CLASS = "com.megix.CineStream"
+    private const val CINESTREAM_SIMKL_PROVIDER_KEY = "ProviderSimkl"
+
+    private data class LoadedPlugin(
+        val id: String,
+        val path: String,
+        @Suppress("unused") val context: Context,
+        val instance: BasePlugin,
+        val providers: List<MainAPI>,
+        val extractors: List<com.lagradost.cloudstream3.utils.ExtractorApi>,
+        val provider: CloudStreamProvider,
+    ) {
+        fun unload() {
+            runCatching { instance.beforeUnload() }
+            providers.forEach { api ->
+                APIHolder.allProviders.remove(api)
+                APIHolder.removePluginMapping(api)
+            }
+            extractorApis.removeAll(extractors.toSet())
+            VideoClickActionHolder.allVideoClickActions.removeAll { it.sourcePlugin == path }
+            PluginManager.unregister(path)
+        }
+    }
+}
+
+private class CloudStreamIdentityContext(base: Context) : ContextWrapper(base) {
+    override fun getPackageName(): String = CLOUDSTREAM_PACKAGE_NAME
+    override fun getApplicationContext(): Context = this
+
+    companion object {
+        private const val CLOUDSTREAM_PACKAGE_NAME = "com.lagradost.cloudstream3"
+    }
+}
+
+private class AndroidDexCloudStreamProvider(
+    override val id: String,
+    private val providers: List<MainAPI>,
+) : CloudStreamProvider {
+    private val log = Logger.withTag("CloudStreamProvider")
+
+    override suspend fun getMainPage(
+        page: Int,
+    ): List<Pair<String, List<CloudStreamSearchItem>>> = withContext(Dispatchers.IO) {
+        val sections = Collections.synchronizedList(
+            mutableListOf<Pair<String, List<CloudStreamSearchItem>>>(),
+        )
+        val errors = Collections.synchronizedList(mutableListOf<Throwable>())
+        val providerSemaphore = Semaphore(3)
+        providers.filter { api ->
+            // Some providers declare categories without setting hasMainPage.
+            api.hasMainPage || api.mainPage.any { data ->
+                data.name.isNotBlank() || data.data.isNotBlank()
+            }
+        }.map { api ->
+            async {
+                providerSemaphore.withPermit {
+                    val declaredRequests = api.mainPage.filter { data ->
+                        data.name.isNotBlank() || data.data.isNotBlank()
+                    }
+                    val requests = declaredRequests.ifEmpty {
+                        listOf(com.lagradost.cloudstream3.MainPageData(api.name, api.mainUrl, false))
+                    }
+                    suspend fun loadRequest(data: com.lagradost.cloudstream3.MainPageData) {
+                        runCatching {
+                            withTimeout(stageTimeout(api.getMainPageTimeoutMs, DEFAULT_DISCOVERY_TIMEOUT_MS)) {
+                                api.getMainPage(
+                                    page.coerceAtLeast(1),
+                                    MainPageRequest(data.name, data.data, data.horizontalImages),
+                                )
+                            }
+                        }.onSuccess { response ->
+                            response?.items.orEmpty().forEach { section ->
+                                val title = if (providers.size > 1) "${api.name} · ${section.name}" else section.name
+                                val items = section.list.map { it.toNuvioSearchItem(api) }
+                                if (items.isNotEmpty()) sections += title to items
+                            }
+                        }.onFailure { error ->
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            errors += error
+                            log.w(error) { "CloudStream main page failed api=${api.name}" }
+                        }
+                    }
+
+                    if (api.sequentialMainPage) {
+                        requests.forEachIndexed { index, data ->
+                            if (index > 0 && api.sequentialMainPageDelay > 0) {
+                                delay(api.sequentialMainPageDelay)
+                            }
+                            loadRequest(data)
+                        }
+                    } else {
+                        coroutineScope {
+                            requests.map { data -> async { loadRequest(data) } }.awaitAll()
+                        }
+                    }
+                }
+            }
+        }.awaitAll()
+        if (sections.isEmpty()) throw errors.lastOrNull() ?: return@withContext emptyList()
+        synchronized(sections) { sections.toList() }
+    }
+
+    override suspend fun search(query: String): List<CloudStreamSearchItem> = withContext(Dispatchers.IO) {
+        val providerSemaphore = Semaphore(3)
+        val results = providers.map { api ->
+            async {
+                providerSemaphore.withPermit {
+                    runCatching {
+                        withTimeout(stageTimeout(api.searchTimeoutMs, DEFAULT_DISCOVERY_TIMEOUT_MS)) {
+                            api.search(query, 1)?.items.orEmpty()
+                        }
+                    }.onSuccess { items ->
+                        log.d {
+                            "CloudStream search api=${api.name} query=$query returned=${items.size} " +
+                                "sample=${items.take(3).joinToString { it.name }}"
+                        }
+                    }.onFailure { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        log.w(error) { "CloudStream search failed api=${api.name}" }
+                    }.map { items -> items.map { it.toNuvioSearchItem(api) } }
+                }
+            }
+        }.awaitAll()
+        val successfulResults = results.mapNotNull { it.getOrNull() }.flatten()
+        if (successfulResults.isEmpty()) {
+            val lastError = results.asReversed().mapNotNull { it.exceptionOrNull() }.firstOrNull()
+            throw lastError ?: return@withContext emptyList()
+        }
+        successfulResults.distinctBy { it.data }
+    }
+
+    override suspend fun loadByExternalId(externalId: String): CloudStreamLoadItem? = withContext(Dispatchers.IO) {
+        val syncName = when {
+            externalId.matches(IMDB_ID_REGEX) -> SyncIdName.Imdb
+            else -> return@withContext null
+        }
+        providers.firstNotNullOfOrNull { api ->
+            if (syncName !in api.supportedSyncNames) return@firstNotNullOfOrNull null
+            runCatching {
+                val url = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                    api.getLoadUrl(syncName, externalId)
+                }?.takeIf(String::isNotBlank) ?: return@runCatching null
+                withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                    api.load(url)
+                }?.toNuvioLoadItem(api)
+            }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                log.w(error) { "CloudStream external-id load failed api=${api.name} id=$externalId" }
+            }.getOrNull()
+        }
+    }
+
+    override suspend fun load(data: String): CloudStreamLoadItem = withContext(Dispatchers.IO) {
+        val route = decodeAndroidDexRoute(data)
+        val api = findProvider(route.providerClassName)
+        val response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+            api.load(route.data)
+        } ?: error("CloudStream provider returned no details")
+        response.toNuvioLoadItem(api)
+    }
+
+    override suspend fun loadLinks(data: String): List<CloudStreamPlaybackSource> = withContext(Dispatchers.IO) {
+        val route = decodeAndroidDexRoute(data)
+        val api = findProvider(route.providerClassName)
+        val subtitles = Collections.synchronizedList(mutableListOf<CloudStreamSubtitle>())
+        val links = Collections.synchronizedList(mutableListOf<ExtractorLink>())
+        var loadFailure: Throwable? = null
+        val completed = withTimeoutOrNull(stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)) {
+            try {
+                api.loadLinks(
+                    route.data,
+                    false,
+                    { subtitle ->
+                        subtitles += CloudStreamSubtitle(
+                            url = subtitle.url,
+                            language = subtitle.lang,
+                            name = subtitle.lang,
+                            headers = subtitle.headers.orEmpty(),
+                        )
+                    },
+                    links::add,
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                loadFailure = error
+                false
+            } catch (error: LinkageError) {
+                loadFailure = error
+                false
+            }
+        }
+        val subtitleSnapshot = synchronized(subtitles) { subtitles.toList() }
+        val linkSnapshot = synchronized(links) { links.toList() }
+        loadFailure?.let { error ->
+            log.w(error) {
+                "CloudStream loadLinks failed api=${api.name} after emitting ${linkSnapshot.size} link(s)"
+            }
+        }
+        if (completed != true && linkSnapshot.isNotEmpty()) {
+            log.w {
+                "CloudStream loadLinks finished with completed=${completed} api=${api.name}; returning ${linkSnapshot.size} partial link(s)"
+            }
+        }
+        if (linkSnapshot.isEmpty()) {
+            loadFailure?.let { throw it }
+            if (completed == null) error("CloudStream provider timed out before returning links")
+            if (completed == false) error("CloudStream provider could not resolve this source")
+        }
+        linkSnapshot.distinctBy { link ->
+            listOf(link.url, link.referer, link.quality.toString(), link.type.name, link.headers.toString())
+        }.map { link ->
+            CloudStreamPlaybackSource(
+                name = link.name.ifBlank { link.source },
+                url = link.url,
+                quality = link.quality.takeIf { it > 0 },
+                referer = link.referer.takeIf(String::isNotBlank),
+                headers = link.headers,
+                subtitles = subtitleSnapshot,
+                isHls = link.type == ExtractorLinkType.M3U8,
+                isDash = link.type == ExtractorLinkType.DASH,
+            )
+        }.also { if (it.isEmpty()) error("CloudStream provider returned no playable links") }
+    }
+
+    private fun findProvider(className: String): MainAPI =
+        providers.firstOrNull { it.javaClass.name == className }
+            ?: error("CloudStream provider is no longer registered")
+
+    private fun SearchResponse.toNuvioSearchItem(api: MainAPI): CloudStreamSearchItem =
+        CloudStreamSearchItem(
+            providerId = this@AndroidDexCloudStreamProvider.id,
+            data = encodeAndroidDexRoute(api.javaClass.name, url),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            year = when (this) {
+                is AnimeSearchResponse -> year
+                is MovieSearchResponse -> year
+                is TvSeriesSearchResponse -> year
+                is LiveSearchResponse -> null
+                else -> null
+            },
+        )
+
+    private fun LoadResponse.toNuvioLoadItem(api: MainAPI): CloudStreamLoadItem {
+        val playbackData = when (this) {
+            is MovieLoadResponse -> dataUrl
+            is LiveStreamLoadResponse -> dataUrl
+            is TorrentLoadResponse -> magnet ?: torrent ?: url
+            else -> url
+        }
+        val episodes = when (this) {
+            is TvSeriesLoadResponse -> episodes.map { episode -> episode.toNuvioEpisode(api) }
+            is AnimeLoadResponse -> episodes.flatMap { (dubStatus, values) ->
+                values.map { episode ->
+                    episode.toNuvioEpisode(api, dubStatus.name.takeUnless { episodes.size == 1 })
+                }
+            }
+            else -> emptyList()
+        }
+        return CloudStreamLoadItem(
+            providerId = id,
+            data = encodeAndroidDexRoute(api.javaClass.name, playbackData),
+            name = name,
+            type = type.toNuvioTvType(),
+            posterUrl = posterUrl,
+            backgroundUrl = backgroundPosterUrl,
+            description = plot,
+            year = year,
+            ratingPercent = score?.toInt(100),
+            tags = tags.orEmpty(),
+            episodes = episodes,
+        )
+    }
+
+    private fun com.lagradost.cloudstream3.Episode.toNuvioEpisode(
+        api: MainAPI,
+        variant: String? = null,
+    ): CloudStreamEpisode = CloudStreamEpisode(
+        data = encodeAndroidDexRoute(api.javaClass.name, data),
+        name = listOfNotNull(name?.takeIf(String::isNotBlank), variant).joinToString(" · ")
+            .ifBlank { "Episode ${episode ?: ""}".trim() },
+        season = season,
+        episode = episode,
+        posterUrl = posterUrl,
+        description = description,
+    )
+
+    private companion object {
+        private val IMDB_ID_REGEX = Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE)
+        private fun stageTimeout(providerHint: Long?, hostMaximum: Long): Long =
+            providerHint?.coerceIn(5_000L, hostMaximum) ?: hostMaximum
+
+        private const val DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000L
+        private const val DEFAULT_LOAD_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_LINK_TIMEOUT_MS = 120_000L
+    }
+}
+
+private data class AndroidDexRoute(val providerClassName: String, val data: String)
+
+private fun encodeAndroidDexRoute(providerClassName: String, data: String): String =
+    "nuvio-cs-api:${providerClassName.length}:$providerClassName$data"
+
+private fun decodeAndroidDexRoute(value: String): AndroidDexRoute {
+    val payload = value.removePrefix("nuvio-cs-api:")
+    require(payload != value) { "Invalid CloudStream provider route" }
+    val separator = payload.indexOf(':')
+    require(separator > 0) { "Invalid CloudStream provider route" }
+    val providerLength = payload.substring(0, separator).toIntOrNull()
+        ?: error("Invalid CloudStream provider route")
+    val content = payload.substring(separator + 1)
+    require(providerLength in 1..content.length) { "Invalid CloudStream provider route" }
+    return AndroidDexRoute(
+        providerClassName = content.substring(0, providerLength),
+        data = content.substring(providerLength),
+    )
+}
+
+private fun TvType?.toNuvioTvType(): CloudStreamTvType = when (this) {
+    TvType.Movie -> CloudStreamTvType.Movie
+    TvType.AnimeMovie -> CloudStreamTvType.AnimeMovie
+    TvType.TvSeries -> CloudStreamTvType.TvSeries
+    TvType.Cartoon -> CloudStreamTvType.Cartoon
+    TvType.Anime -> CloudStreamTvType.Anime
+    TvType.OVA -> CloudStreamTvType.Ova
+    TvType.Torrent -> CloudStreamTvType.Torrent
+    TvType.Documentary -> CloudStreamTvType.Documentary
+    TvType.AsianDrama -> CloudStreamTvType.AsianDrama
+    TvType.Live -> CloudStreamTvType.Live
+    TvType.Music, TvType.Audio, TvType.AudioBook, TvType.Podcast -> CloudStreamTvType.Music
+    else -> CloudStreamTvType.Other
+}
+ in className) continue
+                        try {
+                            val extractorClass = loader.loadClass(className)
+                            if (
+                                ExtractorApi::class.java.isAssignableFrom(extractorClass) &&
+                                !java.lang.reflect.Modifier.isAbstract(extractorClass.modifiers) &&
+                                !extractorClass.isInterface
+                            ) {
+                                val extractor = extractorClass.getDeclaredConstructor()
+                                    .newInstance() as ExtractorApi
+                                extractor.sourcePlugin = file.absolutePath
+                                val added = extractorApis.withLock {
+                                    if (extractorApis.any {
+                                            it.javaClass == extractor.javaClass &&
+                                                it.sourcePlugin == file.absolutePath
+                                        }
+                                    ) {
+                                        false
+                                    } else {
+                                        extractorApis.add(extractor)
+                                        true
+                                    }
+                                }
+                                if (added) registeredExtractors += extractor
+                            }
+                        } catch (error: Exception) {
+                            log.d(error) { "Skipping CloudStream extractor class=$className" }
+                        } catch (error: LinkageError) {
+                            log.w(error) { "CloudStream extractor class has incompatible dependencies class=$className" }
+                        }
+                    }
+                } finally {
+                    dexFile.close()
+                }
+            }
+
             // CloudStream permits extractor-only and utility plugins. Do not reject a
             // valid .cs3 package just because it does not register a MainAPI provider.
             providers.forEach(MainAPI::init)
