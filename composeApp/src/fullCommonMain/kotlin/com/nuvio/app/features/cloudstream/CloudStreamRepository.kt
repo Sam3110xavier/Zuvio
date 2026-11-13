@@ -1001,6 +1001,12 @@ actual object CloudStreamRepository {
         } catch (error: Exception) {
             log.w(error) { "CloudStream provider request failed id=$providerId" }
             Result.failure(error)
+        } catch (error: LinkageError) {
+            // A .cs3 compiled against a different CloudStream API can fail with
+            // NoClassDefFoundError / NoSuchMethodError. Isolate that plugin failure
+            // so a broken extension cannot crash the host app.
+            log.w(error) { "CloudStream plugin binary compatibility failed id=$providerId" }
+            Result.failure(error)
         }
     }
 
