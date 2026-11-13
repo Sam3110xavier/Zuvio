@@ -11,6 +11,8 @@ import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.AnimeSearchResponse
 import com.lagradost.cloudstream3.CloudStreamApp
+import com.lagradost.cloudstream3.AcraApplication
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.CommonActivity
 import com.lagradost.cloudstream3.LiveSearchResponse
 import com.lagradost.cloudstream3.LiveStreamLoadResponse
@@ -36,6 +38,10 @@ import com.lagradost.cloudstream3.utils.extractorApis
 import dalvik.system.PathClassLoader
 import java.io.File
 import java.lang.ref.WeakReference
+import java.security.Security
+import okhttp3.Cache
+import okhttp3.OkHttpClient
+import org.conscrypt.Conscrypt
 import java.util.Collections
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
@@ -62,12 +68,40 @@ internal actual object CloudStreamPlatformRuntime {
     private val loaded = linkedMapOf<String, LoadedPlugin>()
     private var appContext: Context? = null
     private var activityReference: WeakReference<Activity>? = null
+    @Volatile private var cloudStreamNetworkingInitialized = false
 
     actual fun initialize(context: Any?) {
         val androidContext = context as? Context ?: return
         appContext = androidContext.applicationContext
         activityReference = (androidContext as? Activity)?.let(::WeakReference)
         activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        activityReference?.get()?.let(AcraApplication::setActivity)
+        AcraApplication.context = appContext
+        initializeCloudStreamNetworking(requireNotNull(appContext))
+    }
+
+    /**
+     * CloudStream normally initializes its NiceHttp Requests.baseClient from its
+     * own Application startup. Zuvio embeds the runtime AAR without CloudStream's
+     * Application, so plugins otherwise enter loadLinks with an uninitialized
+     * network client. Mirror CloudStream's secure default client setup before
+     * any extension code runs.
+     */
+    private fun initializeCloudStreamNetworking(context: Context) {
+        if (cloudStreamNetworkingInitialized) return
+        synchronized(this) {
+            if (cloudStreamNetworkingInitialized) return
+            runCatching { Security.insertProviderAt(Conscrypt.newProvider(), 1) }
+                .onFailure { error -> log.w(error) { "Could not install Conscrypt provider" } }
+            val cacheDirectory = File(context.cacheDir, "cloudstream_http_cache").apply { mkdirs() }
+            app.baseClient = OkHttpClient.Builder()
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .cache(Cache(cacheDirectory, 50L * 1024L * 1024L))
+                .build()
+            cloudStreamNetworkingInitialized = true
+            log.i { "Initialized CloudStream NiceHttp base client" }
+        }
     }
 
     actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
@@ -247,6 +281,9 @@ internal actual object CloudStreamPlatformRuntime {
 
     private fun prepareHostContext(context: Context) {
         activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        activityReference?.get()?.let(AcraApplication::setActivity)
+        AcraApplication.context = context.applicationContext
+        initializeCloudStreamNetworking(context.applicationContext)
         CloudStreamApp.context = context
         setContext(WeakReference(context))
     }
