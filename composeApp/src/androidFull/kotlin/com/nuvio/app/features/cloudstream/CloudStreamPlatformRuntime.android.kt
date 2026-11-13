@@ -11,7 +11,6 @@ import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.AnimeSearchResponse
 import com.lagradost.cloudstream3.CloudStreamApp
-import com.lagradost.cloudstream3.AcraApplication
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.CommonActivity
 import com.lagradost.cloudstream3.LiveSearchResponse
@@ -76,8 +75,6 @@ internal actual object CloudStreamPlatformRuntime {
         appContext = androidContext.applicationContext
         activityReference = (androidContext as? Activity)?.let(::WeakReference)
         activityReference?.get()?.let(CommonActivity::setActivityInstance)
-        activityReference?.get()?.let(AcraApplication::setActivity)
-        AcraApplication.context = androidContext.applicationContext
         initializeCloudStreamNetworking(requireNotNull(appContext))
     }
 
@@ -340,8 +337,6 @@ internal actual object CloudStreamPlatformRuntime {
 
     private fun prepareHostContext(context: Context) {
         activityReference?.get()?.let(CommonActivity::setActivityInstance)
-        activityReference?.get()?.let(AcraApplication::setActivity)
-        AcraApplication.context = context.applicationContext
         initializeCloudStreamNetworking(context.applicationContext)
         CloudStreamApp.context = context
         setContext(WeakReference(context))
