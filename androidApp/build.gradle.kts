@@ -147,7 +147,6 @@ android {
                 "../composeApp/proguard-rules.pro",
             )
             if (androidDistribution == "full") {
-                proguardFiles("../composeApp/proguard-cloudstream-full.pro")
             }
             signingConfig = signingConfigs.getByName("release")
             ndk {
