@@ -566,8 +566,53 @@ actual object CloudStreamRepository {
         loadByExternalId(externalId)
     }
 
-    actual suspend fun loadLinks(providerId: String, data: String): Result<List<CloudStreamPlaybackSource>> =
-        providerResult(providerId) { loadLinks(data) }
+    actual suspend fun loadLinks(providerId: String, data: String): Result<List<CloudStreamPlaybackSource>> {
+        initialize()
+        val expectedProfileGeneration = profileGenerationSnapshot()
+
+        // CloudStream providers frequently delegate host resolution to ExtractorApi
+        // implementations shipped in *other* .cs3 packages. Unlike the official
+        // CloudStream app, this host loads providers lazily, so loading only the
+        // selected provider leaves the global extractor registry incomplete.
+        // Match NuvioTV's ensureExtractorsLoaded() behavior: load every enabled,
+        // verified Android DEX package before invoking the selected provider.
+        val extractorPlugins = _uiState.value.plugins.filter { plugin ->
+            plugin.isRunnable &&
+                plugin.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex
+        }
+        var loadedPackages = 0
+        extractorPlugins.forEach { plugin ->
+            if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
+                return Result.failure(
+                    IllegalStateException("Active profile changed while preparing CloudStream extractors"),
+                )
+            }
+            if (plugin.metadata.id.value !in runnableProviderIds()) return@forEach
+            try {
+                CloudStreamPlatformRuntime.provider(plugin)
+                loadedPackages += 1
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                log.w(error) {
+                    "CloudStream extractor package preload failed id=${plugin.metadata.id.value}"
+                }
+            } catch (error: LinkageError) {
+                log.w(error) {
+                    "CloudStream extractor package preload failed binary compatibility id=${plugin.metadata.id.value}"
+                }
+            }
+        }
+        log.d {
+            "Prepared CloudStream extractor registry: loaded=$loadedPackages eligible=${extractorPlugins.size}"
+        }
+        if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
+            return Result.failure(
+                IllegalStateException("Active profile changed before CloudStream link resolution"),
+            )
+        }
+        return providerResult(providerId) { loadLinks(data) }
+    }
 
     private suspend fun installOrUpdate(
         pluginId: String,
