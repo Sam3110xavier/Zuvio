@@ -94,10 +94,6 @@ internal fun LazyListScope.contentDiscoveryContent(
                         onClick = onCloudStreamClick,
                     )
                 }
-                    SettingsNavigationRow(
-                        isTablet = isTablet,
-                    )
-                }
             }
         }
     }
