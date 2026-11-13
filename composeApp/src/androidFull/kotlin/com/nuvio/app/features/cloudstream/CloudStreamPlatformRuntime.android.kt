@@ -171,8 +171,10 @@ internal actual object CloudStreamPlatformRuntime {
         val pluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
             ?: error("CloudStream manifest has no pluginClassName")
         val loader = PathClassLoader(file.absolutePath, context.classLoader)
-        val providersBefore = APIHolder.allProviders.toSet()
-        val extractorsBefore = extractorApis.toSet()
+        // AtomicList iterators are deliberately not synchronized. Take stable
+        // snapshots under each registry's lock before comparing plugin registrations.
+        val providersBefore = APIHolder.allProviders.withLock { APIHolder.allProviders.toSet() }
+        val extractorsBefore = extractorApis.withLock { extractorApis.toSet() }
         var instance: BasePlugin? = null
         PluginManager.currentlyLoading = item.metadata.internalName
         try {
