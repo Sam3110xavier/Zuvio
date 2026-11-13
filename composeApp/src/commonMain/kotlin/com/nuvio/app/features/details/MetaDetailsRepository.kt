@@ -74,7 +74,7 @@ object MetaDetailsRepository {
             return
         }
         parseCloudStreamRouteId(id)?.let { route ->
-            loadCloudStreamMeta(requestKey, route.providerId, route.data)
+            loadCloudStreamMeta(requestKey, id, route.providerId, route.data)
             return
         }
         val currentState = _uiState.value
@@ -250,6 +250,15 @@ object MetaDetailsRepository {
                 ?.also { if (cacheResult) cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = it) }
         }
 
+        parseCloudStreamRouteId(id)?.let { route ->
+            return runCatching {
+                CloudStreamRepository.initialize()
+                CloudStreamRepository.load(route.providerId, route.data).getOrThrow().toMetaDetails()
+            }.onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+                ?.also { if (cacheResult) cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = it) }
+        }
+
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
         val manifests = findReadyMetaManifests(type = type, id = metaLookupId)
 
@@ -363,8 +372,8 @@ object MetaDetailsRepository {
     private const val MIN_BACKGROUND_BACKOFF_MS = 30_000L
     private const val MAX_BACKGROUND_BACKOFF_MS = 15L * 60_000L
 
-    private fun loadCloudStreamMeta(requestKey: String, providerId: String, data: String) {
-        if (_uiState.value.meta?.id == requestKey.substringAfter(':') && !_uiState.value.isLoading) {
+    private fun loadCloudStreamMeta(requestKey: String, id: String, providerId: String, data: String) {
+        if (_uiState.value.meta?.id == id && !_uiState.value.isLoading) {
             activeRequestKey = requestKey
             return
         }
