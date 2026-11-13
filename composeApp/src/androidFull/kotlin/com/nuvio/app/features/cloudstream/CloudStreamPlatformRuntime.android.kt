@@ -208,13 +208,12 @@ internal actual object CloudStreamPlatformRuntime {
             val providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
-            require(providers.isNotEmpty()) {
-                "Plugin loaded but registered no providers. It may reject the host runtime."
-            }
-            providers.forEach(MainAPI::init)
             val registeredExtractors = extractorApis
                 .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
+            // CloudStream permits extractor-only and utility plugins. Do not reject a
+            // valid .cs3 package just because it does not register a MainAPI provider.
+            providers.forEach(MainAPI::init)
             log.i {
                 "Loaded ${item.metadata.internalName}: ${providers.size} provider(s), " +
                     "${registeredExtractors.size} extractor(s)"
