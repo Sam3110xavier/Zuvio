@@ -586,8 +586,8 @@ kotlin {
                     // Supabase Auth 3.4.1 references the pre-0.6 key API
                     // (KeyDecoder / KeyFormat in materials.key). Cryptography 0.6.0
                     // removed those types; use the compatible 0.5.x API for Supabase Auth.
-                    implementation("dev.whyoleg.cryptography:cryptography-core:0.6.0")
-                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.6.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-core:0.5.0")
+                    implementation("dev.whyoleg.cryptography:cryptography-provider-optimal:0.5.0")
                     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3") {
                         exclude(group = "org.mozilla", module = "rhino-engine")
                     }
