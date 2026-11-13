@@ -76,7 +76,7 @@ internal actual object CloudStreamPlatformRuntime {
         activityReference = (androidContext as? Activity)?.let(::WeakReference)
         activityReference?.get()?.let(CommonActivity::setActivityInstance)
         activityReference?.get()?.let(AcraApplication::setActivity)
-        AcraApplication.context = appContext
+        AcraApplication.context = androidContext.applicationContext
         initializeCloudStreamNetworking(requireNotNull(appContext))
     }
 
