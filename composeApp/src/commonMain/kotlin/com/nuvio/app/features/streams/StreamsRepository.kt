@@ -735,7 +735,7 @@ object StreamsRepository {
                 }
             }
 
-provider launches            if (telegramAvailable) {
+            if (telegramAvailable) {
                 launch {
                     val completion = try {
                         val details = MetaDetailsRepository.peek(type, parentMetaId ?: videoId)
