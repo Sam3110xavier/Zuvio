@@ -86,6 +86,7 @@ android {
     productFlavors {
         create("full") {
             dimension = "distribution"
+            proguardFiles("../composeApp/proguard-cloudstream-full.pro")
         }
         create("playstore") {
             dimension = "distribution"
@@ -145,8 +146,6 @@ android {
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "../composeApp/proguard-rules.pro",
-                // Keep dynamically loaded CloudStream .cs3 bytecode ABI stable in release builds.
-                "../composeApp/proguard-cloudstream-full.pro",
             )
             signingConfig = signingConfigs.getByName("release")
             ndk {
