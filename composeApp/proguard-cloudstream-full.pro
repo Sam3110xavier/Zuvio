@@ -26,3 +26,7 @@
 -keep class dev.whyoleg.cryptography.** { *; }
 -keep interface dev.whyoleg.cryptography.** { *; }
 -dontwarn dev.whyoleg.cryptography.**
+
+# Rhino includes an optional JavaBeans bridge for JVM environments. Android does not
+# ship java.beans, and the JavaScript runtime does not require that desktop-only API.
+-dontwarn java.beans.**
