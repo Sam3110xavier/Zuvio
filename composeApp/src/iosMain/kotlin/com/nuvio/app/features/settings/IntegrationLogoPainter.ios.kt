@@ -9,6 +9,7 @@ import nuvio.composeapp.generated.resources.introdb_favicon
 import nuvio.composeapp.generated.resources.mdblist_logo
 import nuvio.composeapp.generated.resources.rating_tmdb
 import nuvio.composeapp.generated.resources.trakt_tv_favicon
+import nuvio.composeapp.generated.resources.telegram_logo
 import org.jetbrains.compose.resources.painterResource
 
 @Composable
@@ -19,4 +20,5 @@ internal actual fun integrationLogoPainter(logo: IntegrationLogo): Painter =
         IntegrationLogo.Simkl -> simklBrandPainter(SimklBrandAsset.Glyph)
         IntegrationLogo.MdbList -> painterResource(Res.drawable.mdblist_logo)
         IntegrationLogo.IntroDb -> painterResource(Res.drawable.introdb_favicon)
+        IntegrationLogo.Telegram -> painterResource(Res.drawable.telegram_logo)
     }
