@@ -445,32 +445,6 @@ private fun CloudStreamPluginCard(
 ) {
     val scope = rememberCoroutineScope()
     var isOpeningSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
-    // Settings capability belongs to the installed package, not just its repository
-    // identity/version. Include the installed checksum so a replaced package cannot
-    // inherit a stale settings button from the previous runtime instance.
-    var hasPluginSettings by remember(
-        plugin.metadata.id.value,
-        plugin.installedVersion,
-        plugin.installedFileHash,
-        plugin.metadata.packageUrl,
-    ) { mutableStateOf(false) }
-
-    LaunchedEffect(
-        plugin.metadata.id.value,
-        plugin.installedVersion,
-        plugin.installedFileHash,
-        plugin.metadata.packageUrl,
-        plugin.isInstalled,
-    ) {
-        // Hide the control immediately while the new package's capability is checked.
-        hasPluginSettings = false
-        hasPluginSettings = plugin.isInstalled &&
-            plugin.verified &&
-            plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
-            CloudStreamPlatformRuntime.supportsAndroidDex &&
-            CloudStreamPlatformRuntime.hasSettings(plugin)
-    }
-
     NuvioSurfaceCard {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
@@ -489,7 +463,14 @@ private fun CloudStreamPluginCard(
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (hasPluginSettings) {
+                // Avoid probing hasSettings during composition: that initializes the DEX plugin.
+                // The runtime checks and opens settings only after an explicit user tap.
+                if (
+                    plugin.isInstalled &&
+                    plugin.verified &&
+                    plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
+                    CloudStreamPlatformRuntime.supportsAndroidDex
+                ) {
                     IconButton(
                         enabled = !isOpeningSettings,
                         onClick = {

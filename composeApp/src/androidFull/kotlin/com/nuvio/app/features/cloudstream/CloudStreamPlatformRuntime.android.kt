@@ -48,6 +48,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
@@ -443,24 +444,49 @@ private class AndroidDexCloudStreamProvider(
         val api = findProvider(route.providerClassName)
         val subtitles = Collections.synchronizedList(mutableListOf<CloudStreamSubtitle>())
         val links = Collections.synchronizedList(mutableListOf<ExtractorLink>())
-        val completed = withTimeout(stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)) {
-            api.loadLinks(
-                route.data,
-                false,
-                { subtitle ->
-                    subtitles += CloudStreamSubtitle(
-                        url = subtitle.url,
-                        language = subtitle.lang,
-                        name = subtitle.lang,
-                        headers = subtitle.headers.orEmpty(),
-                    )
-                },
-                links::add,
-            )
+        var loadFailure: Throwable? = null
+        val completed = withTimeoutOrNull(stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)) {
+            try {
+                api.loadLinks(
+                    route.data,
+                    false,
+                    { subtitle ->
+                        subtitles += CloudStreamSubtitle(
+                            url = subtitle.url,
+                            language = subtitle.lang,
+                            name = subtitle.lang,
+                            headers = subtitle.headers.orEmpty(),
+                        )
+                    },
+                    links::add,
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                loadFailure = error
+                false
+            } catch (error: LinkageError) {
+                loadFailure = error
+                false
+            }
         }
         val subtitleSnapshot = synchronized(subtitles) { subtitles.toList() }
         val linkSnapshot = synchronized(links) { links.toList() }
-        if (!completed && linkSnapshot.isEmpty()) error("CloudStream provider could not resolve this source")
+        loadFailure?.let { error ->
+            log.w(error) {
+                "CloudStream loadLinks failed api=${api.name} after emitting ${linkSnapshot.size} link(s)"
+            }
+        }
+        if (completed != true && linkSnapshot.isNotEmpty()) {
+            log.w {
+                "CloudStream loadLinks finished with completed=${completed} api=${api.name}; returning ${linkSnapshot.size} partial link(s)"
+            }
+        }
+        if (linkSnapshot.isEmpty()) {
+            loadFailure?.let { throw it }
+            if (completed == null) error("CloudStream provider timed out before returning links")
+            if (completed == false) error("CloudStream provider could not resolve this source")
+        }
         linkSnapshot.distinctBy { link ->
             listOf(link.url, link.referer, link.quality.toString(), link.type.name, link.headers.toString())
         }.map { link ->
