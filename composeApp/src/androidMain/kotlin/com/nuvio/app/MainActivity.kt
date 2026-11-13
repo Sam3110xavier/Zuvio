@@ -184,7 +184,8 @@ open class MainActivity : AppCompatActivity() {
         BingeGroupCacheStorage.initialize(applicationContext)
         ProfileTitleFactsStorage.initialize(applicationContext)
         PluginStorage.initialize(applicationContext)
-        CloudStreamPlatformStorage.initialize(applicationContext)
+        // Keep the Activity context available to CloudStream providers and CommonActivity.
+        CloudStreamPlatformStorage.initialize(this)
         CollectionMobileSettingsStorage.initialize(applicationContext)
         CollectionStorage.initialize(applicationContext)
         DownloadsStorage.initialize(applicationContext)

@@ -12,8 +12,6 @@ import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.trakt.TraktRelatedRepository
 import com.nuvio.app.features.collection.CollectionRepository
-import com.nuvio.app.features.cloudstream.CloudStreamRepository
-import com.nuvio.app.features.cloudstream.toMetaPreview
 import com.nuvio.app.features.collection.TmdbCollectionSourceResolver
 import com.nuvio.app.features.collection.catalogRouteKey
 import com.nuvio.app.features.library.LibraryRepository
@@ -443,19 +441,6 @@ object CatalogRepository {
                         skip = requestedSkip.takeIf { it > 0 },
                         forceRefresh = forceRefresh,
                     )
-
-                    is CatalogTarget.CloudStream -> {
-                        val sections = CloudStreamRepository.getMainPage(
-                            target.providerId,
-                            cloudStreamPageNumber(requestedSkip),
-                        ).getOrThrow()
-                        val items = sections.firstOrNull { it.first == target.sectionName }?.second.orEmpty()
-                        CatalogPage(
-                            items = items.map { it.toMetaPreview() },
-                            rawItemCount = items.size,
-                            nextSkip = cloudStreamNextPageSkip(requestedSkip, items.size),
-                        )
-                    }
 
                     is CatalogTarget.CloudStream -> {
                         val sections = CloudStreamRepository.getMainPage(

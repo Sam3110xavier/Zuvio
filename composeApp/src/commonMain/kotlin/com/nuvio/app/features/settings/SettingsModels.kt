@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Link
@@ -213,6 +214,11 @@ internal enum class SettingsPage(
         category = SettingsCategory.Watch,
         parentPage = ContentDiscovery,
     ),
+    CloudStream(
+        titleRes = Res.string.compose_settings_page_cloudstream,
+        category = SettingsCategory.Watch,
+        parentPage = ContentDiscovery,
+    ),
     MediaServers(
         titleRes = Res.string.compose_settings_page_media_servers,
         category = SettingsCategory.Watch,
@@ -312,6 +318,7 @@ internal val SettingsPage.icon: ImageVector
         SettingsPage.ContentDiscovery -> Icons.Default.Explore
         SettingsPage.Addons -> Icons.Default.Extension
         SettingsPage.Plugins -> Icons.Default.Power
+        SettingsPage.CloudStream -> Icons.Default.Hub
         SettingsPage.MediaServers -> Icons.Default.Dns
         SettingsPage.MediaServer -> Icons.Default.Dns
         SettingsPage.Homescreen -> Icons.Default.Dashboard
