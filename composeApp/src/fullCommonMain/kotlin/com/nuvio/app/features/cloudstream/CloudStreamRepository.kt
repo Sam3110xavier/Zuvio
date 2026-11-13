@@ -307,18 +307,11 @@ actual object CloudStreamRepository {
             persist()
         }
         refreshJobToCancel?.cancel()
-        HomeRepository.applyCurrentSettings()
     }
 
-    actual suspend fun installPlugin(pluginId: String): CloudStreamInstallResult =
-        installOrUpdate(pluginId).also { result ->
-            if (result is CloudStreamInstallResult.Success) HomeRepository.applyCurrentSettings()
-        }
+    actual suspend fun installPlugin(pluginId: String): CloudStreamInstallResult = installOrUpdate(pluginId)
 
-    actual suspend fun updatePlugin(pluginId: String): CloudStreamInstallResult =
-        installOrUpdate(pluginId).also { result ->
-            if (result is CloudStreamInstallResult.Success) HomeRepository.applyCurrentSettings()
-        }
+    actual suspend fun updatePlugin(pluginId: String): CloudStreamInstallResult = installOrUpdate(pluginId)
 
     actual suspend fun installAndEnablePlugins(pluginIds: List<String>): CloudStreamBulkInstallResult {
         initialize()
