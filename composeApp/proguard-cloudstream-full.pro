@@ -26,3 +26,8 @@
 -keep class dev.whyoleg.cryptography.** { *; }
 -keep interface dev.whyoleg.cryptography.** { *; }
 -dontwarn dev.whyoleg.cryptography.**
+
+# CloudStream providers can reference Rhino directly from dynamically loaded DEX.
+# Keep the Rhino JVM ABI intact in minified Full release builds.
+-keep class org.mozilla.javascript.** { *; }
+-keep interface org.mozilla.javascript.** { *; }
