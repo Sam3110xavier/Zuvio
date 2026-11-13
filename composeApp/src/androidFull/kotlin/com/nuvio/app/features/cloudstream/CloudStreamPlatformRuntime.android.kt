@@ -291,10 +291,21 @@ internal actual object CloudStreamPlatformRuntime {
                                 }
                                 if (added) registeredExtractors += extractor
                             }
-                        } catch (error: Exception) {
-                            log.d(error) { "Skipping CloudStream extractor class=$className" }
-                        } catch (error: LinkageError) {
-                            log.w(error) { "CloudStream extractor class has incompatible dependencies class=$className" }
+                        } catch (error: Throwable) {
+                            if (
+                                error is kotlinx.coroutines.CancellationException ||
+                                error is VirtualMachineError ||
+                                error is ThreadDeath
+                            ) {
+                                throw error
+                            }
+                            log.w(error) {
+                                if (error is LinkageError) {
+                                    "CloudStream extractor class has incompatible dependencies class=$className"
+                                } else {
+                                    "Skipping CloudStream extractor class=$className"
+                                }
+                            }
                         }
                     }
                 } finally {
@@ -555,12 +566,16 @@ private class AndroidDexCloudStreamProvider(
                     },
                     links::add,
                 )
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                loadFailure = error
-                false
-            } catch (error: LinkageError) {
+            } catch (error: Throwable) {
+                // Preserve coroutine cancellation and VM-fatal conditions, but capture
+                // every extension failure (including LinkageError) for diagnostics.
+                if (
+                    error is kotlinx.coroutines.CancellationException ||
+                    error is VirtualMachineError ||
+                    error is ThreadDeath
+                ) {
+                    throw error
+                }
                 loadFailure = error
                 false
             }

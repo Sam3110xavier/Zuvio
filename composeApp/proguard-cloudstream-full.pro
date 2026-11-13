@@ -51,3 +51,28 @@
 -dontwarn javax.script.**
 -dontwarn java.beans.**
 -dontwarn jdk.dynalink.**
+
+# Preserve the AndroidX ABI referenced by standard CloudStream extensions.
+# Nuvio's Compose host does not directly instantiate these AppCompat/Fragment
+# classes, so R8 otherwise has no static reference to their DEX definitions.
+-keep class androidx.appcompat.app.** { *; }
+-keep interface androidx.appcompat.app.** { *; }
+-keep class androidx.fragment.app.** { *; }
+-keep interface androidx.fragment.app.** { *; }
+
+# Keep metadata and parameter annotations used by reflected Kotlin/Jackson APIs.
+-keepattributes RuntimeVisibleParameterAnnotations,AnnotationDefault
+-keep class kotlin.Metadata { *; }
+
+# Keep interface ABI alongside classes for APIs invoked from external DEX.
+-keep interface okhttp3.** { *; }
+-keep interface okio.** { *; }
+-keep interface com.fasterxml.jackson.** { *; }
+-keep interface com.google.gson.** { *; }
+-keep interface org.jsoup.** { *; }
+-keep interface org.mozilla.javascript.** { *; }
+
+# Rhino's bytecode compiler package is part of the runtime surface when shipped.
+-keep class org.mozilla.classfile.** { *; }
+-keep interface org.mozilla.classfile.** { *; }
+-dontwarn org.mozilla.classfile.**
