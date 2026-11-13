@@ -185,6 +185,17 @@ internal actual object CloudStreamPlatformRuntime {
             val pluginInstance = (pluginClass as Class<out BasePlugin>).getDeclaredConstructor().newInstance()
             instance = pluginInstance
             pluginInstance.filename = file.absolutePath
+            // Match CloudStream's lifecycle: make the plugin visible to PluginManager
+            // before invoking load(), because extensions may inspect the registry while
+            // registering providers or initializing their own settings.
+            val data = PluginData(
+                internalName = item.metadata.internalName,
+                url = item.metadata.packageUrl,
+                isOnline = true,
+                filePath = file.absolutePath,
+                version = manifest.version ?: item.metadata.version,
+            )
+            PluginManager.register(data, pluginInstance)
             val identityContext = CloudStreamIdentityContext(context)
             CloudStreamApp.context = identityContext
             setContext(WeakReference(identityContext))
@@ -202,14 +213,6 @@ internal actual object CloudStreamPlatformRuntime {
             val registeredExtractors = extractorApis
                 .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
-            val data = PluginData(
-                internalName = item.metadata.internalName,
-                url = item.metadata.packageUrl,
-                isOnline = true,
-                filePath = file.absolutePath,
-                version = manifest.version ?: item.metadata.version,
-            )
-            PluginManager.register(data, pluginInstance)
             log.i {
                 "Loaded ${item.metadata.internalName}: ${providers.size} provider(s), " +
                     "${registeredExtractors.size} extractor(s)"
