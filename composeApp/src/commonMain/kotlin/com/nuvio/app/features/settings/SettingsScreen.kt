@@ -864,6 +864,7 @@ private fun MobileSettingsScreen(
                     onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                     onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
+                    onTelegramClick = { onPageChange(SettingsPage.Telegram) },
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -897,6 +898,7 @@ private fun MobileSettingsScreen(
                 SettingsPage.DiscordRpc -> discordRpcSettingsContent(
                     isTablet = false,
                 )
+                SettingsPage.Telegram -> telegramSettingsContent(isTablet = false)
             }
         }
         }
@@ -1325,6 +1327,7 @@ private fun TabletSettingsScreen(
                         onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                         onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
+                        onTelegramClick = { onPageChange(SettingsPage.Telegram) },
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1358,6 +1361,7 @@ private fun TabletSettingsScreen(
                     SettingsPage.DiscordRpc -> discordRpcSettingsContent(
                         isTablet = true,
                     )
+                    SettingsPage.Telegram -> telegramSettingsContent(isTablet = true)
                 }
             }
             }
