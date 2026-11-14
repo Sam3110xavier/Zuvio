@@ -239,7 +239,9 @@ internal suspend fun resolveCloudStreamProviderStreams(
                     ).getOrThrow()
                 }.onFailure { error -> lastError = error }
                     .getOrNull()
-                if (loaded != null && loaded.matchesCloudStreamExternalIdRequest(searchRequest)) {
+                // The TMDB ID is authoritative here; do not reject a valid result
+                // merely because the provider returns a localized display title.
+                if (loaded != null && loaded.type.matchesCloudStreamType(normalizeCloudStreamNuvioType(searchRequest.type))) {
                     val linkData = loaded.linkDataForCloudStreamRequest(searchRequest)
                     if (linkData != null) {
                         val directSources = runCatchingUnlessCancelled {
