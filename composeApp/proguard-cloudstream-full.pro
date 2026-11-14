@@ -1,6 +1,9 @@
-# Full builds can load Android CloudStream .cs3 packages dynamically.
-# Keep shrinking/obfuscation enabled, but skip R8 optimization passes that become
-# prohibitively slow with the CloudStream compatibility runtime dependency graph.
+# Full builds load third-party CloudStream .cs3 DEX packages dynamically.
+# R8 cannot see classes or members referenced only by those external DEX files.
+# Match the upstream CloudStream release policy: do not shrink or rename the Full
+# runtime ABI. Keep optimization disabled as well to preserve compatibility.
+-dontshrink
+-dontobfuscate
 -dontoptimize
 
 # Some CloudStream providers are compiled against fuzzywuzzy and resolve this
