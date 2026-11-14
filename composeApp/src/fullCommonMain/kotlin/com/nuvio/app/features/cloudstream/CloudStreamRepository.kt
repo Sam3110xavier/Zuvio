@@ -32,7 +32,6 @@ internal enum class CloudStreamPreloadStrategy {
 }
 
 actual object CloudStreamRepository {
-    @Volatile
     internal var activePreloadStrategy: CloudStreamPreloadStrategy =
         CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -640,13 +639,17 @@ actual object CloudStreamRepository {
 
         val canonicalProviderId = selectedPlugin.metadata.id.value
         val primaryResult = providerResult(canonicalProviderId) { loadLinks(data) }
-        if (primaryResult.isFailure || primaryResult.getOrNull().orEmpty().isNotEmpty()) {
-            return primaryResult
-        }
+        val primaryErrorMessage = primaryResult.exceptionOrNull()?.message.orEmpty()
+        val primaryNeedsExtractorFallback =
+            primaryResult.getOrNull().orEmpty().isEmpty() &&
+                (primaryResult.isSuccess ||
+                    primaryErrorMessage.contains("no playable links", ignoreCase = true) ||
+                    primaryErrorMessage.contains("could not resolve this source", ignoreCase = true))
+        if (!primaryNeedsExtractorFallback) return primaryResult
 
         // Lazy fallback: only when the enabled/runnable extractor set produced no
-        // links do we load verified disabled packages. The Android runtime must keep
-        // their ExtractorApi registrations but remove their MainAPI registrations.
+        // playable links do we load verified disabled packages. The Android runtime
+        // keeps their ExtractorApi registrations but removes their MainAPI registrations.
         if (strategy != CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY) return primaryResult
         val disabledExtractorPlugins = verifiedDexPlugins.filterNot(CloudStreamPluginItem::isRunnable)
         var fallbackLoaded = 0
