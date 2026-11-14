@@ -353,26 +353,14 @@ internal actual object CloudStreamPlatformRuntime {
                         ": " + InAppLogger.throwableSummary(error),
                 )
             }
-            // CloudStream's Plugin API keeps registrations on the plugin instance.
-            // Official NuvioTV reads registeredMainAPIs first; relying only on the
-            // process-global APIHolder delta can miss providers that are registered
-            // locally by BasePlugin (or already existed in the global list).
-            val pluginRegisteredProviders = pluginInstance.registeredMainAPIs.toList()
-            val globallyRegisteredProviders = APIHolder.allProviders.withLock {
+            // CloudStream 4.8 BasePlugin.registerMainAPI() is final and registers
+            // directly into the shared APIHolder registry. Capture that registry's
+            // per-plugin delta; the upstream BasePlugin ABI has no plugin-owned list.
+            val providers = APIHolder.allProviders.withLock {
                 APIHolder.allProviders.filter {
                     it !in providersBefore || it.sourcePlugin == file.absolutePath
                 }
-            }
-            val providers = (pluginRegisteredProviders + globallyRegisteredProviders)
-                .distinctBy { it.javaClass }
-                .toMutableList()
-            providers.forEach { api ->
-                api.sourcePlugin = file.absolutePath
-                APIHolder.addPluginMapping(api)
-                APIHolder.allProviders.withLock {
-                    if (APIHolder.allProviders.none { it === api }) APIHolder.allProviders.add(api)
-                }
-            }
+            }.distinct().toMutableList()
 
             // Remove disabled MainAPI registrations immediately after plugin.load().
             // Do not run the MainAPI DEX fallback scan for disabled extractor packages.
@@ -402,29 +390,13 @@ internal actual object CloudStreamPlatformRuntime {
                     )
                 }
             }
-            // As with MainAPI, use the plugin-owned registration list as the
-            // authoritative source, then merge any extractors registered globally.
-            val pluginRegisteredExtractors = pluginInstance.registeredExtractorAPIs.toList()
-            val globallyRegisteredExtractors = extractorApis.withLock {
+            // CloudStream 4.8 BasePlugin.registerExtractorAPI() writes directly
+            // to the shared extractorApis registry; attribute this plugin's delta.
+            val registeredExtractors = extractorApis.withLock {
                 extractorApis.filter {
                     it !in extractorsBefore || it.sourcePlugin == file.absolutePath
                 }
-            }
-            val registeredExtractors = (pluginRegisteredExtractors + globallyRegisteredExtractors)
-                .distinctBy { it.javaClass }
-                .toMutableList()
-            registeredExtractors.forEach { extractor ->
-                extractor.sourcePlugin = file.absolutePath
-                extractorApis.withLock {
-                    if (extractorApis.none {
-                            it.javaClass == extractor.javaClass &&
-                                it.sourcePlugin == file.absolutePath
-                        }
-                    ) {
-                        extractorApis.add(extractor)
-                    }
-                }
-            }
+            }.distinct().toMutableList()
 
             // Some real-world .cs3 packages contain ExtractorApi implementations but
             // fail to expose them through BasePlugin.registerExtractorAPI(). NuvioTV
