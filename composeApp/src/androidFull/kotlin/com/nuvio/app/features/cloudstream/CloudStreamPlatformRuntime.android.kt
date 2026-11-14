@@ -17,6 +17,7 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.CommonActivity
 import com.lagradost.cloudstream3.LiveSearchResponse
 import com.lagradost.cloudstream3.LiveStreamLoadResponse
+import com.lagradost.cloudstream3.metaproviders.TmdbProvider
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
@@ -892,6 +893,28 @@ private class AndroidDexCloudStreamProvider(
     }
 
     override suspend fun loadByExternalId(externalId: String): CloudStreamLoadItem? = withContext(Dispatchers.IO) {
+        // NuvioTV's production runner has a dedicated TmdbProvider path: these
+        // providers do not use the ordinary title-search URL contract. Their load()
+        // expects {"id":<TMDB id>,"type":"movie|tv"} before loadLinks() can run.
+        val tmdbMatch = TMDB_EXTERNAL_ID_REGEX.matchEntire(externalId)
+        if (tmdbMatch != null) {
+            val tmdbId = tmdbMatch.groupValues[1].toIntOrNull()
+                ?: return@withContext null
+            val mediaType = tmdbMatch.groupValues[2].lowercase()
+            val loadJson = """{"id":$tmdbId,"type":"$mediaType"}"""
+            return@withContext providers.filterIsInstance<TmdbProvider>().firstNotNullOfOrNull { api ->
+                runCatching {
+                    val response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                        api.load(loadJson)
+                    }
+                    response?.toNuvioLoadItem(api)
+                }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    log.w(error) { "CloudStream TMDB load failed api=${api.name} tmdbId=$tmdbId type=$mediaType" }
+                }.getOrNull()
+            }
+        }
+
         val syncName = when {
             externalId.matches(IMDB_ID_REGEX) -> SyncIdName.Imdb
             else -> return@withContext null
@@ -1058,6 +1081,7 @@ private class AndroidDexCloudStreamProvider(
 
     private companion object {
         private val IMDB_ID_REGEX = Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE)
+        private val TMDB_EXTERNAL_ID_REGEX = Regex("^tmdb:(\\d+):(movie|tv)$", RegexOption.IGNORE_CASE)
         private fun stageTimeout(providerHint: Long?, hostMaximum: Long): Long =
             providerHint?.coerceIn(5_000L, hostMaximum) ?: hostMaximum
 
