@@ -164,11 +164,12 @@ internal suspend fun resolveCloudStreamProviderStreams(
     providerGroup: CloudStreamProviderGroup,
     request: CloudStreamSearchRequest?,
 ): AddonStreamGroup {
-    val searchRequest = request?.takeIf { it.title.isNotBlank() }
-        ?: return providerGroup.toCloudStreamGroup(
-            streams = emptyList(),
-            error = "CloudStream search title is unavailable",
-        )
+    val searchRequest = request?.takeIf { request ->
+        request.title.isNotBlank() || request.tmdbId != null || !request.externalId.isNullOrBlank()
+    } ?: return providerGroup.toCloudStreamGroup(
+        streams = emptyList(),
+        error = "CloudStream title and external IDs are unavailable",
+    )
 
     // Third-party plugins can execute blocking code that ignores coroutine cancellation.
     // Run them in a detached supervisor so a timed-out plugin cannot retain the caller's
@@ -283,6 +284,14 @@ internal suspend fun resolveCloudStreamProviderStreams(
                     }
                 }
             }
+            // A valid external ID is sufficient for TmdbProvider/IMDb-provider
+            // loading. Only fall back to title search when we actually have a title.
+            if (searchRequest.titleCandidates.isEmpty()) {
+                throw lastError ?: IllegalStateException(
+                    "CloudStream external-ID lookup failed and no search title is available",
+                )
+            }
+
             for (query in searchRequest.searchQueries()) {
                 val searchResults = runCatchingUnlessCancelled {
                     CloudStreamRepository.search(query, providerGroup.providerId)
@@ -529,22 +538,6 @@ internal fun buildCloudStreamSearchRequest(
     val metaLookupType = parentMetaType?.takeIf { it.isNotBlank() } ?: type
     val metaLookupId = parentMetaId?.takeIf { it.isNotBlank() } ?: videoId
     val meta = MetaDetailsRepository.peek(metaLookupType, metaLookupId)
-    val title = searchTitle?.trim()?.takeIf { it.isNotBlank() }
-        ?: meta?.name?.trim()?.takeIf { it.isNotBlank() }
-        ?: return null
-    val aliases = listOfNotNull(meta?.name, searchTitle)
-        .cleanCloudStreamRequestAliases(primaryTitle = title)
-    val year = meta?.releaseInfo.cloudStreamReleaseYear()
-        ?: title.cloudStreamReleaseYear()
-    val episodeTitle = meta
-        ?.videos
-        ?.firstOrNull { video ->
-            (season == null || video.season == season) &&
-                (episode == null || video.episode == episode)
-        }
-        ?.title
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
     val externalIds = sequenceOf(videoId, parentMetaId, metaLookupId)
         .filterNotNull()
         .map(String::trim)
@@ -556,9 +549,28 @@ internal fun buildCloudStreamSearchRequest(
         if (!id.startsWith("tmdb:", ignoreCase = true)) return@firstNotNullOfOrNull null
         id.substringAfter(':').substringBefore(':').toIntOrNull()
     }
+    val title = searchTitle?.trim()?.takeIf { it.isNotBlank() }
+        ?: meta?.name?.trim()?.takeIf { it.isNotBlank() }
+    // External IDs are independently sufficient for providers that implement
+    // TmdbProvider or IMDb sync lookup; metadata-cache misses must not block them.
+    if (title == null && externalId == null && tmdbId == null) return null
+    val resolvedTitle = title.orEmpty()
+    val aliases = listOfNotNull(meta?.name, searchTitle)
+        .cleanCloudStreamRequestAliases(primaryTitle = resolvedTitle)
+    val year = meta?.releaseInfo.cloudStreamReleaseYear()
+        ?: title?.cloudStreamReleaseYear()
+    val episodeTitle = meta
+        ?.videos
+        ?.firstOrNull { video ->
+            (season == null || video.season == season) &&
+                (episode == null || video.episode == episode)
+        }
+        ?.title
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 
     return CloudStreamSearchRequest(
-        title = title,
+        title = resolvedTitle,
         aliases = aliases,
         type = type,
         year = year,
