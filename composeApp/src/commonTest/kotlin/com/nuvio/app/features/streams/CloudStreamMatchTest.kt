@@ -366,6 +366,26 @@ class CloudStreamMatchTest {
     }
 
     @Test
+    fun acceptsAuthoritativeImdbSeriesLookupWithoutCachedTitle() {
+        val request = CloudStreamSearchRequest(
+            title = "",
+            type = "series",
+            year = null,
+            season = 1,
+            episode = 1,
+            externalId = "tt0903747",
+        )
+        val loaded = CloudStreamLoadItem(
+            providerId = "provider",
+            data = "breaking-bad",
+            name = "Breaking Bad",
+            type = CloudStreamTvType.TvSeries,
+        )
+
+        assertTrue(loaded.matchesCloudStreamExternalIdRequest(request))
+    }
+
+    @Test
     fun rejectsExternalIdUnrelatedSeriesEvenWhenReleaseYearMatches() {
         val request = CloudStreamSearchRequest(
             "The Office", type = "series", year = 2005, season = null, episode = null,
