@@ -413,4 +413,35 @@ class CloudStreamMatchTest {
 
         assertEquals("s1e1", loaded.linkDataForCloudStreamRequest(request))
     }
+
+    @Test
+    fun extractsTmdbIdFromPrefixedContentId() {
+        val request = buildCloudStreamSearchRequest(
+            type = "movie",
+            videoId = "tmdb:603",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = null,
+            episode = null,
+            searchTitle = "The Matrix",
+        )
+
+        assertEquals(603, request?.tmdbId)
+    }
+
+    @Test
+    fun preservesImdbAndTmdbIdsAsSeparateLookupPaths() {
+        val request = buildCloudStreamSearchRequest(
+            type = "series",
+            videoId = "tmdb:1396",
+            parentMetaId = "tt0903747",
+            parentMetaType = "series",
+            season = 1,
+            episode = 1,
+            searchTitle = "Breaking Bad",
+        )
+
+        assertEquals(1396, request?.tmdbId)
+        assertEquals("tt0903747", request?.externalId)
+    }
 }
