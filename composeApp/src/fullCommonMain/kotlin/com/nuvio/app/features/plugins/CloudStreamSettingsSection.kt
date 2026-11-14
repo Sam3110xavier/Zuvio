@@ -444,7 +444,16 @@ private fun CloudStreamPluginCard(
     onMessage: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    var hasPluginSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
     var isOpeningSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
+    val canInspectSettings =
+        plugin.isInstalled &&
+            plugin.verified &&
+            plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
+            CloudStreamPlatformRuntime.supportsAndroidDex
+    LaunchedEffect(plugin.metadata.id.value, canInspectSettings) {
+        hasPluginSettings = canInspectSettings && CloudStreamPlatformRuntime.hasSettings(plugin)
+    }
     NuvioSurfaceCard {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
@@ -463,14 +472,9 @@ private fun CloudStreamPluginCard(
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Avoid probing hasSettings during composition: that initializes the DEX plugin.
-                // The runtime checks and opens settings only after an explicit user tap.
-                if (
-                    plugin.isInstalled &&
-                    plugin.verified &&
-                    plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
-                    CloudStreamPlatformRuntime.supportsAndroidDex
-                ) {
+                // Settings are detected asynchronously after the plugin is loaded by the runtime.
+                // Only show the control when the plugin actually exposes Plugin.openSettings.
+                if (hasPluginSettings) {
                     IconButton(
                         enabled = !isOpeningSettings,
                         onClick = {

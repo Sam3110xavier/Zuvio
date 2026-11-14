@@ -149,17 +149,21 @@ internal actual object CloudStreamPlatformRuntime {
         }
     }
 
-    actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
-        if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex) return null
+    private suspend fun loadPluginIfNeeded(plugin: CloudStreamPluginItem): LoadedPlugin? {
+        if (
+            plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex ||
+            !plugin.isInstalled
+        ) {
+            return null
+        }
         val pluginId = plugin.metadata.id.value
 
-        // A provider that is already loaded must never wait behind another
-        // package's DEX scan. Keep this lookup short and outside loadMutex.
-        synchronized(loadedLock) { loaded[pluginId]?.provider }?.let { return it }
+        // Reuse loaded instances without waiting for another package's DEX scan.
+        synchronized(loadedLock) { loaded[pluginId] }?.let { return it }
 
         return withContext(Dispatchers.IO) {
             loadMutex.withLock {
-                synchronized(loadedLock) { loaded[pluginId]?.provider } ?: run {
+                synchronized(loadedLock) { loaded[pluginId] } ?: run {
                     val generation = synchronized(loadedLock) {
                         runtimeGeneration to (pluginGenerations[pluginId] ?: 0L)
                     }
@@ -179,20 +183,25 @@ internal actual object CloudStreamPlatformRuntime {
                         loadedPlugin.unload()
                         error("CloudStream runtime was reset while plugin $pluginId was loading")
                     }
-                    loadedPlugin.provider
+                    loadedPlugin
                 }
             }
         }
     }
 
+    actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
+        val loadedPlugin = loadPluginIfNeeded(plugin) ?: return null
+        // Settings-only and extractor-only plugins remain loadable, but they are not
+        // catalogue providers unless they registered at least one MainAPI.
+        return loadedPlugin.provider.takeIf { loadedPlugin.providers.isNotEmpty() }
+    }
+
     actual suspend fun hasSettings(plugin: CloudStreamPluginItem): Boolean {
-        if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex || !plugin.isInstalled) {
-            return false
-        }
+        if (!plugin.isInstalled) return false
         return try {
-            provider(plugin)
-            val instance = synchronized(loadedLock) { loaded[plugin.metadata.id.value]?.instance }
-            (instance as? Plugin)?.openSettings != null
+            // Settings capability is independent of catalogue-provider registration.
+            val loadedPlugin = loadPluginIfNeeded(plugin) ?: return false
+            (loadedPlugin.instance as? Plugin)?.openSettings != null
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             log.w(error) { "Could not inspect CloudStream settings capability id=${plugin.metadata.id.value}" }
