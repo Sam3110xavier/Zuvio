@@ -1,6 +1,7 @@
 package com.nuvio.app.features.cloudstream
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.logging.InAppLogger
 import com.nuvio.app.features.home.HomeRepository
 import com.nuvio.app.features.addons.httpGetText
 import com.nuvio.app.features.addons.httpRequestRaw
@@ -24,7 +25,16 @@ import kotlinx.atomicfu.locks.synchronized
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+internal enum class CloudStreamPreloadStrategy {
+    SELECTED_ONLY,
+    ENABLED_RUNNABLE_ONLY,
+    ALL_VERIFIED_DEX,
+}
+
 actual object CloudStreamRepository {
+    @Volatile
+    internal var activePreloadStrategy: CloudStreamPreloadStrategy =
+        CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val log = Logger.withTag("CloudStreamRepo")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -528,7 +538,8 @@ actual object CloudStreamRepository {
     ): List<Result<List<CloudStreamSearchItem>>> {
         initialize()
         val expectedProfileGeneration = profileGenerationSnapshot()
-        val activeIds = runnableProviderIds().filter { providerId == null || it == providerId }
+        val canonicalFilterId = providerId?.let { findPluginItem(it)?.metadata?.id?.value ?: it }
+        val activeIds = runnableProviderIds().filter { canonicalFilterId == null || it == canonicalFilterId }
         return activeIds.map { id ->
             val result = providerResult(id) { search(query.trim()) }
             if (result.isFailure) {
@@ -569,50 +580,103 @@ actual object CloudStreamRepository {
     actual suspend fun loadLinks(providerId: String, data: String): Result<List<CloudStreamPlaybackSource>> {
         initialize()
         val expectedProfileGeneration = profileGenerationSnapshot()
+        val selectedPlugin = findPluginItem(providerId)
+            ?: return Result.failure(IllegalStateException("CloudStream provider was not found: $providerId"))
+        if (!selectedPlugin.isRunnable) {
+            return Result.failure(IllegalStateException("CloudStream provider is disabled or incompatible"))
+        }
 
-        // CloudStream providers frequently delegate host resolution to ExtractorApi
-        // implementations shipped in *other* .cs3 packages. Unlike the official
-        // CloudStream app, this host loads providers lazily, so loading only the
-        // selected provider leaves the global extractor registry incomplete.
-        // Match NuvioTV's ensureExtractorsLoaded() behavior: load every installed,
-        // verified Android DEX package before invoking the selected provider. A
-        // disabled provider can still supply an ExtractorApi used by another plugin.
-        val extractorPlugins = _uiState.value.plugins.filter { plugin ->
+        val strategy = activePreloadStrategy
+        val verifiedDexPlugins = _uiState.value.plugins.filter { plugin ->
             plugin.isInstalled &&
                 plugin.verified &&
                 plugin.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex
         }
-        var loadedPackages = 0
-        extractorPlugins.forEach { plugin ->
+        val eagerPlugins = when (strategy) {
+            CloudStreamPreloadStrategy.SELECTED_ONLY -> listOf(selectedPlugin)
+            CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY ->
+                verifiedDexPlugins.filter(CloudStreamPluginItem::isRunnable)
+            CloudStreamPreloadStrategy.ALL_VERIFIED_DEX -> verifiedDexPlugins
+        }.plus(selectedPlugin).distinctBy { it.metadata.id.value }
+
+        val preloadStartedAt = currentEpochMillis()
+        var attemptedCount = 0
+        var loadedCount = 0
+        var failedCount = 0
+        eagerPlugins.forEach { plugin ->
             if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
                 return Result.failure(
                     IllegalStateException("Active profile changed while preparing CloudStream extractors"),
                 )
             }
+            attemptedCount += 1
             try {
                 CloudStreamPlatformRuntime.provider(plugin)
-                loadedPackages += 1
+                loadedCount += 1
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
+                if (error is VirtualMachineError || error is ThreadDeath) throw error
+                failedCount += 1
+                InAppLogger.cloudStreamWarn(
+                    "CloudStreamRepo",
+                    "Extractor preload failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                )
                 log.w(error) {
                     "CloudStream extractor package preload failed id=${plugin.metadata.id.value}"
                 }
-            } catch (error: LinkageError) {
-                log.w(error) {
-                    "CloudStream extractor package preload failed binary compatibility id=${plugin.metadata.id.value}"
-                }
             }
         }
-        log.d {
-            "Prepared CloudStream extractor registry: loaded=$loadedPackages eligible=${extractorPlugins.size}"
-        }
+        val preloadElapsedMs = (currentEpochMillis() - preloadStartedAt).coerceAtLeast(0L)
+        InAppLogger.cloudStreamInfo(
+            "CloudStreamRepo",
+            "Preload complete strategy=$strategy attempted=$attemptedCount loaded=$loadedCount failed=$failedCount elapsedMs=$preloadElapsedMs",
+        )
         if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
             return Result.failure(
                 IllegalStateException("Active profile changed before CloudStream link resolution"),
             )
         }
-        return providerResult(providerId) { loadLinks(data) }
+
+        val canonicalProviderId = selectedPlugin.metadata.id.value
+        val primaryResult = providerResult(canonicalProviderId) { loadLinks(data) }
+        if (primaryResult.isFailure || primaryResult.getOrNull().orEmpty().isNotEmpty()) {
+            return primaryResult
+        }
+
+        // Lazy fallback: only when the enabled/runnable extractor set produced no
+        // links do we load verified disabled packages. The Android runtime must keep
+        // their ExtractorApi registrations but remove their MainAPI registrations.
+        if (strategy != CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY) return primaryResult
+        val disabledExtractorPlugins = verifiedDexPlugins.filterNot(CloudStreamPluginItem::isRunnable)
+        var fallbackLoaded = 0
+        disabledExtractorPlugins.forEach { plugin ->
+            if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
+                return Result.failure(
+                    IllegalStateException("Active profile changed during CloudStream extractor fallback"),
+                )
+            }
+            try {
+                CloudStreamPlatformRuntime.provider(plugin)
+                fallbackLoaded += 1
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (error is VirtualMachineError || error is ThreadDeath) throw error
+                InAppLogger.cloudStreamWarn(
+                    "CloudStreamRepo",
+                    "Lazy extractor fallback failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                )
+            }
+        }
+        InAppLogger.cloudStreamInfo(
+            "CloudStreamRepo",
+            "Lazy extractor fallback completed candidates=${disabledExtractorPlugins.size} loaded=$fallbackLoaded",
+        )
+        if (fallbackLoaded == 0 || !isProfileGenerationCurrent(expectedProfileGeneration)) {
+            return primaryResult
+        }
+        return providerResult(canonicalProviderId) { loadLinks(data) }
     }
 
     private suspend fun installOrUpdate(
@@ -1010,6 +1074,30 @@ actual object CloudStreamRepository {
         )
     }
 
+    private fun normalizeProviderKey(raw: String): String =
+        raw.trim()
+            .substringAfterLast(":")
+            .substringAfterLast("/")
+            .lowercase()
+            .replace(Regex("[^a-z0-9]"), "")
+
+    /**
+     * Route IDs, repository IDs and MainAPI/internal names are not guaranteed to
+     * use the same spelling. Exact IDs win; normalized fallback is accepted only
+     * when it identifies one plugin, never when it is ambiguous.
+     */
+    private fun findPluginItem(rawId: String): CloudStreamPluginItem? {
+        val plugins = _uiState.value.plugins
+        plugins.firstOrNull { it.metadata.id.value == rawId }?.let { return it }
+        val normalized = normalizeProviderKey(rawId)
+        if (normalized.isBlank()) return null
+        val matches = plugins.filter { plugin ->
+            normalizeProviderKey(plugin.metadata.id.value) == normalized ||
+                normalizeProviderKey(plugin.metadata.internalName) == normalized
+        }
+        return matches.singleOrNull()
+    }
+
     private fun runnableProviderIds(): List<String> =
         _uiState.value.plugins.filter(CloudStreamPluginItem::isRunnable).map { it.metadata.id.value }
 
@@ -1025,33 +1113,47 @@ actual object CloudStreamRepository {
     ): Result<T> {
         initialize()
         val expectedProfileGeneration = profileGenerationSnapshot()
-        if (providerId !in runnableProviderIds()) {
+        val plugin = findPluginItem(providerId)
+            ?: return Result.failure(IllegalStateException("CloudStream plugin was not found: $providerId"))
+        val canonicalId = plugin.metadata.id.value
+        if (!plugin.isRunnable) {
+            InAppLogger.cloudStreamWarn(
+                "CloudStreamRepo",
+                "providerResult rejected disabled/non-runnable routeId=$providerId canonicalId=$canonicalId",
+            )
             return Result.failure(IllegalStateException("CloudStream provider is disabled or incompatible"))
         }
+        InAppLogger.cloudStreamDebug(
+            "CloudStreamRepo",
+            "providerResult entry routeId=$providerId canonicalId=$canonicalId internalName=${plugin.metadata.internalName} strategy=$activePreloadStrategy",
+        )
         return try {
-            val plugin = _uiState.value.plugins.firstOrNull { it.metadata.id.value == providerId }
-                ?: error("CloudStream plugin was not found")
             val provider = CloudStreamProviderRegistry.find(providerId)
+                ?: CloudStreamProviderRegistry.find(canonicalId)
                 ?: CloudStreamPlatformRuntime.provider(plugin)
                 ?: error("CloudStream provider adapter was not found")
+            InAppLogger.cloudStreamInfo(
+                "CloudStreamRepo",
+                "providerResult resolved canonicalId=$canonicalId adapter=${provider::class.java.name}",
+            )
             val value = provider.block()
             when {
                 !isProfileGenerationCurrent(expectedProfileGeneration) ->
                     Result.failure(IllegalStateException("Active profile changed while the CloudStream provider request was running"))
-                providerId !in runnableProviderIds() ->
+                canonicalId !in runnableProviderIds() ->
                     Result.failure(IllegalStateException("CloudStream provider was disabled while the request was running"))
                 else -> Result.success(value)
             }
         } catch (cancelled: CancellationException) {
+            InAppLogger.cloudStreamWarn("CloudStreamRepo", "providerResult cancelled canonicalId=$canonicalId")
             throw cancelled
-        } catch (error: Exception) {
-            log.w(error) { "CloudStream provider request failed id=$providerId" }
-            Result.failure(error)
-        } catch (error: LinkageError) {
-            // A .cs3 compiled against a different CloudStream API can fail with
-            // NoClassDefFoundError / NoSuchMethodError. Isolate that plugin failure
-            // so a broken extension cannot crash the host app.
-            log.w(error) { "CloudStream plugin binary compatibility failed id=$providerId" }
+        } catch (error: Throwable) {
+            if (error is VirtualMachineError || error is ThreadDeath) throw error
+            InAppLogger.cloudStreamError(
+                "CloudStreamRepo",
+                "providerResult failed canonicalId=$canonicalId: ${InAppLogger.throwableSummary(error)}",
+            )
+            log.w(error) { "CloudStream provider request failed id=$canonicalId" }
             Result.failure(error)
         }
     }
