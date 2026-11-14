@@ -75,8 +75,9 @@ internal actual object CloudStreamPlatformRuntime {
     private val loadMutex = Mutex()
     private val loadedLock = Any()
     private val loaded = linkedMapOf<String, LoadedPlugin>()
-    // Invalidates a plugin load that races with unload()/clear().
+    // Invalidates in-flight loads after a profile reset or per-plugin unload.
     private var runtimeGeneration = 0L
+    private val pluginGenerations = mutableMapOf<String, Long>()
     private var appContext: Context? = null
     private var activityReference: WeakReference<Activity>? = null
     @Volatile private var cloudStreamNetworkingInitialized = false
@@ -158,10 +159,15 @@ internal actual object CloudStreamPlatformRuntime {
         return withContext(Dispatchers.IO) {
             loadMutex.withLock {
                 synchronized(loadedLock) { loaded[pluginId]?.provider } ?: run {
-                    val generation = synchronized(loadedLock) { runtimeGeneration }
+                    val generation = synchronized(loadedLock) {
+                        runtimeGeneration to (pluginGenerations[pluginId] ?: 0L)
+                    }
                     val loadedPlugin = loadPlugin(plugin)
                     val accepted = synchronized(loadedLock) {
-                        if (runtimeGeneration == generation) {
+                        if (
+                            runtimeGeneration == generation.first &&
+                            (pluginGenerations[pluginId] ?: 0L) == generation.second
+                        ) {
                             loaded[pluginId] = loadedPlugin
                             true
                         } else {
@@ -211,7 +217,7 @@ internal actual object CloudStreamPlatformRuntime {
 
     actual fun unload(pluginId: String) {
         val removed = synchronized(loadedLock) {
-            runtimeGeneration += 1
+            pluginGenerations[pluginId] = (pluginGenerations[pluginId] ?: 0L) + 1L
             loaded.remove(pluginId)
         }
         removed?.unload()
@@ -227,6 +233,7 @@ internal actual object CloudStreamPlatformRuntime {
     actual fun clear() {
         val plugins = synchronized(loadedLock) {
             runtimeGeneration += 1
+            pluginGenerations.clear()
             loaded.values.toList().also {
                 loaded.clear()
             }
