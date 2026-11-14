@@ -54,6 +54,20 @@
 -keep interface com.google.android.material.** { *; }
 -dontwarn com.google.android.material.**
 
+# Preserve UI libraries called only from externally loaded .cs3 DEX.
+# R8 cannot see those references when it shrinks the host APK, even though the
+# libraries are present on Full's runtime classpath.
+-keep class androidx.preference.** { *; }
+-keep interface androidx.preference.** { *; }
+-keep class androidx.recyclerview.** { *; }
+-keep interface androidx.recyclerview.** { *; }
+-keep class androidx.constraintlayout.** { *; }
+-keep interface androidx.constraintlayout.** { *; }
+-keep class androidx.navigation.** { *; }
+-keep interface androidx.navigation.** { *; }
+-keep class androidx.legacy.** { *; }
+-keep interface androidx.legacy.** { *; }
+
 # Preserve the AndroidX ABI referenced by standard CloudStream extensions.
 # External .cs3 DEX files are invisible to R8's static reachability analysis.
 -keep class androidx.appcompat.app.AppCompatActivity { *; }
