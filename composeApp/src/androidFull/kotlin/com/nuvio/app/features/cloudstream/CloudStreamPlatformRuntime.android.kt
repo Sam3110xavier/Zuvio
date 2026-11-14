@@ -360,9 +360,11 @@ internal actual object CloudStreamPlatformRuntime {
             // Remove disabled MainAPI registrations immediately after plugin.load().
             // Do not run the MainAPI DEX fallback scan for disabled extractor packages.
             if (!item.isRunnable && providers.isNotEmpty()) {
-                providers.forEach(APIHolder::removePluginMapping)
-                APIHolder.allProviders.removeAll(providers.toSet())
-                APIHolder.allProviders.removeAll { it.sourcePlugin == file.absolutePath }
+                val disabledProviders = providers.toSet()
+                disabledProviders.forEach(APIHolder::removePluginMapping)
+                APIHolder.allProviders.removeAll {
+                    it in disabledProviders || it.sourcePlugin == file.absolutePath
+                }
                 InAppLogger.cloudStreamInfo(
                     "CloudStreamDex",
                     "Disabled plugin MainAPI registrations removed id=${item.metadata.id.value}",
