@@ -447,8 +447,7 @@ private fun CloudStreamPluginCard(
     var hasPluginSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
     var isOpeningSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
     val canInspectSettings =
-        plugin.isInstalled &&
-            plugin.verified &&
+        plugin.isRunnable &&
             plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
             CloudStreamPlatformRuntime.supportsAndroidDex
     LaunchedEffect(plugin.metadata.id.value, canInspectSettings) {
