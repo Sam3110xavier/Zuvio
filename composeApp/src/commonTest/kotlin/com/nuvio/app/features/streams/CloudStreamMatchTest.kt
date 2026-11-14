@@ -458,10 +458,10 @@ class CloudStreamMatchTest {
             searchTitle = null,
         )
 
-        assertNotNull(request)
-        assertEquals("", request.title)
-        assertEquals(9912345, request.tmdbId)
-        assertTrue(request.titleCandidates.isEmpty())
+        val resolved = assertNotNull(request)
+        assertEquals("", resolved.title)
+        assertEquals(9912345, resolved.tmdbId)
+        assertTrue(resolved.titleCandidates.isEmpty())
     }
 
     @Test
@@ -476,10 +476,10 @@ class CloudStreamMatchTest {
             searchTitle = null,
         )
 
-        assertNotNull(request)
-        assertEquals("", request.title)
-        assertEquals("tt1234567", request.externalId)
-        assertTrue(request.titleCandidates.isEmpty())
+        val resolved = assertNotNull(request)
+        assertEquals("", resolved.title)
+        assertEquals("tt1234567", resolved.externalId)
+        assertTrue(resolved.titleCandidates.isEmpty())
     }
 
 }
