@@ -175,6 +175,10 @@ object StreamsRepository {
 
         val cloudStreamRoute = parseCloudStreamRouteId(videoId)
         if (cloudStreamRoute != null) {
+            InAppLogger.info(
+                "Streams/StreamsRepository",
+                "CloudStream route dispatch providerId=${cloudStreamRoute.providerId} dataLength=${cloudStreamRoute.data.length}",
+            )
             CloudStreamRepository.initialize()
             val providerItem = CloudStreamRepository.uiState.value.plugins
                 .firstOrNull { it.metadata.id.value == cloudStreamRoute.providerId }
@@ -200,6 +204,10 @@ object StreamsRepository {
                     data = cloudStreamRoute.data,
                 ).fold(
                     onSuccess = { streams ->
+                        InAppLogger.info(
+                            "Streams/StreamsRepository",
+                            "CloudStream route completed providerId=${cloudStreamRoute.providerId} playbackSources=${streams.size}",
+                        )
                         _uiState.update { current ->
                             if (current.requestToken != requestToken) {
                                 current
@@ -223,6 +231,10 @@ object StreamsRepository {
                         }
                     },
                     onFailure = { error ->
+                        InAppLogger.warn(
+                            "Streams/StreamsRepository",
+                            "CloudStream route failed providerId=${cloudStreamRoute.providerId}: ${error::class.java.name}: ${error.message}",
+                        )
                         log.w(error) { "CloudStream link resolution failed provider=" + cloudStreamRoute.providerId }
                         _uiState.update { current ->
                             if (current.requestToken != requestToken) {
