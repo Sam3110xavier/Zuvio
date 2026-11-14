@@ -446,6 +446,7 @@ private fun CloudStreamPluginCard(
     val scope = rememberCoroutineScope()
     var hasPluginSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
     var isOpeningSettings by remember(plugin.metadata.id.value) { mutableStateOf(false) }
+    var pluginSettingsMessage by remember(plugin.metadata.id.value) { mutableStateOf<String?>(null) }
     val canInspectSettings =
         plugin.isRunnable &&
             plugin.compatibility.runtimeKind == com.nuvio.app.features.cloudstream.CloudStreamRuntimeKind.AndroidDex &&
@@ -478,16 +479,18 @@ private fun CloudStreamPluginCard(
                         enabled = !isOpeningSettings,
                         onClick = {
                             isOpeningSettings = true
+                            pluginSettingsMessage = null
                             scope.launch {
                                 try {
                                     val opened = CloudStreamPlatformRuntime.openSettings(plugin)
                                     if (!opened) {
-                                        onMessage(copy.pluginSettingsUnavailable)
+                                        pluginSettingsMessage = copy.pluginSettingsUnavailable
                                     }
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
                                 } catch (error: Exception) {
-                                    onMessage((error.message ?: copy.pluginSettingsFailed).localizedCloudStreamFailure(copy))
+                                    pluginSettingsMessage =
+                                        (error.message ?: copy.pluginSettingsFailed).localizedCloudStreamFailure(copy)
                                 } finally {
                                     isOpeningSettings = false
                                 }
@@ -508,6 +511,14 @@ private fun CloudStreamPluginCard(
                     onCheckedChange = { CloudStreamRepository.setPluginEnabled(plugin.metadata.id.value, it) },
                 )
             }
+        }
+        pluginSettingsMessage?.let { settingsMessage ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                settingsMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         Spacer(Modifier.height(10.dp))
         Text(
