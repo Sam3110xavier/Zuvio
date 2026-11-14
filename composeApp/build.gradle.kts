@@ -572,6 +572,8 @@ kotlin {
                     implementation("io.ktor:ktor-server-cio:${libs.versions.ktor.get()}")
                     implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
                     implementation(files(cloudStreamRuntimeAar).builtBy(downloadCloudStreamRuntime))
+                    // Dynamically loaded CloudStream extensions link against Material Components.
+                    implementation("com.google.android.material:material:1.14.0")
                     implementation("me.xdrop:fuzzywuzzy:1.4.0")
                     implementation(libs.ksoup)
                     implementation("androidx.annotation:annotation:1.10.0")
