@@ -242,6 +242,13 @@ open class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         startupScope.cancel()
         EpisodeReleaseNotificationPlatform.unbindActivity(this)
+        // Clear the optional Full-build CloudStream activity bridge without adding
+        // a compile-time dependency to Play Store distributions.
+        runCatching {
+            Class.forName("com.lagradost.cloudstream3.AcraApplication")
+                .getMethod("setActivity", android.app.Activity::class.java)
+                .invoke(null, null)
+        }
         super.onDestroy()
     }
 

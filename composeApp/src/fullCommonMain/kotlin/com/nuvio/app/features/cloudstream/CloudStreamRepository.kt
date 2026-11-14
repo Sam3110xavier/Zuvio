@@ -574,10 +574,12 @@ actual object CloudStreamRepository {
         // implementations shipped in *other* .cs3 packages. Unlike the official
         // CloudStream app, this host loads providers lazily, so loading only the
         // selected provider leaves the global extractor registry incomplete.
-        // Match NuvioTV's ensureExtractorsLoaded() behavior: load every enabled,
-        // verified Android DEX package before invoking the selected provider.
+        // Match NuvioTV's ensureExtractorsLoaded() behavior: load every installed,
+        // verified Android DEX package before invoking the selected provider. A
+        // disabled provider can still supply an ExtractorApi used by another plugin.
         val extractorPlugins = _uiState.value.plugins.filter { plugin ->
-            plugin.isRunnable &&
+            plugin.isInstalled &&
+                plugin.verified &&
                 plugin.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex
         }
         var loadedPackages = 0
@@ -587,7 +589,6 @@ actual object CloudStreamRepository {
                     IllegalStateException("Active profile changed while preparing CloudStream extractors"),
                 )
             }
-            if (plugin.metadata.id.value !in runnableProviderIds()) return@forEach
             try {
                 CloudStreamPlatformRuntime.provider(plugin)
                 loadedPackages += 1

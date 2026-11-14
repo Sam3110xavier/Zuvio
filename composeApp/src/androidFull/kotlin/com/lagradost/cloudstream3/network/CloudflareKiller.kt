@@ -3,6 +3,7 @@ package com.lagradost.cloudstream3.network
 import android.util.Log
 import android.webkit.CookieManager
 import androidx.annotation.AnyThread
+import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mvvm.debugWarning
 import com.lagradost.cloudstream3.mvvm.safe
@@ -11,9 +12,29 @@ import com.lagradost.nicehttp.cookies
 import java.net.URI
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
+import okhttp3.Headers.Companion.toHeaders
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
+
+private val DEFAULT_HEADERS = mapOf("user-agent" to USER_AGENT)
+
+/** Binary-compatible top-level helper. Upstream extensions link to CloudflareKillerKt.getHeaders. */
+fun getHeaders(
+    headers: Map<String, String>,
+    cookie: Map<String, String>,
+): Headers {
+    val cookieMap = if (cookie.isNotEmpty()) {
+        mapOf(
+            "Cookie" to cookie.entries.joinToString(" ") {
+                it.key + "=" + it.value + ";"
+            },
+        )
+    } else {
+        emptyMap()
+    }
+    return (DEFAULT_HEADERS + headers + cookieMap).toHeaders()
+}
 
 /**
  * Binary-compatible CloudStream interceptor used by providers protected by Cloudflare.

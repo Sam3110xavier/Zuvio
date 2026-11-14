@@ -11,6 +11,7 @@ import com.lagradost.api.setContext
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.AnimeSearchResponse
+import com.lagradost.cloudstream3.AcraApplication
 import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.CommonActivity
@@ -28,6 +29,7 @@ import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.actions.VideoClickActionHolder
 import com.lagradost.cloudstream3.plugins.BasePlugin
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.plugins.PluginData
 import com.lagradost.cloudstream3.plugins.PluginManager
@@ -36,14 +38,20 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.extractorApis
+import com.lagradost.nicehttp.ignoreAllSSLErrors
 import dalvik.system.DexClassLoader
 import java.io.File
 import java.lang.ref.WeakReference
 import java.security.Security
 import okhttp3.Cache
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import org.conscrypt.Conscrypt
+import com.nuvio.app.core.network.IPv4FirstDns
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -71,11 +79,39 @@ internal actual object CloudStreamPlatformRuntime {
     private var activityReference: WeakReference<Activity>? = null
     @Volatile private var cloudStreamNetworkingInitialized = false
 
+    // Share session cookies between CloudStream provider and delegated extractor requests.
+    // This mirrors the official Nuvio TV extension cookie jar without sharing cookies
+    // with Zuvio's first-party API clients.
+    private val extensionCookieJar: CookieJar = object : CookieJar {
+        private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            val hostCookies = store[url.host] ?: return emptyList()
+            synchronized(hostCookies) {
+                return hostCookies.filter { it.expiresAt > System.currentTimeMillis() }
+            }
+        }
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            val hostCookies = store.getOrPut(url.host) { mutableListOf() }
+            synchronized(hostCookies) {
+                cookies.forEach { newCookie ->
+                    hostCookies.removeAll { it.name == newCookie.name }
+                    hostCookies.add(newCookie)
+                }
+            }
+        }
+    }
+
     actual fun initialize(context: Any?) {
         val androidContext = context as? Context ?: return
         appContext = androidContext.applicationContext
         activityReference = (androidContext as? Activity)?.let(::WeakReference)
-        activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        AcraApplication.context = appContext
+        activityReference?.get()?.let { activity ->
+            CommonActivity.setActivityInstance(activity)
+            AcraApplication.setActivity(activity)
+        }
         initializeCloudStreamNetworking(requireNotNull(appContext))
     }
 
@@ -94,8 +130,13 @@ internal actual object CloudStreamPlatformRuntime {
                 .onFailure { error -> log.w(error) { "Could not install Conscrypt provider" } }
             val cacheDirectory = File(context.cacheDir, "cloudstream_http_cache").apply { mkdirs() }
             app.baseClient = OkHttpClient.Builder()
+                .dns(IPv4FirstDns())
+                .cookieJar(extensionCookieJar)
                 .followRedirects(true)
                 .followSslRedirects(true)
+                // Match Nuvio TV for legacy CS3 providers with broken/expired certificates.
+                // This applies only to CloudStream's dedicated client, not Zuvio's app clients.
+                .ignoreAllSSLErrors()
                 .cache(Cache(cacheDirectory, 50L * 1024L * 1024L))
                 .build()
             cloudStreamNetworkingInitialized = true
@@ -203,9 +244,13 @@ internal actual object CloudStreamPlatformRuntime {
                 json.decodeFromString<CloudStreamCs3Manifest>(reader.readText())
             }
         }
-        val pluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
-            ?: error("CloudStream manifest has no pluginClassName")
-        InAppLogger.cloudStreamInfo("CloudStreamDex", "Manifest validated id=${item.metadata.id.value} entry=$pluginClassName version=${manifest.version ?: item.metadata.version}")
+        val manifestPluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
+        InAppLogger.cloudStreamInfo(
+            "CloudStreamDex",
+            "Manifest validated id=" + item.metadata.id.value +
+                " entry=" + (manifestPluginClassName ?: "<scan DEX>") +
+                " version=" + (manifest.version ?: item.metadata.version),
+        )
         // Match the production sideload loaders used by NuvioTV and ARVIO. DexClassLoader
         // writes optimized DEX artifacts into the app-private code cache and is the
         // supported loader for downloaded .cs3 archives.
@@ -224,15 +269,14 @@ internal actual object CloudStreamPlatformRuntime {
         var instance: BasePlugin? = null
         PluginManager.currentlyLoading = item.metadata.internalName
         try {
-            InAppLogger.cloudStreamDebug("CloudStreamDex", "Resolving plugin entry class=$pluginClassName")
-            val pluginClass = loader.loadClass(pluginClassName)
-            InAppLogger.cloudStreamInfo("CloudStreamDex", "Resolved plugin entry class=${pluginClass.name}")
-            require(BasePlugin::class.java.isAssignableFrom(pluginClass)) {
-                "CloudStream entry point does not extend BasePlugin"
-            }
-
-            @Suppress("UNCHECKED_CAST")
-            val pluginInstance = (pluginClass as Class<out BasePlugin>).getDeclaredConstructor().newInstance()
+            InAppLogger.cloudStreamDebug(
+                "CloudStreamDex",
+                "Resolving plugin entry class=" + (manifestPluginClassName ?: "by @CloudstreamPlugin DEX scan"),
+            )
+            val resolvedEntry = resolvePluginEntry(loader, file, manifestPluginClassName)
+            val pluginInstance = resolvedEntry.plugin
+            val pluginClassName = resolvedEntry.className
+            InAppLogger.cloudStreamInfo("CloudStreamDex", "Resolved plugin entry class=" + pluginClassName)
             instance = pluginInstance
             pluginInstance.filename = file.absolutePath
             // Match CloudStream's lifecycle: make the plugin visible to PluginManager
@@ -252,11 +296,46 @@ internal actual object CloudStreamPlatformRuntime {
             applyHostCompatibilityDefaults(pluginClassName)
             if (manifest.requiresResources) pluginInstance.attachResources(identityContext, file)
 
-            InAppLogger.cloudStreamDebug("CloudStreamDex", "Invoking plugin load() id=${item.metadata.id.value}")
-            if (pluginInstance is Plugin) pluginInstance.load(identityContext) else pluginInstance.load()
+            InAppLogger.cloudStreamDebug("CloudStreamDex", "Invoking plugin load() id=" + item.metadata.id.value)
+            try {
+                // Match the official loader: prefer the live Activity so plugins
+                // overriding load(Activity?) receive the host lifecycle context.
+                pluginInstance.load(activityReference?.get() ?: identityContext)
+            } catch (error: Throwable) {
+                if (
+                    error is kotlinx.coroutines.CancellationException ||
+                    error is VirtualMachineError ||
+                    error is ThreadDeath
+                ) {
+                    throw error
+                }
+                log.w(error) {
+                    "CloudStream plugin load partially failed id=" + item.metadata.id.value +
+                        "; continuing with registered providers and DEX fallback"
+                }
+                InAppLogger.cloudStreamWarn(
+                    "CloudStreamDex",
+                    "Plugin load partially failed id=" + item.metadata.id.value +
+                        ": " + InAppLogger.throwableSummary(error),
+                )
+            }
             val providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
+                .toMutableList()
+            if (providers.none { it.sourcePlugin == file.absolutePath }) {
+                val fallbackProviders = scanMainApis(file, loader)
+                fallbackProviders.forEach { api ->
+                    if (providers.none { it.javaClass == api.javaClass }) providers += api
+                }
+                if (fallbackProviders.isNotEmpty()) {
+                    InAppLogger.cloudStreamInfo(
+                        "CloudStreamDex",
+                        "DEX fallback registered " + fallbackProviders.size +
+                            " MainAPI provider(s) for id=" + item.metadata.id.value,
+                    )
+                }
+            }
             val registeredExtractors = extractorApis.withLock {
                 extractorApis
                     .filter { it !in extractorsBefore || it.sourcePlugin == file.absolutePath }
@@ -356,8 +435,212 @@ internal actual object CloudStreamPlatformRuntime {
         }
     }
 
+
+    private data class ResolvedPluginEntry(
+        val plugin: Plugin,
+        val className: String,
+    )
+
+    /**
+     * Resolve the manifest entry first, then fall back to annotation-based DEX discovery
+     * as the official Nuvio TV loader does.
+     */
+    private fun resolvePluginEntry(
+        classLoader: DexClassLoader,
+        dexFile: File,
+        manifestClassName: String?,
+    ): ResolvedPluginEntry {
+        if (!manifestClassName.isNullOrBlank()) {
+            try {
+                val instance = classLoader.loadClass(manifestClassName)
+                    .getDeclaredConstructor()
+                    .newInstance()
+                val plugin = asHostPlugin(instance)
+                if (plugin != null) return ResolvedPluginEntry(plugin, manifestClassName)
+                log.w { "Manifest entry is not a CloudStream plugin: " + manifestClassName }
+            } catch (error: Throwable) {
+                if (error is VirtualMachineError || error is ThreadDeath) throw error
+                CloudStreamPlatformRuntime.log.w(error) { "Could not load manifest entry; scanning DEX for plugin annotation" }
+            }
+        }
+
+        val dex = dalvik.system.DexFile(dexFile)
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (className.indexOf(36.toChar()) >= 0) continue
+                try {
+                    val candidate = classLoader.loadClass(className)
+                    if (!candidate.isAnnotationPresent(CloudstreamPlugin::class.java)) continue
+                    val instance = candidate.getDeclaredConstructor().newInstance()
+                    val plugin = asHostPlugin(instance)
+                    if (plugin != null) {
+                        CloudStreamPlatformRuntime.log.i { "Found CloudStream plugin entry by DEX annotation scan: " + className }
+                        return ResolvedPluginEntry(plugin, className)
+                    }
+                } catch (error: Throwable) {
+                    if (error is VirtualMachineError || error is ThreadDeath) throw error
+                    CloudStreamPlatformRuntime.log.w(error) { "Skipping incompatible CloudStream plugin entry candidate=" + className }
+                }
+            }
+        } finally {
+            dex.close()
+        }
+        error("No compatible @CloudstreamPlugin entry point found in " + dexFile.name)
+    }
+
+    private fun asHostPlugin(instance: Any): Plugin? = when {
+        instance is Plugin -> instance
+        isPluginLike(instance) -> ReflectiveCloudStreamPluginWrapper(instance)
+        else -> null
+    }
+
+    private fun isPluginLike(instance: Any): Boolean {
+        if (instance is BasePlugin) return true
+        val methods = instance.javaClass.methods
+        return methods.any { method ->
+            method.name == "load" &&
+                (method.parameterCount == 0 ||
+                    method.parameterTypes.contentEquals(arrayOf(Context::class.java)) ||
+                    method.parameterTypes.contentEquals(arrayOf(Activity::class.java)))
+        } || methods.any { it.name == "getRegisteredMainAPIs" }
+    }
+
+    /**
+     * Recover concrete MainAPI classes from the package when plugin.load() did not
+     * register providers. This is the official loader's partial-registration fallback.
+     */
+    private fun scanMainApis(file: File, classLoader: DexClassLoader): List<MainAPI> {
+        val discovered = mutableListOf<MainAPI>()
+        val dex = dalvik.system.DexFile(file)
+        try {
+            val entries = dex.entries()
+            while (entries.hasMoreElements()) {
+                val className = entries.nextElement()
+                if (
+                    className.indexOf(36.toChar()) >= 0 ||
+                    className.contains("Plugin") ||
+                    className.contains("Fragment") ||
+                    !className.startsWith("com.")
+                ) continue
+                try {
+                    val candidate = classLoader.loadClass(className)
+                    if (
+                        MainAPI::class.java.isAssignableFrom(candidate) &&
+                        !java.lang.reflect.Modifier.isAbstract(candidate.modifiers) &&
+                        !candidate.isInterface
+                    ) {
+                        val api = candidate.getDeclaredConstructor().newInstance() as MainAPI
+                        api.sourcePlugin = file.absolutePath
+                        APIHolder.addPluginMapping(api)
+                        APIHolder.allProviders.withLock {
+                            if (APIHolder.allProviders.none { it === api }) APIHolder.allProviders.add(api)
+                        }
+                        discovered += api
+                        log.i { "DEX fallback discovered MainAPI " + api.name + " (" + className + ")" }
+                    }
+                } catch (error: Throwable) {
+                    if (
+                        error is kotlinx.coroutines.CancellationException ||
+                        error is VirtualMachineError ||
+                        error is ThreadDeath
+                    ) {
+                        throw error
+                    }
+                    if (error is LinkageError) {
+                        log.w(error) { "Skipping MainAPI with incompatible dependency class=" + className }
+                    } else {
+                        log.d { "Skipping non-instantiable MainAPI candidate=" + className }
+                    }
+                }
+            }
+        } finally {
+            dex.close()
+        }
+        return discovered.distinctBy { it.javaClass.name }
+    }
+
+    /**
+     * Adapter for extensions compiled against a nearby CloudStream Plugin ABI.
+     * It forwards load overloads and transfers local/global provider registrations
+     * into the host's BasePlugin registry.
+     */
+    private class ReflectiveCloudStreamPluginWrapper(
+        private val delegate: Any,
+    ) : Plugin() {
+        override fun load(context: Context) {
+            val providersBefore = APIHolder.allProviders.withLock { APIHolder.allProviders.toSet() }
+            val extractorsBefore = extractorApis.withLock { extractorApis.toSet() }
+
+            runCatching {
+                delegate.javaClass.getMethod("setFilename", String::class.java).invoke(delegate, filename)
+            }
+            runCatching {
+                val callback = delegate.javaClass.getMethod("getOpenSettings").invoke(delegate)
+                    as? ((Context) -> Unit)
+                if (callback != null) openSettings = callback
+            }
+
+            invokeForeignLoad(context)
+
+            val localProviders = readForeignList("getRegisteredMainAPIs").filterIsInstance<MainAPI>()
+            val providers = if (localProviders.isNotEmpty()) localProviders else {
+                APIHolder.allProviders.withLock { APIHolder.allProviders.filter { it !in providersBefore } }
+            }
+            providers.distinctBy { it.javaClass.name }.forEach { api ->
+                api.sourcePlugin = filename
+                if (APIHolder.allProviders.none { it === api }) registerMainAPI(api)
+            }
+
+            val localExtractors = readForeignList("getRegisteredExtractorAPIs").filterIsInstance<ExtractorApi>()
+            val extractors = if (localExtractors.isNotEmpty()) localExtractors else {
+                extractorApis.withLock { extractorApis.filter { it !in extractorsBefore } }
+            }
+            extractors.distinctBy { it.javaClass.name }.forEach { extractor ->
+                extractor.sourcePlugin = filename
+                if (extractorApis.none { it === extractor }) registerExtractorAPI(extractor)
+            }
+        }
+
+        private fun readForeignList(methodName: String): List<Any> =
+            runCatching {
+                (delegate.javaClass.getMethod(methodName).invoke(delegate) as? List<*>)?.filterNotNull().orEmpty()
+            }.getOrDefault(emptyList())
+
+        private fun invokeForeignLoad(context: Context) {
+            val methods = delegate.javaClass.methods
+            val contextMethod = methods.firstOrNull {
+                it.name == "load" && it.parameterTypes.contentEquals(arrayOf(Context::class.java))
+            }
+            if (contextMethod != null) {
+                try {
+                    contextMethod.invoke(delegate, context)
+                    return
+                } catch (error: java.lang.reflect.InvocationTargetException) {
+                    if (error.targetException !is ClassCastException) throw (error.targetException ?: error)
+                }
+            }
+
+            val activityMethod = methods.firstOrNull {
+                it.name == "load" && it.parameterTypes.contentEquals(arrayOf(Activity::class.java))
+            }
+            if (activityMethod != null) {
+                activityMethod.invoke(delegate, AcraApplication.getActivity())
+                return
+            }
+
+            methods.firstOrNull { it.name == "load" && it.parameterCount == 0 }
+                ?.invoke(delegate)
+        }
+    }
+
     private fun prepareHostContext(context: Context) {
-        activityReference?.get()?.let(CommonActivity::setActivityInstance)
+        activityReference?.get()?.let { activity ->
+            CommonActivity.setActivityInstance(activity)
+            AcraApplication.setActivity(activity)
+        }
+        AcraApplication.context = context.applicationContext
         initializeCloudStreamNetworking(context.applicationContext)
         CloudStreamApp.context = context
         setContext(WeakReference(context))
