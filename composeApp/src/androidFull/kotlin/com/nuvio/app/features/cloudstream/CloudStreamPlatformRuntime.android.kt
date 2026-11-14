@@ -382,14 +382,10 @@ internal actual object CloudStreamPlatformRuntime {
 
             InAppLogger.cloudStreamDebug("CloudStreamDex", "Invoking plugin load() id=" + item.metadata.id.value)
             try {
-                // Match the official loader: prefer the live Activity so plugins
-                // overriding load(Activity?) receive the host lifecycle context.
-                CloudflareKiller.withRequestContext(
-                    pluginId = item.metadata.id.value,
-                    allowInteractiveVerification = false,
-                ) {
-                    pluginInstance.load(activityReference?.get() ?: identityContext)
-                }
+                // Plugin.load() is a synchronous lifecycle callback, not a suspend
+                // operation. Invoke it directly; coroutine ThreadLocal context cannot
+                // reliably propagate into NiceHttp's OkHttp dispatcher threads anyway.
+                pluginInstance.load(activityReference?.get() ?: identityContext)
             } catch (error: Throwable) {
                 if (
                     error is kotlinx.coroutines.CancellationException ||
