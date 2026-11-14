@@ -228,6 +228,15 @@ val rust = tasks.register<CargoNdkBuild>("buildRust") {
 }
 
 androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        // Full loads third-party CloudStream .cs3 DEX at runtime. R8/AAPT2 cannot
+        // see resource references inside those external DEX archives, so resource
+        // shrinking can remove layouts/styles/drawables that plugin settings need.
+        // Keep R8 code minification enabled; disable only resource shrinking for Full.
+        if (variant.productFlavors.contains("distribution" to "full")) {
+            variant.shrinkResources = false
+        }
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.applicationId.set("com.nuviodebug.com")
     }
