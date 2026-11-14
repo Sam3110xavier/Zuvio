@@ -938,6 +938,12 @@ internal fun CloudStreamLoadItem.matchesCloudStreamExternalIdRequest(
     if (requestedYear != null && loadedYear != requestedYear) return false
     if (titleMatches) return true
 
+    // When the metadata cache has no title, a provider's loadByExternalId()
+    // result is already scoped to the exact IMDb ID supplied by the caller.
+    // Preserve type/year checks above, but do not reject that authoritative
+    // result merely because a localized title cannot be compared.
+    if (requestedTitles.isEmpty() && !request.externalId.isNullOrBlank()) return true
+
     // External-ID lookups may legitimately return localized movie titles. For
     // series, however, many unrelated shows share a year, so a year-only match is
     // not enough to authorize loading their episodes.
