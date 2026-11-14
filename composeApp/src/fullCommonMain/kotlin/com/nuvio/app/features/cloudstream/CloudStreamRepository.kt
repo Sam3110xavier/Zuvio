@@ -614,8 +614,7 @@ actual object CloudStreamRepository {
                 loadedCount += 1
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
-                if (error is VirtualMachineError || error is ThreadDeath) throw error
+            } catch (error: Exception) {
                 failedCount += 1
                 InAppLogger.cloudStreamWarn(
                     "CloudStreamRepo",
@@ -623,6 +622,15 @@ actual object CloudStreamRepository {
                 )
                 log.w(error) {
                     "CloudStream extractor package preload failed id=${plugin.metadata.id.value}"
+                }
+            } catch (error: LinkageError) {
+                failedCount += 1
+                InAppLogger.cloudStreamError(
+                    "CloudStreamRepo",
+                    "Extractor preload binary compatibility failure id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                )
+                log.w(error) {
+                    "CloudStream extractor package preload binary compatibility failed id=${plugin.metadata.id.value}"
                 }
             }
         }
@@ -664,11 +672,15 @@ actual object CloudStreamRepository {
                 fallbackLoaded += 1
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
-                if (error is VirtualMachineError || error is ThreadDeath) throw error
+            } catch (error: Exception) {
                 InAppLogger.cloudStreamWarn(
                     "CloudStreamRepo",
                     "Lazy extractor fallback failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                )
+            } catch (error: LinkageError) {
+                InAppLogger.cloudStreamError(
+                    "CloudStreamRepo",
+                    "Lazy extractor fallback binary compatibility failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
                 )
             }
         }
@@ -1150,13 +1162,19 @@ actual object CloudStreamRepository {
         } catch (cancelled: CancellationException) {
             InAppLogger.cloudStreamWarn("CloudStreamRepo", "providerResult cancelled canonicalId=$canonicalId")
             throw cancelled
-        } catch (error: Throwable) {
-            if (error is VirtualMachineError || error is ThreadDeath) throw error
+        } catch (error: Exception) {
             InAppLogger.cloudStreamError(
                 "CloudStreamRepo",
                 "providerResult failed canonicalId=$canonicalId: ${InAppLogger.throwableSummary(error)}",
             )
             log.w(error) { "CloudStream provider request failed id=$canonicalId" }
+            Result.failure(error)
+        } catch (error: LinkageError) {
+            InAppLogger.cloudStreamError(
+                "CloudStreamRepo",
+                "providerResult linkage failure canonicalId=$canonicalId: ${InAppLogger.throwableSummary(error)}",
+            )
+            log.w(error) { "CloudStream provider binary compatibility failed id=$canonicalId" }
             Result.failure(error)
         }
     }
