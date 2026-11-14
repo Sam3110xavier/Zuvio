@@ -16,7 +16,6 @@ import okhttp3.Headers.Companion.toHeaders
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
-import kotlinx.coroutines.ThreadContextElement
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
 

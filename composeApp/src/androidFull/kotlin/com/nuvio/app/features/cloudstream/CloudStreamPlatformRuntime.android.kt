@@ -1064,16 +1064,13 @@ private class AndroidDexCloudStreamProvider(
                         links::add,
                     )
                 }
-                if (api.name.contains("AnimePahe", ignoreCase = true) ||
-                    api.mainUrl.contains("animepahe", ignoreCase = true)
-                ) {
-                    CloudflareKiller.withRequestContext(
-                        pluginId = api.sourcePlugin ?: api.javaClass.name,
-                        allowInteractiveVerification = true,
-                    ) { resolveLinks() }
-                } else {
-                    resolveLinks()
-                }
+                // Every provider gets the same scoped permission. Cloudflare UI is
+                // permitted only during this explicit loadLinks call, regardless of
+                // plugin name or the domain used by its extractors.
+                CloudflareKiller.withRequestContext(
+                    pluginId = api.sourcePlugin ?: api.javaClass.name,
+                    allowInteractiveVerification = true,
+                ) { resolveLinks() }
             } catch (error: Throwable) {
                 // Preserve coroutine cancellation and VM-fatal conditions, but capture
                 // every extension failure (including LinkageError) for diagnostics.
