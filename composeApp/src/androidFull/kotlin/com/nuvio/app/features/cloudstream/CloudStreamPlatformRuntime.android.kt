@@ -75,6 +75,8 @@ internal actual object CloudStreamPlatformRuntime {
     private val loadMutex = Mutex()
     private val loadedLock = Any()
     private val loaded = linkedMapOf<String, LoadedPlugin>()
+    // Invalidates a plugin load that races with unload()/clear().
+    private var runtimeGeneration = 0L
     private var appContext: Context? = null
     private var activityReference: WeakReference<Activity>? = null
     @Volatile private var cloudStreamNetworkingInitialized = false
@@ -147,11 +149,30 @@ internal actual object CloudStreamPlatformRuntime {
 
     actual suspend fun provider(plugin: CloudStreamPluginItem): CloudStreamProvider? {
         if (plugin.compatibility.runtimeKind != CloudStreamRuntimeKind.AndroidDex) return null
+        val pluginId = plugin.metadata.id.value
+
+        // A provider that is already loaded must never wait behind another
+        // package's DEX scan. Keep this lookup short and outside loadMutex.
+        synchronized(loadedLock) { loaded[pluginId]?.provider }?.let { return it }
+
         return withContext(Dispatchers.IO) {
             loadMutex.withLock {
-                synchronized(loadedLock) {
-                    loaded[plugin.metadata.id.value]?.provider
-                        ?: loadPlugin(plugin).also { loaded[plugin.metadata.id.value] = it }.provider
+                synchronized(loadedLock) { loaded[pluginId]?.provider } ?: run {
+                    val generation = synchronized(loadedLock) { runtimeGeneration }
+                    val loadedPlugin = loadPlugin(plugin)
+                    val accepted = synchronized(loadedLock) {
+                        if (runtimeGeneration == generation) {
+                            loaded[pluginId] = loadedPlugin
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (!accepted) {
+                        loadedPlugin.unload()
+                        error("CloudStream runtime was reset while plugin $pluginId was loading")
+                    }
+                    loadedPlugin.provider
                 }
             }
         }
@@ -189,7 +210,11 @@ internal actual object CloudStreamPlatformRuntime {
     }
 
     actual fun unload(pluginId: String) {
-        synchronized(loadedLock) { loaded.remove(pluginId) }?.unload()
+        val removed = synchronized(loadedLock) {
+            runtimeGeneration += 1
+            loaded.remove(pluginId)
+        }
+        removed?.unload()
         val remainingContext = synchronized(loadedLock) { loaded.values.lastOrNull()?.context }
         if (remainingContext != null) {
             CloudStreamApp.context = remainingContext
@@ -201,6 +226,7 @@ internal actual object CloudStreamPlatformRuntime {
 
     actual fun clear() {
         val plugins = synchronized(loadedLock) {
+            runtimeGeneration += 1
             loaded.values.toList().also {
                 loaded.clear()
             }
@@ -399,6 +425,19 @@ internal actual object CloudStreamPlatformRuntime {
                     dexFile.close()
                 }
             }
+            // A disabled package may still provide ExtractorApi implementations for
+            // cross-plugin delegation, but it must not publish MainAPI providers into
+            // the active CloudStream provider registry.
+            if (!item.isRunnable && providers.isNotEmpty()) {
+                providers.forEach(APIHolder::removePluginMapping)
+                APIHolder.allProviders.removeAll { it.sourcePlugin == file.absolutePath }
+                InAppLogger.cloudStreamInfo(
+                    "CloudStreamDex",
+                    "Disabled plugin retained as extractor-only id=${item.metadata.id.value} extractors=${registeredExtractors.size}",
+                )
+                providers.clear()
+            }
+
             // CloudStream permits extractor-only and utility plugins. Do not reject a
             // valid .cs3 package just because it does not register a MainAPI provider.
             providers.forEach(MainAPI::init)
