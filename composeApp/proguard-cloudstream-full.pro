@@ -31,8 +31,6 @@
 
 -keep class kotlin.** { *; }
 -keep class kotlinx.coroutines.** { *; }
--keep class kotlinx.serialization.** { *; }
--keep interface kotlinx.serialization.** { *; }
 
 -keep class okhttp3.** { *; }
 -keep class okio.** { *; }
@@ -42,8 +40,6 @@
 -keep interface com.google.gson.** { *; }
 -keep class org.mozilla.javascript.** { *; }
 -keep class com.uwetrottmann.tmdb2.** { *; }
--keep class me.xdrop.fuzzywuzzy.** { *; }
--keep class dev.whyoleg.cryptography.** { *; }
 
 # These packages expose optional JVM integrations that are not present on Android.
 -dontwarn com.google.re2j.**
