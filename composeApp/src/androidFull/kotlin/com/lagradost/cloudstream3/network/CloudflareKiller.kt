@@ -18,6 +18,9 @@ import okhttp3.Request
 import okhttp3.Response
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 
 /**
@@ -31,6 +34,14 @@ private data class CloudStreamRequestContext(
 )
 
 private val cloudStreamRequestContext = ThreadLocal<CloudStreamRequestContext?>()
+
+// OkHttp's enqueue() dispatches interceptors on its own worker threads, so a
+// coroutine ThreadLocal cannot authorize the actual network callback reliably.
+// Keep only the lifetime of an explicit playback-link-resolution operation here.
+private val interactivePlaybackScopes = AtomicInteger(0)
+private val interactiveChallengeInProgress = AtomicBoolean(false)
+private val recentInteractiveChallenges = ConcurrentHashMap<String, Long>()
+private const val INTERACTIVE_CHALLENGE_COOLDOWN_MS = 60_000L
 
 private val DEFAULT_HEADERS = mapOf("user-agent" to USER_AGENT)
 
@@ -79,8 +90,17 @@ class CloudflareKiller : Interceptor {
                 pluginId = pluginId?.takeIf(String::isNotBlank) ?: "unknown-plugin",
                 allowInteractiveVerification = allowInteractiveVerification,
             )
-            return withContext(cloudStreamRequestContext.asContextElement(context)) {
-                block()
+            if (allowInteractiveVerification) {
+                interactivePlaybackScopes.incrementAndGet()
+            }
+            try {
+                withContext(cloudStreamRequestContext.asContextElement(context)) {
+                    block()
+                }
+            } finally {
+                if (allowInteractiveVerification) {
+                    interactivePlaybackScopes.decrementAndGet()
+                }
             }
         }
 
@@ -114,23 +134,55 @@ class CloudflareKiller : Interceptor {
             return@runBlocking response
         }
         val requestContext = cloudStreamRequestContext.get()
-        if (requestContext?.allowInteractiveVerification != true) {
+        if (interactivePlaybackScopes.get() <= 0) {
             Log.i(
                 TAG,
-                "Deferring interactive Cloudflare verification outside user stream resolution " +
+                "Deferring interactive Cloudflare verification outside active playback resolution " +
                     "plugin=${requestContext?.pluginId ?: "unscoped"} host=${request.url.host}",
             )
             return@runBlocking response
         }
-        Log.i(TAG, "Interactive Cloudflare verification allowed plugin=${requestContext.pluginId} host=${request.url.host}")
-        response.close()
-        bypassCloudflare(request)?.let {
-            Log.d(TAG, "Succeeded bypassing Cloudflare: ${request.url}")
-            return@runBlocking it
+
+        // Only one WebView challenge may be visible at a time. Suppress repeated
+        // challenges for the same host for a short cooldown after a challenge starts.
+        if (!interactiveChallengeInProgress.compareAndSet(false, true)) {
+            Log.i(TAG, "Cloudflare challenge already active; deferring host=${request.url.host}")
+            return@runBlocking response
         }
 
-        debugWarning({ true }) { "Failed Cloudflare challenge at: ${request.url}" }
-        chain.proceed(request)
+        val now = System.currentTimeMillis()
+        var claimedHostChallenge = false
+        recentInteractiveChallenges.compute(request.url.host) { _, previous ->
+            if (previous == null || now - previous >= INTERACTIVE_CHALLENGE_COOLDOWN_MS) {
+                claimedHostChallenge = true
+                now
+            } else {
+                previous
+            }
+        }
+        if (!claimedHostChallenge) {
+            interactiveChallengeInProgress.set(false)
+            Log.i(TAG, "Cloudflare challenge cooldown active host=${request.url.host}")
+            return@runBlocking response
+        }
+
+        try {
+            Log.i(
+                TAG,
+                "Interactive Cloudflare verification allowed during playback resolution " +
+                    "plugin=${requestContext?.pluginId ?: "unscoped"} host=${request.url.host}",
+            )
+            response.close()
+            bypassCloudflare(request)?.let {
+                Log.d(TAG, "Succeeded bypassing Cloudflare: ${request.url}")
+                return@runBlocking it
+            }
+
+            debugWarning({ true }) { "Failed Cloudflare challenge at: ${request.url}" }
+            chain.proceed(request)
+        } finally {
+            interactiveChallengeInProgress.set(false)
+        }
     }
 
     private fun getWebViewCookie(url: String): String? = safe {
