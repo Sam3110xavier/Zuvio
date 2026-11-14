@@ -16,7 +16,22 @@ import okhttp3.Headers.Companion.toHeaders
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
-import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.ThreadContextElement
+import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.withContext
+
+
+/**
+ * Request ownership is propagated from the CloudStream runtime into plugin HTTP
+ * interceptors. Interactive anti-bot UI is permitted only while a user-requested
+ * stream extraction is running.
+ */
+private data class CloudStreamRequestContext(
+    val pluginId: String,
+    val allowInteractiveVerification: Boolean,
+)
+
+private val cloudStreamRequestContext = ThreadLocal<CloudStreamRequestContext?>()
 
 private val DEFAULT_HEADERS = mapOf("user-agent" to USER_AGENT)
 
@@ -51,31 +66,22 @@ class CloudflareKiller : Interceptor {
         private val errorCodes = setOf(403, 503)
         private val cloudflareServers = setOf("cloudflare-nginx", "cloudflare")
 
-        // AnimePahe's plugin may check its catalogue while Home is being populated.
-        // Do not open an interactive challenge until the user explicitly resolves
-        // a stream from AnimePahe. The counter survives coroutine/thread switches
-        // used by OkHttp's interceptor and supports nested link callbacks.
-        private val animePaheStreamResolutionDepth = AtomicInteger(0)
-
-        private val animePaheRelatedHosts = listOf(
-            "animepahe",
-            "pahe.win",
-            "kwik.cx",
-        )
-
-        private fun isAnimePaheRelatedHost(host: String): Boolean =
-            animePaheRelatedHosts.any { domain ->
-                host.equals(domain, ignoreCase = true) ||
-                    host.endsWith(".$domain", ignoreCase = true) ||
-                    (domain == "animepahe" && host.contains("animepahe", ignoreCase = true))
-            }
-
-        suspend fun <T> withAnimePaheStreamResolution(block: suspend () -> T): T {
-            animePaheStreamResolutionDepth.incrementAndGet()
-            try {
-                return block()
-            } finally {
-                animePaheStreamResolutionDepth.decrementAndGet()
+        /**
+         * Run one plugin callback with its identity and operation purpose attached
+         * to the coroutine's worker threads. The context is restored automatically
+         * when nested/concurrent plugin calls complete.
+         */
+        suspend fun <T> withRequestContext(
+            pluginId: String?,
+            allowInteractiveVerification: Boolean,
+            block: suspend () -> T,
+        ): T {
+            val context = CloudStreamRequestContext(
+                pluginId = pluginId?.takeIf(String::isNotBlank) ?: "unknown-plugin",
+                allowInteractiveVerification = allowInteractiveVerification,
+            )
+            return withContext(cloudStreamRequestContext.asContextElement(context)) {
+                block()
             }
         }
 
@@ -108,16 +114,16 @@ class CloudflareKiller : Interceptor {
         if (response.header("Server") !in cloudflareServers || response.code !in errorCodes) {
             return@runBlocking response
         }
-        if (
-            isAnimePaheRelatedHost(request.url.host) &&
-            animePaheStreamResolutionDepth.get() == 0
-        ) {
-            // A homepage/catalogue/details request must not interrupt app startup
-            // with AnimePahe's verification WebView. Leave the 403/503 with the
-            // caller; a user-initiated AnimePahe loadLinks call can retry interactively.
-            Log.i(TAG, "Deferring AnimePahe Cloudflare challenge outside stream resolution: ${request.url.host}")
+        val requestContext = cloudStreamRequestContext.get()
+        if (requestContext?.allowInteractiveVerification != true) {
+            Log.i(
+                TAG,
+                "Deferring interactive Cloudflare verification outside user stream resolution " +
+                    "plugin=${requestContext?.pluginId ?: "unscoped"} host=${request.url.host}",
+            )
             return@runBlocking response
         }
+        Log.i(TAG, "Interactive Cloudflare verification allowed plugin=${requestContext.pluginId} host=${request.url.host}")
         response.close()
         bypassCloudflare(request)?.let {
             Log.d(TAG, "Succeeded bypassing Cloudflare: ${request.url}")

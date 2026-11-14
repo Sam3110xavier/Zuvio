@@ -242,7 +242,12 @@ internal actual object CloudStreamPlatformRuntime {
             // on the live Activity's main dispatcher so callback exceptions are caught
             // and the host never reports success before the callback actually runs.
             withContext(Dispatchers.Main.immediate) {
-                callback.invoke(activity)
+                CloudflareKiller.withRequestContext(
+                    pluginId = plugin.metadata.id.value,
+                    allowInteractiveVerification = false,
+                ) {
+                    callback.invoke(activity)
+                }
             }
             log.i { "Settings callback invoked id=${plugin.metadata.id.value}" }
             InAppLogger.cloudStreamInfo(
@@ -379,7 +384,12 @@ internal actual object CloudStreamPlatformRuntime {
             try {
                 // Match the official loader: prefer the live Activity so plugins
                 // overriding load(Activity?) receive the host lifecycle context.
-                pluginInstance.load(activityReference?.get() ?: identityContext)
+                CloudflareKiller.withRequestContext(
+                    pluginId = item.metadata.id.value,
+                    allowInteractiveVerification = false,
+                ) {
+                    pluginInstance.load(activityReference?.get() ?: identityContext)
+                }
             } catch (error: Throwable) {
                 if (
                     error is kotlinx.coroutines.CancellationException ||
@@ -853,10 +863,15 @@ private class AndroidDexCloudStreamProvider(
                     suspend fun loadRequest(data: com.lagradost.cloudstream3.MainPageData) {
                         runCatching {
                             withTimeout(stageTimeout(api.getMainPageTimeoutMs, DEFAULT_DISCOVERY_TIMEOUT_MS)) {
-                                api.getMainPage(
-                                    page.coerceAtLeast(1),
-                                    MainPageRequest(data.name, data.data, data.horizontalImages),
-                                )
+                                CloudflareKiller.withRequestContext(
+                                    pluginId = api.sourcePlugin ?: api.javaClass.name,
+                                    allowInteractiveVerification = false,
+                                ) {
+                                    api.getMainPage(
+                                        page.coerceAtLeast(1),
+                                        MainPageRequest(data.name, data.data, data.horizontalImages),
+                                    )
+                                }
                             }
                         }.onSuccess { response ->
                             response?.items.orEmpty().forEach { section ->
@@ -897,7 +912,12 @@ private class AndroidDexCloudStreamProvider(
                 providerSemaphore.withPermit {
                     runCatching {
                         withTimeout(stageTimeout(api.searchTimeoutMs, DEFAULT_DISCOVERY_TIMEOUT_MS)) {
-                            api.search(query, 1)?.items.orEmpty()
+                            CloudflareKiller.withRequestContext(
+                                pluginId = api.sourcePlugin ?: api.javaClass.name,
+                                allowInteractiveVerification = false,
+                            ) {
+                                api.search(query, 1)?.items.orEmpty()
+                            }
                         }
                     }.onSuccess { items ->
                         log.d {
@@ -942,7 +962,12 @@ private class AndroidDexCloudStreamProvider(
                 }
                 val jsonResponse = runCatching {
                     withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-                        api.load(loadJson)
+                        CloudflareKiller.withRequestContext(
+                            pluginId = api.sourcePlugin ?: api.javaClass.name,
+                            allowInteractiveVerification = false,
+                        ) {
+                            api.load(loadJson)
+                        }
                     }
                 }.onFailure { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
@@ -951,7 +976,12 @@ private class AndroidDexCloudStreamProvider(
                 val response = jsonResponse ?: runCatching {
                     // Some TmdbProvider implementations still accept the standard TMDB URL.
                     withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-                        api.load(tmdbUrl)
+                        CloudflareKiller.withRequestContext(
+                            pluginId = api.sourcePlugin ?: api.javaClass.name,
+                            allowInteractiveVerification = false,
+                        ) {
+                            api.load(tmdbUrl)
+                        }
                     }
                 }.onFailure { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
@@ -974,10 +1004,20 @@ private class AndroidDexCloudStreamProvider(
             if (syncName !in api.supportedSyncNames) return@firstNotNullOfOrNull null
             runCatching {
                 val url = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-                    api.getLoadUrl(syncName, externalId)
+                    CloudflareKiller.withRequestContext(
+                        pluginId = api.sourcePlugin ?: api.javaClass.name,
+                        allowInteractiveVerification = false,
+                    ) {
+                        api.getLoadUrl(syncName, externalId)
+                    }
                 }?.takeIf(String::isNotBlank) ?: return@runCatching null
                 withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-                    api.load(url)
+                    CloudflareKiller.withRequestContext(
+                        pluginId = api.sourcePlugin ?: api.javaClass.name,
+                        allowInteractiveVerification = false,
+                    ) {
+                        api.load(url)
+                    }
                 }?.toNuvioLoadItem(api)
             }.onFailure { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -990,7 +1030,12 @@ private class AndroidDexCloudStreamProvider(
         val route = decodeAndroidDexRoute(data)
         val api = findProvider(route.providerClassName)
         val response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-            api.load(route.data)
+            CloudflareKiller.withRequestContext(
+                pluginId = api.sourcePlugin ?: api.javaClass.name,
+                allowInteractiveVerification = false,
+            ) {
+                api.load(route.data)
+            }
         } ?: error("CloudStream provider returned no details")
         response.toNuvioLoadItem(api)
     }
@@ -1022,7 +1067,10 @@ private class AndroidDexCloudStreamProvider(
                 if (api.name.contains("AnimePahe", ignoreCase = true) ||
                     api.mainUrl.contains("animepahe", ignoreCase = true)
                 ) {
-                    CloudflareKiller.withAnimePaheStreamResolution { resolveLinks() }
+                    CloudflareKiller.withRequestContext(
+                        pluginId = api.sourcePlugin ?: api.javaClass.name,
+                        allowInteractiveVerification = true,
+                    ) { resolveLinks() }
                 } else {
                     resolveLinks()
                 }
