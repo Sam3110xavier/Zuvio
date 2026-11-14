@@ -64,6 +64,7 @@ internal data class CloudStreamSearchRequest(
     val episode: Int?,
     val episodeTitle: String? = null,
     val externalId: String? = null,
+    val tmdbId: Int? = null,
     val genres: List<String> = emptyList(),
 ) {
     val titleCandidates: List<String> =
@@ -74,7 +75,7 @@ internal data class CloudStreamSearchRequest(
     val cacheKey: String =
         "${type.trim().lowercase()}::${titleCandidates.joinToString("|") { it.lowercase() }}::" +
             "${year ?: ""}::${season ?: ""}::${episode ?: ""}::${episodeTitle.orEmpty().trim().lowercase()}::" +
-            "${externalId.orEmpty().lowercase()}::${genres.joinToString(",") { it.trim().lowercase() }}"
+            "${externalId.orEmpty().lowercase()}::${tmdbId ?: ""}::${genres.joinToString(",") { it.trim().lowercase() }}"
 }
 
 internal sealed interface StreamLoadCompletion {
@@ -225,6 +226,35 @@ internal suspend fun resolveCloudStreamProviderStreams(
                 // must pass the same title validation as fresh strict search results.
                 resolveMatch(route, allowProviderRankedFallback = false)?.let {
                     return@runCatchingUnlessCancelled it
+                }
+            }
+
+            // TmdbProvider.load() expects a TMDB-ID JSON payload, not a title-search URL.
+            searchRequest.tmdbId?.let { tmdbId ->
+                val mediaType = if (normalizeCloudStreamNuvioType(searchRequest.type) == "movie") "movie" else "tv"
+                val loaded = runCatchingUnlessCancelled {
+                    CloudStreamRepository.loadByExternalId(
+                        providerGroup.providerId,
+                        "tmdb:$tmdbId:$mediaType",
+                    ).getOrThrow()
+                }.onFailure { error -> lastError = error }
+                    .getOrNull()
+                if (loaded != null && loaded.matchesCloudStreamExternalIdRequest(searchRequest)) {
+                    val linkData = loaded.linkDataForCloudStreamRequest(searchRequest)
+                    if (linkData != null) {
+                        val directSources = runCatchingUnlessCancelled {
+                            CloudStreamRepository.loadLinks(providerGroup.providerId, linkData).getOrThrow()
+                        }.onFailure { error -> lastError = error }
+                            .getOrNull()
+                        if (directSources != null) {
+                            val directStreams = cloudStreamSourcesToStreamItems(
+                                providerId = providerGroup.providerId,
+                                providerName = providerGroup.providerName,
+                                sources = directSources,
+                            )
+                            if (directStreams.isNotEmpty()) return@runCatchingUnlessCancelled directStreams
+                        }
+                    }
                 }
             }
 
@@ -513,10 +543,17 @@ internal fun buildCloudStreamSearchRequest(
         ?.title
         ?.trim()
         ?.takeIf { it.isNotBlank() }
-    val externalId = sequenceOf(videoId, parentMetaId, metaLookupId)
+    val externalIds = sequenceOf(videoId, parentMetaId, metaLookupId)
         .filterNotNull()
         .map(String::trim)
-        .firstOrNull { id -> id.matches(Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE)) }
+        .toList()
+    val externalId = externalIds.firstOrNull { id ->
+        id.matches(Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE))
+    }
+    val tmdbId = externalIds.firstNotNullOfOrNull { id ->
+        if (!id.startsWith("tmdb:", ignoreCase = true)) return@firstNotNullOfOrNull null
+        id.substringAfter(':').substringBefore(':').toIntOrNull()
+    }
 
     return CloudStreamSearchRequest(
         title = title,
@@ -527,6 +564,7 @@ internal fun buildCloudStreamSearchRequest(
         episode = episode,
         episodeTitle = episodeTitle,
         externalId = externalId,
+        tmdbId = tmdbId,
         genres = meta?.genres.orEmpty(),
     )
 }
