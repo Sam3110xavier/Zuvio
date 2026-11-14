@@ -541,11 +541,17 @@ internal fun buildCloudStreamSearchRequest(
     val externalIds = sequenceOf(videoId, parentMetaId, metaLookupId)
         .filterNotNull()
         .map(String::trim)
+        .filter(String::isNotBlank)
         .toList()
-    val externalId = externalIds.firstOrNull { id ->
-        id.matches(Regex("^tt\\d{5,12}$", RegexOption.IGNORE_CASE))
+    // Episode IDs may be encoded as tt12345678:season:episode. SyncAPI lookup
+    // expects the parent IMDb title ID, not the episode-specific suffix.
+    val externalId = externalIds.firstNotNullOfOrNull { id ->
+        Regex("^(tt\\d{5,12})(?:[:/].*)?$", RegexOption.IGNORE_CASE)
+            .matchEntire(id)
+            ?.groupValues
+            ?.get(1)
     }
-    val tmdbId = externalIds.firstNotNullOfOrNull { id ->
+    val tmdbId = meta?.tmdbId ?: externalIds.firstNotNullOfOrNull { id ->
         if (!id.startsWith("tmdb:", ignoreCase = true)) return@firstNotNullOfOrNull null
         id.substringAfter(':').substringBefore(':').toIntOrNull()
     }
