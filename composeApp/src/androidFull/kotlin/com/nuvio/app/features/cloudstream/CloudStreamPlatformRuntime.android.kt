@@ -87,21 +87,32 @@ internal actual object CloudStreamPlatformRuntime {
     // This mirrors the official Nuvio TV extension cookie jar without sharing cookies
     // with Zuvio's first-party API clients.
     private val extensionCookieJar: CookieJar = object : CookieJar {
-        private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
+        // Key cookies by their RFC scope rather than the response host. This allows
+        // domain cookies to work on matching subdomains without leaking path- or
+        // secure-scoped cookies to unrelated requests on the same host.
+        private val store = ConcurrentHashMap<String, Cookie>()
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val hostCookies = store[url.host] ?: return emptyList()
-            synchronized(hostCookies) {
-                return hostCookies.filter { it.expiresAt > System.currentTimeMillis() }
+            val now = System.currentTimeMillis()
+            val matching = mutableListOf<Cookie>()
+            store.entries.forEach { entry ->
+                val cookie = entry.value
+                if (cookie.expiresAt <= now) {
+                    store.remove(entry.key, cookie)
+                } else if (cookie.matches(url)) {
+                    matching += cookie
+                }
             }
+            return matching
         }
 
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val hostCookies = store.getOrPut(url.host) { mutableListOf() }
-            synchronized(hostCookies) {
-                cookies.forEach { newCookie ->
-                    hostCookies.removeAll { it.name == newCookie.name }
-                    hostCookies.add(newCookie)
+            cookies.forEach { cookie ->
+                val key = "${cookie.domain}\n${cookie.path}\n${cookie.name}"
+                if (cookie.expiresAt <= System.currentTimeMillis()) {
+                    store.remove(key)
+                } else {
+                    store[key] = cookie
                 }
             }
         }
@@ -197,7 +208,9 @@ internal actual object CloudStreamPlatformRuntime {
     }
 
     actual suspend fun hasSettings(plugin: CloudStreamPluginItem): Boolean {
-        if (!plugin.isInstalled) return false
+        // Settings discovery executes plugin.load(). Never run disabled, down, or
+        // otherwise non-runnable third-party code just to inspect a settings icon.
+        if (!plugin.isRunnable) return false
         return try {
             // Settings capability is independent of catalogue-provider registration.
             val loadedPlugin = loadPluginIfNeeded(plugin) ?: return false
