@@ -1,12 +1,4 @@
 # Full builds can load Android CloudStream .cs3 packages dynamically.
-# Full builds load third-party .cs3 DEX against these exact JVM names and signatures.
-# Keep the host-facing CloudStream ABI stable: plugins are compiled separately and
-# resolve these classes/methods by their original bytecode references at runtime.
--keep class com.lagradost.cloudstream3.** { *; }
--keep interface com.lagradost.cloudstream3.** { *; }
--keep class com.lagradost.api.** { *; }
--keep interface com.lagradost.api.** { *; }
-
 # Keep shrinking/obfuscation enabled, but skip R8 optimization passes that become
 # prohibitively slow with the CloudStream compatibility runtime dependency graph.
 -dontoptimize
@@ -26,3 +18,71 @@
 -keep class dev.whyoleg.cryptography.** { *; }
 -keep interface dev.whyoleg.cryptography.** { *; }
 -dontwarn dev.whyoleg.cryptography.**
+
+
+# CloudStream extensions are loaded from external .cs3 DEX files at runtime.
+# R8 cannot see those references while shrinking the host APK. Preserve the
+# binary names AND members of the runtime ABI used by the official NuvioTV and
+# ARVIO sideload loaders; keeping only public/protected members is insufficient
+# for Kotlin-generated bridges, reflective helpers and library internals.
+-keep class com.lagradost.** { *; }
+-keep interface com.lagradost.** { *; }
+-dontwarn com.lagradost.**
+
+-keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+-keep class org.jsoup.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keep class com.google.gson.** { *; }
+-keep interface com.google.gson.** { *; }
+-keep class org.mozilla.javascript.** { *; }
+-keep class com.uwetrottmann.tmdb2.** { *; }
+
+# These packages expose optional JVM integrations that are not present on Android.
+-dontwarn com.google.re2j.**
+-dontwarn com.sun.jna.**
+-dontwarn edu.umd.cs.findbugs.annotations.**
+-dontwarn javax.script.**
+-dontwarn java.beans.**
+-dontwarn jdk.dynalink.**
+
+# Preserve Material Components ABI referenced by dynamically loaded extensions.
+-keep class com.google.android.material.** { *; }
+-keep interface com.google.android.material.** { *; }
+-dontwarn com.google.android.material.**
+
+# Preserve the AndroidX ABI referenced by standard CloudStream extensions.
+# External .cs3 DEX files are invisible to R8's static reachability analysis.
+-keep class androidx.appcompat.app.AppCompatActivity { *; }
+-keep class androidx.fragment.app.FragmentActivity { *; }
+-keep class com.lagradost.cloudstream3.MainActivity { *; }
+-keep class androidx.activity.** { *; }
+-keep interface androidx.activity.** { *; }
+-keep class androidx.lifecycle.** { *; }
+-keep interface androidx.lifecycle.** { *; }
+# Nuvio's Compose host does not directly instantiate these AppCompat/Fragment
+# classes, so R8 otherwise has no static reference to their DEX definitions.
+-keep class androidx.appcompat.app.** { *; }
+-keep interface androidx.appcompat.app.** { *; }
+-keep class androidx.fragment.app.** { *; }
+-keep interface androidx.fragment.app.** { *; }
+
+# Keep metadata and parameter annotations used by reflected Kotlin/Jackson APIs.
+-keepattributes RuntimeVisibleParameterAnnotations,AnnotationDefault
+-keep class kotlin.Metadata { *; }
+
+# Keep interface ABI alongside classes for APIs invoked from external DEX.
+-keep interface okhttp3.** { *; }
+-keep interface okio.** { *; }
+-keep interface com.fasterxml.jackson.** { *; }
+-keep interface com.google.gson.** { *; }
+-keep interface org.jsoup.** { *; }
+-keep interface org.mozilla.javascript.** { *; }
+
+# Rhino's bytecode compiler package is part of the runtime surface when shipped.
+-keep class org.mozilla.classfile.** { *; }
+-keep interface org.mozilla.classfile.** { *; }
+-dontwarn org.mozilla.classfile.**
