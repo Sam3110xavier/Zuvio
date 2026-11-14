@@ -1137,7 +1137,7 @@ actual object CloudStreamRepository {
                 ?: error("CloudStream provider adapter was not found")
             InAppLogger.cloudStreamInfo(
                 "CloudStreamRepo",
-                "providerResult resolved canonicalId=$canonicalId adapter=${provider::class.java.name}",
+                "providerResult resolved canonicalId=$canonicalId adapter=${provider::class.simpleName ?: "CloudStreamProvider"}",
             )
             val value = provider.block()
             when {
