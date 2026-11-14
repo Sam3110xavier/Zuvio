@@ -591,24 +591,89 @@ actual object CloudStreamRepository {
                 plugin.verified &&
                 plugin.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex
         }
-        val eagerPlugins = when (strategy) {
-            CloudStreamPreloadStrategy.SELECTED_ONLY -> listOf(selectedPlugin)
-            CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY ->
-                verifiedDexPlugins.filter(CloudStreamPluginItem::isRunnable)
-            CloudStreamPreloadStrategy.ALL_VERIFIED_DEX -> verifiedDexPlugins
-        }.plus(selectedPlugin).distinctBy { it.metadata.id.value }
+        val selectedDexPlugins = listOf(selectedPlugin).filter {
+            it.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex
+        }
+        if (preloadDexPlugins(selectedDexPlugins, expectedProfileGeneration, "selected") == null) {
+            return Result.failure(
+                IllegalStateException("Active profile changed while loading the selected CloudStream provider"),
+            )
+        }
 
-        val preloadStartedAt = currentEpochMillis()
-        var attemptedCount = 0
-        var loadedCount = 0
-        var failedCount = 0
-        eagerPlugins.forEach { plugin ->
-            if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
+        if (strategy == CloudStreamPreloadStrategy.ALL_VERIFIED_DEX) {
+            val remaining = verifiedDexPlugins.filterNot { it.metadata.id.value == selectedPlugin.metadata.id.value }
+            if (preloadDexPlugins(remaining, expectedProfileGeneration, "all-verified") == null) {
                 return Result.failure(
-                    IllegalStateException("Active profile changed while preparing CloudStream extractors"),
+                    IllegalStateException("Active profile changed while preloading verified CloudStream plugins"),
                 )
             }
-            attemptedCount += 1
+            return providerResult(selectedPlugin.metadata.id.value) { loadLinks(data) }
+        }
+
+        var result = providerResult(selectedPlugin.metadata.id.value) { loadLinks(data) }
+        if (!needsExtractorFallback(result) || strategy == CloudStreamPreloadStrategy.SELECTED_ONLY) {
+            return result
+        }
+
+        // Default strategy is demand-driven: first try the selected plugin alone.
+        // Only an empty/no-playable-links result triggers the remaining enabled
+        // providers, followed by disabled packages as extractor-only providers.
+        val enabledOthers = verifiedDexPlugins.filter {
+            it.isRunnable && it.metadata.id.value != selectedPlugin.metadata.id.value
+        }
+        if (preloadDexPlugins(enabledOthers, expectedProfileGeneration, "enabled-runnable") == null) {
+            return Result.failure(
+                IllegalStateException("Active profile changed during CloudStream extractor fallback"),
+            )
+        }
+        if (enabledOthers.isNotEmpty()) {
+            result = providerResult(selectedPlugin.metadata.id.value) { loadLinks(data) }
+            if (!needsExtractorFallback(result)) return result
+        }
+
+        val disabledExtractorPlugins = verifiedDexPlugins.filterNot(CloudStreamPluginItem::isRunnable)
+        val disabledStats = preloadDexPlugins(
+            disabledExtractorPlugins,
+            expectedProfileGeneration,
+            "disabled-extractor-only",
+        ) ?: return Result.failure(
+            IllegalStateException("Active profile changed during disabled CloudStream extractor fallback"),
+        )
+        InAppLogger.cloudStreamInfo(
+            "CloudStreamRepo",
+            "Lazy disabled-extractor fallback candidates=${disabledExtractorPlugins.size} loaded=${disabledStats.first} failed=${disabledStats.second}",
+        )
+        if (disabledStats.first == 0) return result
+        return providerResult(selectedPlugin.metadata.id.value) { loadLinks(data) }
+    }
+
+    private fun needsExtractorFallback(
+        result: Result<List<CloudStreamPlaybackSource>>,
+    ): Boolean {
+        if (result.getOrNull().orEmpty().isNotEmpty()) return false
+        val message = result.exceptionOrNull()?.message.orEmpty()
+        return result.isSuccess ||
+            message.contains("no playable links", ignoreCase = true) ||
+            message.contains("could not resolve this source", ignoreCase = true)
+    }
+
+    /**
+     * Loads only the requested candidate set. A null result means the active
+     * profile changed during preload and the caller must abort the stream request.
+     */
+    private suspend fun preloadDexPlugins(
+        plugins: List<CloudStreamPluginItem>,
+        expectedProfileGeneration: Long,
+        phase: String,
+    ): Pair<Int, Int>? {
+        val startedAt = currentEpochMillis()
+        var loadedCount = 0
+        var failedCount = 0
+        val candidates = plugins
+            .filter { it.isInstalled && it.verified && it.compatibility.runtimeKind == CloudStreamRuntimeKind.AndroidDex }
+            .distinctBy { it.metadata.id.value }
+        candidates.forEach { plugin ->
+            if (!isProfileGenerationCurrent(expectedProfileGeneration)) return null
             try {
                 CloudStreamPlatformRuntime.provider(plugin)
                 loadedCount += 1
@@ -618,80 +683,24 @@ actual object CloudStreamRepository {
                 failedCount += 1
                 InAppLogger.cloudStreamWarn(
                     "CloudStreamRepo",
-                    "Extractor preload failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                    "Preload failed phase=$phase id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
                 )
-                log.w(error) {
-                    "CloudStream extractor package preload failed id=${plugin.metadata.id.value}"
-                }
+                log.w(error) { "CloudStream preload failed phase=$phase id=${plugin.metadata.id.value}" }
             } catch (error: LinkageError) {
                 failedCount += 1
                 InAppLogger.cloudStreamError(
                     "CloudStreamRepo",
-                    "Extractor preload binary compatibility failure id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+                    "Preload linkage failure phase=$phase id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
                 )
-                log.w(error) {
-                    "CloudStream extractor package preload binary compatibility failed id=${plugin.metadata.id.value}"
-                }
+                log.w(error) { "CloudStream preload binary compatibility failed phase=$phase id=${plugin.metadata.id.value}" }
             }
         }
-        val preloadElapsedMs = (currentEpochMillis() - preloadStartedAt).coerceAtLeast(0L)
+        val elapsedMs = (currentEpochMillis() - startedAt).coerceAtLeast(0L)
         InAppLogger.cloudStreamInfo(
             "CloudStreamRepo",
-            "Preload complete strategy=$strategy attempted=$attemptedCount loaded=$loadedCount failed=$failedCount elapsedMs=$preloadElapsedMs",
+            "Preload phase=$phase attempted=${candidates.size} loaded=$loadedCount failed=$failedCount elapsedMs=$elapsedMs",
         )
-        if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
-            return Result.failure(
-                IllegalStateException("Active profile changed before CloudStream link resolution"),
-            )
-        }
-
-        val canonicalProviderId = selectedPlugin.metadata.id.value
-        val primaryResult = providerResult(canonicalProviderId) { loadLinks(data) }
-        val primaryErrorMessage = primaryResult.exceptionOrNull()?.message.orEmpty()
-        val primaryNeedsExtractorFallback =
-            primaryResult.getOrNull().orEmpty().isEmpty() &&
-                (primaryResult.isSuccess ||
-                    primaryErrorMessage.contains("no playable links", ignoreCase = true) ||
-                    primaryErrorMessage.contains("could not resolve this source", ignoreCase = true))
-        if (!primaryNeedsExtractorFallback) return primaryResult
-
-        // Lazy fallback: only when the enabled/runnable extractor set produced no
-        // playable links do we load verified disabled packages. The Android runtime
-        // keeps their ExtractorApi registrations but removes their MainAPI registrations.
-        if (strategy != CloudStreamPreloadStrategy.ENABLED_RUNNABLE_ONLY) return primaryResult
-        val disabledExtractorPlugins = verifiedDexPlugins.filterNot(CloudStreamPluginItem::isRunnable)
-        var fallbackLoaded = 0
-        disabledExtractorPlugins.forEach { plugin ->
-            if (!isProfileGenerationCurrent(expectedProfileGeneration)) {
-                return Result.failure(
-                    IllegalStateException("Active profile changed during CloudStream extractor fallback"),
-                )
-            }
-            try {
-                CloudStreamPlatformRuntime.provider(plugin)
-                fallbackLoaded += 1
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                InAppLogger.cloudStreamWarn(
-                    "CloudStreamRepo",
-                    "Lazy extractor fallback failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
-                )
-            } catch (error: LinkageError) {
-                InAppLogger.cloudStreamError(
-                    "CloudStreamRepo",
-                    "Lazy extractor fallback binary compatibility failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
-                )
-            }
-        }
-        InAppLogger.cloudStreamInfo(
-            "CloudStreamRepo",
-            "Lazy extractor fallback completed candidates=${disabledExtractorPlugins.size} loaded=$fallbackLoaded",
-        )
-        if (fallbackLoaded == 0 || !isProfileGenerationCurrent(expectedProfileGeneration)) {
-            return primaryResult
-        }
-        return providerResult(canonicalProviderId) { loadLinks(data) }
+        return loadedCount to failedCount
     }
 
     private suspend fun installOrUpdate(
