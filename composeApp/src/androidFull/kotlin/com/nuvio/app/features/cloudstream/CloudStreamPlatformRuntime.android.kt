@@ -356,7 +356,21 @@ internal actual object CloudStreamPlatformRuntime {
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
                 .distinct()
                 .toMutableList()
-            if (providers.none { it.sourcePlugin == file.absolutePath }) {
+
+            // Remove disabled MainAPI registrations immediately after plugin.load().
+            // Do not run the MainAPI DEX fallback scan for disabled extractor packages.
+            if (!item.isRunnable && providers.isNotEmpty()) {
+                providers.forEach(APIHolder::removePluginMapping)
+                APIHolder.allProviders.removeAll(providers.toSet())
+                APIHolder.allProviders.removeAll { it.sourcePlugin == file.absolutePath }
+                InAppLogger.cloudStreamInfo(
+                    "CloudStreamDex",
+                    "Disabled plugin MainAPI registrations removed id=${item.metadata.id.value}",
+                )
+                providers.clear()
+            }
+
+            if (item.isRunnable && providers.none { it.sourcePlugin == file.absolutePath }) {
                 val fallbackProviders = scanMainApis(file, loader)
                 fallbackProviders.forEach { api ->
                     if (providers.none { it.javaClass == api.javaClass }) providers += api
@@ -432,19 +446,6 @@ internal actual object CloudStreamPlatformRuntime {
                     dexFile.close()
                 }
             }
-            // A disabled package may still provide ExtractorApi implementations for
-            // cross-plugin delegation, but it must not publish MainAPI providers into
-            // the active CloudStream provider registry.
-            if (!item.isRunnable && providers.isNotEmpty()) {
-                providers.forEach(APIHolder::removePluginMapping)
-                APIHolder.allProviders.removeAll { it.sourcePlugin == file.absolutePath }
-                InAppLogger.cloudStreamInfo(
-                    "CloudStreamDex",
-                    "Disabled plugin retained as extractor-only id=${item.metadata.id.value} extractors=${registeredExtractors.size}",
-                )
-                providers.clear()
-            }
-
             // CloudStream permits extractor-only and utility plugins. Do not reject a
             // valid .cs3 package just because it does not register a MainAPI provider.
             providers.forEach(MainAPI::init)
