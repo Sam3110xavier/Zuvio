@@ -223,17 +223,41 @@ internal actual object CloudStreamPlatformRuntime {
     }
 
     actual suspend fun openSettings(plugin: CloudStreamPluginItem): Boolean {
-        if (!hasSettings(plugin)) return false
-        val cloudStreamPlugin = synchronized(loadedLock) { loaded[plugin.metadata.id.value]?.instance as? Plugin }
-            ?: return false
+        log.i { "Settings button activated id=${plugin.metadata.id.value}" }
+        InAppLogger.cloudStreamInfo(
+            "CloudStreamDex",
+            "Settings button activated id=${plugin.metadata.id.value}",
+        )
+        val loadedPlugin = loadPluginIfNeeded(plugin) ?: return false
+        val cloudStreamPlugin = loadedPlugin.instance as? Plugin ?: return false
         val callback = cloudStreamPlugin.openSettings ?: return false
-        val context = activityReference?.get() ?: appContext ?: return false
+        val activity = activityReference?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
+        val context = activity ?: appContext ?: return false
         return try {
-            callback.invoke(context)
+            // Settings callbacks may create dialogs or launch UI. Invoke them on the
+            // current Activity's main thread, matching CloudStream's Fragment caller.
+            if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                    callback.invoke(activity)
+                } else {
+                    activity.runOnUiThread { callback.invoke(activity) }
+                }
+            } else {
+                callback.invoke(context)
+            }
+            log.i { "Settings callback invoked id=${plugin.metadata.id.value}" }
+            InAppLogger.cloudStreamInfo(
+                "CloudStreamDex",
+                "Settings callback invoked id=${plugin.metadata.id.value} context=${context.javaClass.name}",
+            )
             true
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             log.e(error) { "Failed to open CloudStream settings id=${plugin.metadata.id.value}" }
+            InAppLogger.cloudStreamError(
+                "CloudStreamDex",
+                "Settings callback failed id=${plugin.metadata.id.value}: ${InAppLogger.throwableSummary(error)}",
+            )
             false
         }
     }
@@ -654,13 +678,23 @@ internal actual object CloudStreamPlatformRuntime {
             runCatching {
                 delegate.javaClass.getMethod("setFilename", String::class.java).invoke(delegate, filename)
             }
+            // Some extensions initialise their settings callback from load().
+            // Read it only after the foreign lifecycle method has completed.
+            invokeForeignLoad(context)
+
             runCatching {
                 val callback = delegate.javaClass.getMethod("getOpenSettings").invoke(delegate)
                     as? ((Context) -> Unit)
-                if (callback != null) openSettings = callback
+                if (callback != null) {
+                    openSettings = callback
+                    InAppLogger.cloudStreamInfo(
+                        "CloudStreamDex",
+                        "Captured reflective settings callback plugin=${delegate.javaClass.name}",
+                    )
+                }
+            }.onFailure { error ->
+                log.w(error) { "Could not read reflective settings callback plugin=${delegate.javaClass.name}" }
             }
-
-            invokeForeignLoad(context)
 
             val localProviders = readForeignList("getRegisteredMainAPIs").filterIsInstance<MainAPI>()
             val providers = if (localProviders.isNotEmpty()) localProviders else {
