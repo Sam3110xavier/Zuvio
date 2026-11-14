@@ -902,26 +902,40 @@ private class AndroidDexCloudStreamProvider(
                 ?: return@withContext null
             val mediaType = tmdbMatch.groupValues[2].lowercase()
             val loadJson = """{"id":$tmdbId,"type":"$mediaType"}"""
-            return@withContext providers.filterIsInstance<TmdbProvider>().firstNotNullOfOrNull { api ->
-                runCatching {
-                    val response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+            val tmdbApis = providers.filterIsInstance<TmdbProvider>()
+            InAppLogger.cloudStreamInfo(
+                "CloudStreamProvider",
+                "TMDB lookup id=$tmdbId type=$mediaType registeredTmdbProviders=${tmdbApis.size}",
+            )
+            return@withContext tmdbApis.firstNotNullOfOrNull { api ->
+                val tmdbUrl = if (mediaType == "movie") {
+                    "https://www.themoviedb.org/movie/$tmdbId"
+                } else {
+                    "https://www.themoviedb.org/tv/$tmdbId"
+                }
+                val jsonResponse = runCatching {
+                    withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
                         api.load(loadJson)
-                    } ?: run {
-                        // Some TmdbProvider implementations still accept the standard TMDB URL.
-                        val tmdbUrl = if (mediaType == "movie") {
-                            "https://www.themoviedb.org/movie/$tmdbId"
-                        } else {
-                            "https://www.themoviedb.org/tv/$tmdbId"
-                        }
-                        withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
-                            api.load(tmdbUrl)
-                        }
                     }
-                    response?.toNuvioLoadItem(api)
                 }.onFailure { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
-                    log.w(error) { "CloudStream TMDB load failed api=${api.name} tmdbId=$tmdbId type=$mediaType" }
+                    log.w(error) { "CloudStream TMDB JSON load failed api=${api.name} tmdbId=$tmdbId type=$mediaType" }
                 }.getOrNull()
+                val response = jsonResponse ?: runCatching {
+                    // Some TmdbProvider implementations still accept the standard TMDB URL.
+                    withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                        api.load(tmdbUrl)
+                    }
+                }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    log.w(error) { "CloudStream TMDB URL fallback failed api=${api.name} tmdbId=$tmdbId type=$mediaType" }
+                }.getOrNull()
+                response?.toNuvioLoadItem(api)
+            }?.also { loaded ->
+                InAppLogger.cloudStreamInfo(
+                    "CloudStreamProvider",
+                    "TMDB load resolved provider=${loaded.providerId} name=${loaded.name} type=${loaded.type} episodes=${loaded.episodes.size}",
+                )
             }
         }
 
