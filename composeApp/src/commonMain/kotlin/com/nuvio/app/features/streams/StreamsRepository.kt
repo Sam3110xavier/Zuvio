@@ -85,7 +85,43 @@ object StreamsRepository {
         )
     }
 
-    private fun load(type: String, videoId: String, parentMetaId: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, qualitySelectionMode: Boolean) {
+    private fun load(type: String, videoId: String, parentMetaId: String?, season: Int?, episode: Int?, manualSelection: Boolean, forceRefresh: Boolean, qualitySelectionMode: Boolean, metadataPrefetched: Boolean = false) {
+        // CloudStream title search requires metadata. Resolve a cold-cache miss before
+        // building provider groups, otherwise the request is permanently ID-only and
+        // providers without SyncAPI support never receive a search query.
+        if (AppFeaturePolicy.pluginsEnabled && !metadataPrefetched &&
+            parseCloudStreamRouteId(videoId) == null &&
+            MetaDetailsRepository.peek(type, parentMetaId ?: videoId) == null
+        ) {
+            CloudStreamRepository.initialize()
+            val hasRunnableCloudStreamProvider = CloudStreamRepository.uiState.value.plugins.any { it.isRunnable }
+            if (hasRunnableCloudStreamProvider) {
+                val metadataGateKey = "metadata::$type::$videoId::${parentMetaId.orEmpty()}::$season::$episode"
+                if (activeRequestKey == metadataGateKey && activeJob?.isActive == true) return
+                activeJob?.cancel()
+                activeRequestKey = metadataGateKey
+                val token = requestToken(type, videoId, season, episode, manualSelection, qualitySelectionMode)
+                _uiState.value = StreamsUiState(requestToken = token, isAnyLoading = true)
+                activeJob = scope.launch {
+                    try {
+                        MetaDetailsRepository.fetch(type, parentMetaId ?: videoId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        log.w(error) { "CloudStream metadata prefetch failed type=$type id=${parentMetaId ?: videoId}" }
+                    }
+                    if (activeRequestKey == metadataGateKey) {
+                        // Clear the running job before re-entering load; load cancels the
+                        // previous request job when it installs the real stream tasks.
+                        activeJob = null
+                        activeRequestKey = null
+                        load(type, videoId, parentMetaId, season, episode, manualSelection, forceRefresh, qualitySelectionMode, metadataPrefetched = true)
+                    }
+                }
+                return
+            }
+        }
+
         val pluginUiState = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.initialize()
             PluginRepository.uiState.value
