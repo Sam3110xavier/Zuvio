@@ -53,6 +53,11 @@
 -dontwarn java.beans.**
 -dontwarn jdk.dynalink.**
 
+# Preserve Material Components ABI referenced by dynamically loaded extensions.
+-keep class com.google.android.material.** { *; }
+-keep interface com.google.android.material.** { *; }
+-dontwarn com.google.android.material.**
+
 # Preserve the AndroidX ABI referenced by standard CloudStream extensions.
 # External .cs3 DEX files are invisible to R8's static reachability analysis.
 -keep class androidx.appcompat.app.AppCompatActivity { *; }
