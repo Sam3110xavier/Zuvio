@@ -232,23 +232,21 @@ internal actual object CloudStreamPlatformRuntime {
         val cloudStreamPlugin = loadedPlugin.instance as? Plugin ?: return false
         val callback = cloudStreamPlugin.openSettings ?: return false
         val activity = activityReference?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
-        val context = activity ?: appContext ?: return false
+            ?: run {
+                log.w { "Cannot open CloudStream settings without a live Activity id=${plugin.metadata.id.value}" }
+                return false
+            }
         return try {
-            // Settings callbacks may create dialogs or launch UI. Invoke them on the
-            // current Activity's main thread, matching CloudStream's Fragment caller.
-            if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
-                if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-                    callback.invoke(activity)
-                } else {
-                    activity.runOnUiThread { callback.invoke(activity) }
-                }
-            } else {
-                callback.invoke(context)
+            // CloudStream settings callbacks create Android UI. Execute synchronously
+            // on the live Activity's main dispatcher so callback exceptions are caught
+            // and the host never reports success before the callback actually runs.
+            withContext(Dispatchers.Main.immediate) {
+                callback.invoke(activity)
             }
             log.i { "Settings callback invoked id=${plugin.metadata.id.value}" }
             InAppLogger.cloudStreamInfo(
                 "CloudStreamDex",
-                "Settings callback invoked id=${plugin.metadata.id.value} context=${context.javaClass.name}",
+                "Settings callback invoked id=${plugin.metadata.id.value} context=${activity.javaClass.name}",
             )
             true
         } catch (error: Throwable) {
