@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CloudStreamMatchTest {
@@ -444,4 +445,41 @@ class CloudStreamMatchTest {
         assertEquals(1396, request?.tmdbId)
         assertEquals("tt0903747", request?.externalId)
     }
+
+    @Test
+    fun buildsTmdbOnlyRequestWhenMetadataTitleIsNotCached() {
+        val request = buildCloudStreamSearchRequest(
+            type = "movie",
+            videoId = "tmdb:9912345",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = null,
+            episode = null,
+            searchTitle = null,
+        )
+
+        assertNotNull(request)
+        assertEquals("", request.title)
+        assertEquals(9912345, request.tmdbId)
+        assertTrue(request.titleCandidates.isEmpty())
+    }
+
+    @Test
+    fun buildsImdbOnlyRequestWhenMetadataTitleIsNotCached() {
+        val request = buildCloudStreamSearchRequest(
+            type = "series",
+            videoId = "tt1234567",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = 1,
+            episode = 1,
+            searchTitle = null,
+        )
+
+        assertNotNull(request)
+        assertEquals("", request.title)
+        assertEquals("tt1234567", request.externalId)
+        assertTrue(request.titleCandidates.isEmpty())
+    }
+
 }
