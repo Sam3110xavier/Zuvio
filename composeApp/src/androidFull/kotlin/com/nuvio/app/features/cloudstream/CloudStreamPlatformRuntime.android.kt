@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.res.AssetManager
 import android.content.res.Resources
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.logging.InAppLogger
 import com.lagradost.api.setContext
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.AnimeLoadResponse
@@ -99,6 +100,7 @@ internal actual object CloudStreamPlatformRuntime {
                 .build()
             cloudStreamNetworkingInitialized = true
             log.i { "Initialized CloudStream NiceHttp base client" }
+            InAppLogger.cloudStreamInfo("CloudStreamDex", "Initialized CloudStream NiceHttp base client")
         }
     }
 
@@ -168,6 +170,7 @@ internal actual object CloudStreamPlatformRuntime {
     }
 
     private fun loadPlugin(item: CloudStreamPluginItem): LoadedPlugin {
+        InAppLogger.cloudStreamInfo("CloudStreamDex", "Plugin load started id=${item.metadata.id.value} name=${item.metadata.internalName}")
         val context = requireNotNull(appContext) { "CloudStream Android runtime is not initialized" }
         prepareHostContext(context)
         val filePath = requireNotNull(CloudStreamPlatformStorage.packagePath(item.metadata.id.storageKey)) {
@@ -202,6 +205,7 @@ internal actual object CloudStreamPlatformRuntime {
         }
         val pluginClassName = manifest.pluginClassName?.takeIf(String::isNotBlank)
             ?: error("CloudStream manifest has no pluginClassName")
+        InAppLogger.cloudStreamInfo("CloudStreamDex", "Manifest validated id=${item.metadata.id.value} entry=$pluginClassName version=${manifest.version ?: item.metadata.version}")
         // Match the production sideload loaders used by NuvioTV and ARVIO. DexClassLoader
         // writes optimized DEX artifacts into the app-private code cache and is the
         // supported loader for downloaded .cs3 archives.
@@ -214,12 +218,15 @@ internal actual object CloudStreamPlatformRuntime {
         )
         // AtomicList iterators are deliberately not synchronized. Take stable
         // snapshots under each registry's lock before comparing plugin registrations.
+        InAppLogger.cloudStreamDebug("CloudStreamDex", "DexClassLoader created id=${item.metadata.id.value} optimizedDir=${optimizedDirectory.name}")
         val providersBefore = APIHolder.allProviders.withLock { APIHolder.allProviders.toSet() }
         val extractorsBefore = extractorApis.withLock { extractorApis.toSet() }
         var instance: BasePlugin? = null
         PluginManager.currentlyLoading = item.metadata.internalName
         try {
+            InAppLogger.cloudStreamDebug("CloudStreamDex", "Resolving plugin entry class=$pluginClassName")
             val pluginClass = loader.loadClass(pluginClassName)
+            InAppLogger.cloudStreamInfo("CloudStreamDex", "Resolved plugin entry class=${pluginClass.name}")
             require(BasePlugin::class.java.isAssignableFrom(pluginClass)) {
                 "CloudStream entry point does not extend BasePlugin"
             }
@@ -245,6 +252,7 @@ internal actual object CloudStreamPlatformRuntime {
             applyHostCompatibilityDefaults(pluginClassName)
             if (manifest.requiresResources) pluginInstance.attachResources(identityContext, file)
 
+            InAppLogger.cloudStreamDebug("CloudStreamDex", "Invoking plugin load() id=${item.metadata.id.value}")
             if (pluginInstance is Plugin) pluginInstance.load(identityContext) else pluginInstance.load()
             val providers = APIHolder.allProviders
                 .filter { it !in providersBefore || it.sourcePlugin == file.absolutePath }
@@ -319,6 +327,7 @@ internal actual object CloudStreamPlatformRuntime {
                 "Loaded ${item.metadata.internalName}: ${providers.size} provider(s), " +
                     "${registeredExtractors.size} extractor(s)"
             }
+            InAppLogger.cloudStreamInfo("CloudStreamDex", "Plugin loaded id=${item.metadata.id.value} providers=${providers.size} extractors=${registeredExtractors.size}")
             return LoadedPlugin(
                 id = item.metadata.id.value,
                 path = file.absolutePath,
@@ -330,6 +339,7 @@ internal actual object CloudStreamPlatformRuntime {
             )
         } catch (error: Throwable) {
             log.e(error) { "Failed to load ${item.metadata.internalName}" }
+            InAppLogger.cloudStreamError("CloudStreamDex", "Plugin load failed id=${item.metadata.id.value}: ${InAppLogger.throwableSummary(error)}")
             runCatching { instance?.beforeUnload() }
             val addedProviders = APIHolder.allProviders.filter {
                 it !in providersBefore && it.sourcePlugin == file.absolutePath
@@ -548,6 +558,7 @@ private class AndroidDexCloudStreamProvider(
     override suspend fun loadLinks(data: String): List<CloudStreamPlaybackSource> = withContext(Dispatchers.IO) {
         val route = decodeAndroidDexRoute(data)
         val api = findProvider(route.providerClassName)
+        InAppLogger.cloudStreamInfo("CloudStreamProvider", "loadLinks started provider=${api.name} class=${api.javaClass.name}")
         val subtitles = Collections.synchronizedList(mutableListOf<CloudStreamSubtitle>())
         val links = Collections.synchronizedList(mutableListOf<ExtractorLink>())
         var loadFailure: Throwable? = null
@@ -583,6 +594,7 @@ private class AndroidDexCloudStreamProvider(
         val subtitleSnapshot = synchronized(subtitles) { subtitles.toList() }
         val linkSnapshot = synchronized(links) { links.toList() }
         loadFailure?.let { error ->
+            InAppLogger.cloudStreamError("CloudStreamProvider", "loadLinks failed provider=${api.name} emitted=${linkSnapshot.size}: ${InAppLogger.throwableSummary(error)}")
             log.w(error) {
                 "CloudStream loadLinks failed api=${api.name} after emitting ${linkSnapshot.size} link(s)"
             }
@@ -597,6 +609,7 @@ private class AndroidDexCloudStreamProvider(
             if (completed == null) error("CloudStream provider timed out before returning links")
             if (completed == false) error("CloudStream provider could not resolve this source")
         }
+        InAppLogger.cloudStreamInfo("CloudStreamProvider", "loadLinks completed provider=${api.name} completed=$completed links=${linkSnapshot.size} subtitles=${subtitleSnapshot.size}")
         linkSnapshot.distinctBy { link ->
             listOf(link.url, link.referer, link.quality.toString(), link.type.name, link.headers.toString())
         }.map { link ->

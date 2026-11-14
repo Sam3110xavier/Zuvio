@@ -39,6 +39,7 @@
 -keep class org.jsoup.** { *; }
 -keep class com.fasterxml.jackson.** { *; }
 -keep class com.google.gson.** { *; }
+-keep interface com.google.gson.** { *; }
 -keep class org.mozilla.javascript.** { *; }
 -keep class com.uwetrottmann.tmdb2.** { *; }
 -keep class me.xdrop.fuzzywuzzy.** { *; }
@@ -53,6 +54,12 @@
 -dontwarn jdk.dynalink.**
 
 # Preserve the AndroidX ABI referenced by standard CloudStream extensions.
+# AppCompatActivity is commonly referenced by extension UI code through the host classloader.
+-keep class androidx.appcompat.app.AppCompatActivity { *; }
+-keep class androidx.activity.** { *; }
+-keep interface androidx.activity.** { *; }
+-keep class androidx.lifecycle.** { *; }
+-keep interface androidx.lifecycle.** { *; }
 # Nuvio's Compose host does not directly instantiate these AppCompat/Fragment
 # classes, so R8 otherwise has no static reference to their DEX definitions.
 -keep class androidx.appcompat.app.** { *; }

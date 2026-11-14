@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.update
 private const val DEFAULT_MAX_LOG_LINES = 10_000
 private const val MAX_LOG_MESSAGE_CHARS = 1_024
 
+const val CATEGORY_CLOUDSTREAM = "CloudStream"
+
 internal expect fun currentInAppLogTimestamp(): String
 
 enum class InAppLogLevel(val label: String) {
@@ -51,7 +53,12 @@ object InAppLogger {
     fun warn(tag: String, message: String) = log(InAppLogLevel.Warn, tag, message)
     fun error(tag: String, message: String) = log(InAppLogLevel.Error, tag, message)
 
-    fun log(level: InAppLogLevel, tag: String, message: String) {
+    fun cloudStreamDebug(tag: String, message: String) = log(InAppLogLevel.Debug, tag, message, CATEGORY_CLOUDSTREAM)
+    fun cloudStreamInfo(tag: String, message: String) = log(InAppLogLevel.Info, tag, message, CATEGORY_CLOUDSTREAM)
+    fun cloudStreamWarn(tag: String, message: String) = log(InAppLogLevel.Warn, tag, message, CATEGORY_CLOUDSTREAM)
+    fun cloudStreamError(tag: String, message: String) = log(InAppLogLevel.Error, tag, message, CATEGORY_CLOUDSTREAM)
+
+    fun log(level: InAppLogLevel, tag: String, message: String, category: String? = null) {
         val rawMessage = message.trim()
         if (rawMessage.isEmpty()) return
         val trimmedMessage = if (rawMessage.length > MAX_LOG_MESSAGE_CHARS) {
@@ -76,7 +83,7 @@ object InAppLogger {
                 timestamp = timestamp,
                 level = level,
                 tag = safeTag,
-                category = deriveCategory(safeTag),
+                category = category?.trim()?.takeIf(String::isNotEmpty) ?: deriveCategory(safeTag),
                 message = trimmedMessage,
                 line = line,
             ),
@@ -191,6 +198,7 @@ object InAppLogger {
             "streams", "stream", "debrid" -> "Streams"
             "addons", "addon" -> "Addon"
             "plugins", "plugin", "pluginruntime" -> "Plugin"
+            "cloudstream", "cloudstreamdex", "cloudstreamprovider", "cs3", "lagradost" -> CATEGORY_CLOUDSTREAM
             "metadata", "tmdb", "mdblist", "trakt" -> "Metadata"
             "network", "http", "datasource", "supabase" -> "Network"
             "app", "application", "deeplink", "sync", "auth", "profile" -> "App"

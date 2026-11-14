@@ -142,7 +142,10 @@ android {
                 .map(String::toBooleanStrict)
                 .getOrElse(true)
             isMinifyEnabled = minifyRelease
-            isShrinkResources = minifyRelease
+            val shrinkResourcesRelease = providers.gradleProperty("releaseShrinkResourcesEnabled")
+                .map(String::toBooleanStrict)
+                .getOrElse(minifyRelease)
+            isShrinkResources = shrinkResourcesRelease
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "../composeApp/proguard-rules.pro",
