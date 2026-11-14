@@ -54,8 +54,10 @@
 -dontwarn jdk.dynalink.**
 
 # Preserve the AndroidX ABI referenced by standard CloudStream extensions.
-# AppCompatActivity is commonly referenced by extension UI code through the host classloader.
+# External .cs3 DEX files are invisible to R8's static reachability analysis.
 -keep class androidx.appcompat.app.AppCompatActivity { *; }
+-keep class androidx.fragment.app.FragmentActivity { *; }
+-keep class com.lagradost.cloudstream3.MainActivity { *; }
 -keep class androidx.activity.** { *; }
 -keep interface androidx.activity.** { *; }
 -keep class androidx.lifecycle.** { *; }
