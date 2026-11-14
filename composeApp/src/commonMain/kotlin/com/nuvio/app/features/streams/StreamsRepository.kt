@@ -233,7 +233,7 @@ object StreamsRepository {
                     onFailure = { error ->
                         InAppLogger.warn(
                             "Streams/StreamsRepository",
-                            "CloudStream route failed providerId=${cloudStreamRoute.providerId}: ${error::class.java.name}: ${error.message}",
+                            "CloudStream route failed providerId=${cloudStreamRoute.providerId}: ${error::class.simpleName ?: "Throwable"}: ${error.message}",
                         )
                         log.w(error) { "CloudStream link resolution failed provider=" + cloudStreamRoute.providerId }
                         _uiState.update { current ->
