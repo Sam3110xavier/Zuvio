@@ -906,6 +906,16 @@ private class AndroidDexCloudStreamProvider(
                 runCatching {
                     val response = withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
                         api.load(loadJson)
+                    } ?: run {
+                        // Some TmdbProvider implementations still accept the standard TMDB URL.
+                        val tmdbUrl = if (mediaType == "movie") {
+                            "https://www.themoviedb.org/movie/$tmdbId"
+                        } else {
+                            "https://www.themoviedb.org/tv/$tmdbId"
+                        }
+                        withTimeout(stageTimeout(api.loadTimeoutMs, DEFAULT_LOAD_TIMEOUT_MS)) {
+                            api.load(tmdbUrl)
+                        }
                     }
                     response?.toNuvioLoadItem(api)
                 }.onFailure { error ->
