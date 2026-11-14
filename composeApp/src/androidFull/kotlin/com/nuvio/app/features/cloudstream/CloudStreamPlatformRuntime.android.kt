@@ -39,6 +39,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.extractorApis
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.nicehttp.ignoreAllSSLErrors
 import dalvik.system.DexClassLoader
 import java.io.File
@@ -1003,19 +1004,28 @@ private class AndroidDexCloudStreamProvider(
         var loadFailure: Throwable? = null
         val completed = withTimeoutOrNull(stageTimeout(api.loadLinksTimeoutMs, DEFAULT_LINK_TIMEOUT_MS)) {
             try {
-                api.loadLinks(
-                    route.data,
-                    false,
-                    { subtitle ->
-                        subtitles += CloudStreamSubtitle(
-                            url = subtitle.url,
-                            language = subtitle.lang,
-                            name = subtitle.lang,
-                            headers = subtitle.headers.orEmpty(),
-                        )
-                    },
-                    links::add,
-                )
+                val resolveLinks: suspend () -> Boolean = {
+                    api.loadLinks(
+                        route.data,
+                        false,
+                        { subtitle ->
+                            subtitles += CloudStreamSubtitle(
+                                url = subtitle.url,
+                                language = subtitle.lang,
+                                name = subtitle.lang,
+                                headers = subtitle.headers.orEmpty(),
+                            )
+                        },
+                        links::add,
+                    )
+                }
+                if (api.name.contains("AnimePahe", ignoreCase = true) ||
+                    api.mainUrl.contains("animepahe", ignoreCase = true)
+                ) {
+                    CloudflareKiller.withAnimePaheStreamResolution { resolveLinks() }
+                } else {
+                    resolveLinks()
+                }
             } catch (error: Throwable) {
                 // Preserve coroutine cancellation and VM-fatal conditions, but capture
                 // every extension failure (including LinkageError) for diagnostics.
