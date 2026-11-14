@@ -108,7 +108,7 @@ internal actual object CloudStreamPlatformRuntime {
 
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
             cookies.forEach { cookie ->
-                val key = "${cookie.domain}\n${cookie.path}\n${cookie.name}"
+                val key = "${cookie.domain}\n${cookie.path}\n${cookie.name}\n${cookie.hostOnly}"
                 if (cookie.expiresAt <= System.currentTimeMillis()) {
                     store.remove(key)
                 } else {
