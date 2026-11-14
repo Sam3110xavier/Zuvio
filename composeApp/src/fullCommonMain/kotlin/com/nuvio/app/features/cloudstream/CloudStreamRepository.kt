@@ -1099,11 +1099,7 @@ actual object CloudStreamRepository {
     }
 
     private fun normalizeProviderKey(raw: String): String =
-        raw.trim()
-            .substringAfterLast(":")
-            .substringAfterLast("/")
-            .lowercase()
-            .replace(Regex("[^a-z0-9]"), "")
+        normalizeCloudStreamProviderKey(raw)
 
     /**
      * Route IDs, repository IDs and MainAPI/internal names are not guaranteed to
