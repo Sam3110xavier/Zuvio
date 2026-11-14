@@ -175,7 +175,7 @@ object StreamsRepository {
 
         val cloudStreamRoute = parseCloudStreamRouteId(videoId)
         if (cloudStreamRoute != null) {
-            InAppLogger.info(
+            InAppLogger.cloudStreamInfo(
                 "Streams/StreamsRepository",
                 "CloudStream route dispatch providerId=${cloudStreamRoute.providerId} dataLength=${cloudStreamRoute.data.length}",
             )
@@ -204,7 +204,7 @@ object StreamsRepository {
                     data = cloudStreamRoute.data,
                 ).fold(
                     onSuccess = { streams ->
-                        InAppLogger.info(
+                        InAppLogger.cloudStreamInfo(
                             "Streams/StreamsRepository",
                             "CloudStream route completed providerId=${cloudStreamRoute.providerId} playbackSources=${streams.size}",
                         )
@@ -231,7 +231,7 @@ object StreamsRepository {
                         }
                     },
                     onFailure = { error ->
-                        InAppLogger.warn(
+                        InAppLogger.cloudStreamWarn(
                             "Streams/StreamsRepository",
                             "CloudStream route failed providerId=${cloudStreamRoute.providerId}: ${error::class.simpleName ?: "Throwable"}: ${error.message}",
                         )
