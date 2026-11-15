@@ -173,6 +173,7 @@ internal object StreamSearchSessions {
                 when (completion) {
                     is StreamLoadCompletion.Addon -> completion.group.streams.isNotEmpty()
                     is StreamLoadCompletion.PluginScraper -> completion.streams.isNotEmpty()
+                    is StreamLoadCompletion.CloudStreamProvider -> completion.streams.isNotEmpty()
                 }
             }
             if (hasResults) session.completedAtMs = epochMs() else sessions.remove(key)
