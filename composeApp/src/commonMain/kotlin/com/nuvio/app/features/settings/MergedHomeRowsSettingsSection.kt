@@ -267,6 +267,21 @@ private fun MergedHomeRowEditorDialog(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                validationError?.let {
+                    Text(
+                        text = it,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = deduplicate, onCheckedChange = { deduplicate = it })
+                    Text("Remove duplicate titles")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
+                    Text("Hide included source rows from Home")
+                }
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -336,15 +351,6 @@ private fun MergedHomeRowEditorDialog(
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = deduplicate, onCheckedChange = { deduplicate = it })
-                    Text("Remove duplicate titles")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
-                    Text("Hide included source rows from Home")
-                }
-                validationError?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
