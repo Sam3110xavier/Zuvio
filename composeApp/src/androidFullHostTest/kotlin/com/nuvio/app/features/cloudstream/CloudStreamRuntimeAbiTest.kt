@@ -17,6 +17,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -141,4 +152,63 @@ class CloudStreamRuntimeAbiTest {
         assertTrue(PluginManager.pluginsOnline.isEmpty())
         assertTrue(PluginManager.pluginsLocal.isEmpty())
     }
+
+    @Test
+    fun cloudflarePermissionIsCapturedPerOkHttpCallAcrossDispatcherThreads() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.start()
+        try {
+            val observed = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+            val client = OkHttpClient.Builder()
+                .eventListenerFactory(CloudStreamCallContextRegistry.eventListenerFactory())
+                .addInterceptor { chain ->
+                    val label = chain.request().header("X-Test-Call")!!
+                    observed[label] = CloudflareKiller.isInteractiveVerificationAllowed(chain.call())
+                    chain.proceed(chain.request())
+                }
+                .build()
+
+            suspend fun request(label: String, allowInteractiveVerification: Boolean) {
+                CloudflareKiller.withRequestContext(
+                    pluginId = label,
+                    allowInteractiveVerification = allowInteractiveVerification,
+                ) {
+                    val call = client.newCall(
+                        Request.Builder()
+                            .url(server.url("/$label"))
+                            .header("X-Test-Call", label)
+                            .build(),
+                    )
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        continuation.invokeOnCancellation { call.cancel() }
+                        call.enqueue(object : Callback {
+                            override fun onFailure(call: Call, error: java.io.IOException) {
+                                continuation.resumeWith(Result.failure(error))
+                            }
+
+                            override fun onResponse(call: Call, response: Response) {
+                                response.close()
+                                continuation.resumeWith(Result.success(Unit))
+                            }
+                        })
+                    }
+                }
+            }
+
+            coroutineScope {
+                listOf(
+                    async { request("home", allowInteractiveVerification = false) },
+                    async { request("playback", allowInteractiveVerification = true) },
+                ).awaitAll()
+            }
+
+            assertEquals(false, observed["home"])
+            assertEquals(true, observed["playback"])
+        } finally {
+            server.shutdown()
+        }
+    }
+
 }
