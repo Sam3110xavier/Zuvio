@@ -160,6 +160,50 @@ class LibraryDisplaySettingsTest {
     }
 
     @Test
+    fun `local vertical projection includes movies and series across all local type sections`() {
+        val sections = listOf(
+            LibrarySection(
+                type = "movie",
+                displayTitle = "Movies",
+                items = listOf(item("movie-one"), item("shared-id", name = "Movie with shared id")),
+            ),
+            LibrarySection(
+                type = "series",
+                displayTitle = "Series",
+                items = listOf(
+                    item("series-one", type = "series"),
+                    item("shared-id", type = "series", name = "Series with shared id"),
+                ),
+            ),
+        )
+
+        val projection = buildLibraryVerticalProjection(
+            sections = sections,
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = null,
+            selectedType = null,
+            sortOption = LibrarySortOption.ADDED_DESC,
+        )
+
+        assertEquals(null, projection.selectedSectionKey)
+        assertEquals(listOf("movie", "series"), projection.availableTypes)
+        assertEquals(
+            setOf("movie-one", "shared-id:movie", "series-one", "shared-id:series"),
+            projection.entries.map { "${it.item.id}:${it.item.type}" }.toSet(),
+        )
+
+        val seriesOnly = buildLibraryVerticalProjection(
+            sections = sections,
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = null,
+            selectedType = "series",
+            sortOption = LibrarySortOption.ADDED_DESC,
+        )
+        assertEquals(listOf("series"), seriesOnly.availableTypes.filter { it == seriesOnly.selectedType })
+        assertEquals(setOf("series-one", "shared-id"), seriesOnly.entries.map { it.item.id }.toSet())
+    }
+
+    @Test
     fun `vertical tracker projection selects one list then filters and sorts its items`() {
         val watchlist = LibrarySection(
             type = "watchlist",
