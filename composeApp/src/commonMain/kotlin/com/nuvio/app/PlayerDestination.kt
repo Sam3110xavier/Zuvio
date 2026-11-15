@@ -83,6 +83,8 @@ internal fun PlayerDestination(
         sourceFilename = launch.sourceFilename,
         stream = launch.stream,
         semiAutoSelectedQuality = launch.semiAutoSelectedQuality,
+        sourceFromLinkCache = launch.sourceFromLinkCache,
+        sourceAutoSelected = launch.sourceAutoSelected,
         onBack = onBack,
         onOpenInExternalPlayer = { request ->
             val playerLaunch = PlayerLaunch(

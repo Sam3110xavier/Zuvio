@@ -428,6 +428,8 @@ internal fun StreamDestination(
                         bingeGroup = cached.bingeGroup,
                     ),
                 ),
+                sourceFromLinkCache = true,
+                sourceAutoSelected = true,
             )
             if (playerSettings.externalPlayerEnabled) {
                 openExternalPlayback(playerLaunch)
@@ -723,6 +725,7 @@ internal fun StreamDestination(
             semiAutoSelectedQuality = selectedSemiAutoQuality?.let { selected ->
                 runCatching { StreamAutoPlayPreferredQuality.valueOf(selected) }.getOrNull()
             },
+            sourceAutoSelected = true,
         )
         if (playerSettings.externalPlayerEnabled && stream.serverTarget == null) {
             openExternalPlayback(playerLaunch)

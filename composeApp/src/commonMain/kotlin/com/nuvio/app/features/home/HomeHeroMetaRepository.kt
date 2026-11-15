@@ -134,20 +134,15 @@ internal fun MetaPreview.withHeroMeta(meta: HomeHeroMeta): MetaPreview {
 }
 
 @Composable
-internal fun rememberHomeHeroState(items: List<MetaPreview>): HomeHeroState {
+internal fun HomeHeroMetaLoadEffect(items: List<MetaPreview>) {
     val mdbListSettings by remember {
         MdbListSettingsRepository.ensureLoaded()
         MdbListSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val metaScreenSettings by remember {
-        MetaScreenSettingsRepository.ensureLoaded()
-        MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val tmdbSettings by remember {
         TmdbSettingsRepository.ensureLoaded()
         TmdbSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val metas by HomeHeroMetaRepository.metas.collectAsStateWithLifecycle()
     val showMdbListRatings = mdbListSettings.isActive && mdbListSettings.showOnHero
 
     LaunchedEffect(items, mdbListSettings, tmdbSettings) {
@@ -161,6 +156,20 @@ internal fun rememberHomeHeroState(items: List<MetaPreview>): HomeHeroState {
             endExclusive = minOf(endExclusive + HOME_HERO_NEXT_BATCH_SIZE, items.size)
         }
     }
+}
+
+@Composable
+internal fun rememberHomeHeroState(items: List<MetaPreview>): HomeHeroState {
+    val mdbListSettings by remember {
+        MdbListSettingsRepository.ensureLoaded()
+        MdbListSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val metaScreenSettings by remember {
+        MetaScreenSettingsRepository.ensureLoaded()
+        MetaScreenSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val metas by HomeHeroMetaRepository.metas.collectAsStateWithLifecycle()
+    val showMdbListRatings = mdbListSettings.isActive && mdbListSettings.showOnHero
 
     val heroItems = remember(items, metas) {
         selectHomeHeroItems(items, metas)

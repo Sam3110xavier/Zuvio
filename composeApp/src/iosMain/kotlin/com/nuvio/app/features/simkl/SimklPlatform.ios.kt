@@ -84,6 +84,7 @@ internal actual object SimklAuthStorage {
     actual fun saveAccessToken(value: String?) = saveKeychainValue(ACCESS_TOKEN_KEY, value)
 
     actual fun loadRefreshToken(): String? = loadKeychainValue(REFRESH_TOKEN_KEY)
+
     actual fun saveRefreshToken(value: String?) = saveKeychainValue(REFRESH_TOKEN_KEY, value)
 
     actual fun loadCodeVerifier(): String? = loadKeychainValue(CODE_VERIFIER_KEY)
