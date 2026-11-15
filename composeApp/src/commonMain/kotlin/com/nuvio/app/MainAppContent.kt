@@ -2140,7 +2140,7 @@ internal fun MainAppContent(
                         (posterActionTarget.libraryItem != null || !isRemoteLibrarySource)
                     val statusLibraryItem = posterActionTarget.libraryItem
                     val statusProviderId = statusLibraryItem
-                        ?.let { TrackingProviderId.fromStorage(libraryUiState.sourceMode.name) }
+                        ?.let { TrackingProviderId.fromStorage(librarySourceMode.name) }
                     val statusTabs = if (statusProviderId == null || statusLibraryItem == null) {
                         emptyList()
                     } else {
