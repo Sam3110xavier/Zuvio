@@ -1,5 +1,10 @@
 package com.nuvio.app.features.catalog
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import com.nuvio.app.core.ui.background.appBackgroundCover
 import androidx.compose.foundation.horizontalScroll
@@ -112,6 +117,8 @@ fun CatalogScreen(
         initialFirstVisibleItemScrollOffset = initialScrollPosition.firstVisibleItemScrollOffset,
     )
     var headerHeightPx by remember { mutableIntStateOf(0) }
+    var mergedTabsHeightPx by remember { mutableIntStateOf(0) }
+    var showMergedTabs by rememberSaveable(target) { mutableStateOf(true) }
     var observedOfflineState by remember { mutableStateOf(false) }
     var selectedMergedSourceKey by rememberSaveable(target) { mutableStateOf("all") }
     val showMergedSourceTabs = target is CatalogTarget.MergedRow &&
@@ -147,7 +154,34 @@ fun CatalogScreen(
     }
 
     LaunchedEffect(selectedMergedSourceKey, showMergedSourceTabs) {
-        if (showMergedSourceTabs) gridState.scrollToItem(0)
+        if (showMergedSourceTabs) {
+            showMergedTabs = true
+            gridState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(gridState, target, showMergedSourceTabs) {
+        if (!showMergedSourceTabs) {
+            showMergedTabs = false
+            return@LaunchedEffect
+        }
+        var previousPosition: Pair<Int, Int>? = null
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { position ->
+                val previous = previousPosition
+                if (previous != null) {
+                    val movingDownContent = position.first > previous.first ||
+                        (position.first == previous.first && position.second > previous.second)
+                    val movingUpContent = position.first < previous.first ||
+                        (position.first == previous.first && position.second < previous.second)
+                    when {
+                        movingDownContent -> showMergedTabs = false
+                        movingUpContent -> showMergedTabs = true
+                    }
+                }
+                previousPosition = position
+            }
     }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
@@ -218,32 +252,15 @@ fun CatalogScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
-                    top = with(androidx.compose.ui.platform.LocalDensity.current) { headerHeightPx.toDp() } + 12.dp,
+                    top = with(androidx.compose.ui.platform.LocalDensity.current) {
+                        (headerHeightPx + mergedTabsHeightPx).toDp()
+                    } + 12.dp,
                     end = 16.dp,
                     bottom = nuvioSafeBottomPadding(28.dp),
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                if (showMergedSourceTabs && uiState.mergedSourceTabs.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            uiState.mergedSourceTabs.forEach { tab ->
-                                FilterChip(
-                                    selected = tab.key == selectedMergedTab?.key,
-                                    onClick = { selectedMergedSourceKey = tab.key },
-                                    label = { Text(tab.title) },
-                                )
-                            }
-                        }
-                    }
-                }
-
                 if (
                     visibleItems.isNotEmpty() &&
                     (failedVisibleSourceKeys.isNotEmpty() || showUnavailableSourceNotice)
@@ -329,12 +346,37 @@ fun CatalogScreen(
                 }
             }
 
-            CatalogHeader(
-                title = title,
-                subtitle = subtitle,
-                modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
-                onBack = onBack,
-            )
+            Column(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                CatalogHeader(
+                    title = title,
+                    subtitle = subtitle,
+                    modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
+                    onBack = onBack,
+                )
+                AnimatedVisibility(
+                    visible = showMergedSourceTabs && showMergedTabs && uiState.mergedSourceTabs.isNotEmpty(),
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { mergedTabsHeightPx = it.height }
+                            .background(MaterialTheme.colorScheme.background)
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        uiState.mergedSourceTabs.forEach { tab ->
+                            FilterChip(
+                                selected = tab.key == selectedMergedTab?.key,
+                                onClick = { selectedMergedSourceKey = tab.key },
+                                label = { Text(tab.title) },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
