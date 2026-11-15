@@ -39,6 +39,12 @@ internal actual object CloudStreamPlatformStorage {
         val backup = File(directory, "$storageKey.backup")
         try {
             FileOutputStream(temporary).use { output ->
+                // Android 14+ requires dynamically loaded DEX/JAR/APK files to be
+                // read-only. Set the permission immediately after opening the file,
+                // before writing any package bytes, as recommended by Android.
+                check(temporary.setReadOnly() || !temporary.canWrite()) {
+                    "CloudStream package could not be marked read-only before writing"
+                }
                 output.write(bytes)
                 output.fd.sync()
             }

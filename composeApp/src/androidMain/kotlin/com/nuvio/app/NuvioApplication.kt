@@ -30,6 +30,15 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         CrashReportStore.initialize(this)
+        // CloudStream compatibility classes exist only in Android Full. Initialize
+        // their application context reflectively so Play Store builds remain independent.
+        runCatching {
+            Class.forName("com.lagradost.cloudstream3.AcraApplication")
+                .getMethod("setContext", android.content.Context::class.java)
+                .invoke(null, this)
+        }.onFailure { error ->
+            android.util.Log.d("NuvioApplication", "Optional CloudStream host ABI is not installed: ${error.message}")
+        }
         DnsPlatform.initialize(this)
         runCatching {
             Class.forName("com.nuvio.app.features.telegram.TelegramAndroidBootstrap")

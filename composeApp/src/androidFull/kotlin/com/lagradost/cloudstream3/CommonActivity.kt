@@ -1,19 +1,21 @@
 package com.lagradost.cloudstream3
 
 import android.app.Activity
-import java.lang.ref.WeakReference
 
-/** Current-activity ABI used by extensions that need a UI-bound Android context. */
+/** Compatibility facade for CloudStream extensions; navigation remains owned by Zuvio. */
 object CommonActivity {
-    private var activityReference: WeakReference<Activity>? = null
+    @JvmField
+    var activity: Activity? = null
 
-    var activity: Activity?
-        get() = activityReference?.get()
-        private set(value) {
-            activityReference = value?.let(::WeakReference)
-        }
+    fun getActivity(): Activity? = activity
 
     fun setActivityInstance(newActivity: Activity?) {
         activity = newActivity
     }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun showToast(message: String, duration: Int? = null) {}
+
+    @Suppress("UNUSED_PARAMETER")
+    fun showToast(activity: Activity?, message: String, duration: Int? = null) {}
 }

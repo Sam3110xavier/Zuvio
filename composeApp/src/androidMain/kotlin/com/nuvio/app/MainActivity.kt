@@ -184,7 +184,8 @@ open class MainActivity : AppCompatActivity() {
         BingeGroupCacheStorage.initialize(applicationContext)
         ProfileTitleFactsStorage.initialize(applicationContext)
         PluginStorage.initialize(applicationContext)
-        CloudStreamPlatformStorage.initialize(applicationContext)
+        // Keep the Activity context available to CloudStream providers and CommonActivity.
+        CloudStreamPlatformStorage.initialize(this)
         CollectionMobileSettingsStorage.initialize(applicationContext)
         CollectionStorage.initialize(applicationContext)
         DownloadsStorage.initialize(applicationContext)
@@ -241,6 +242,13 @@ open class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         startupScope.cancel()
         EpisodeReleaseNotificationPlatform.unbindActivity(this)
+        // Clear the optional Full-build CloudStream activity bridge without adding
+        // a compile-time dependency to Play Store distributions.
+        runCatching {
+            Class.forName("com.lagradost.cloudstream3.AcraApplication")
+                .getMethod("setActivity", android.app.Activity::class.java)
+                .invoke(null, null)
+        }
         super.onDestroy()
     }
 

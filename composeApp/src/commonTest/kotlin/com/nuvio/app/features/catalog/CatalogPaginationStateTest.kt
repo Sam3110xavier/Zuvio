@@ -13,9 +13,10 @@ class CatalogPaginationStateTest {
     fun cloudStreamPaginationUsesOneBasedPagesAndStopsOnEmptyPage() {
         assertEquals(1, cloudStreamPageNumber(0))
         assertEquals(2, cloudStreamPageNumber(1))
-        assertEquals(0, cloudStreamNextPageSkip(0, 20))
-        assertEquals(1, cloudStreamNextPageSkip(1, 20))
-        assertNull(cloudStreamNextPageSkip(1, 0))
+        assertEquals(3, cloudStreamPageNumber(2))
+        assertEquals(1, cloudStreamNextPageSkip(0, 8))
+        assertEquals(2, cloudStreamNextPageSkip(1, 12))
+        assertNull(cloudStreamNextPageSkip(2, 0))
     }
 
     @Test

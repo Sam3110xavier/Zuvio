@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CloudStream extensions create native Material Components dialogs and
+         BottomSheetDialogFragments. The host Activity must use a Material theme;
+         Compose Material3 theming does not satisfy Android View ThemeEnforcement. -->
+    <style name="Theme.Nuvio" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">#F5F5F5</item>
+        <item name="colorPrimaryDark">#E0E0E0</item>
+        <item name="colorPrimaryVariant">#E0E0E0</item>
+        <item name="colorOnPrimary">#111111</item>
+        <item name="colorSecondary">#F5F5F5</item>
+        <item name="colorSecondaryVariant">#E0E0E0</item>
+        <item name="colorOnSecondary">#111111</item>
+        <item name="colorSurface">#1A1A1A</item>
+        <item name="colorOnSurface">#F5F7F8</item>
+        <item name="colorOnBackground">#F5F7F8</item>
+        <item name="android:colorAccent">#F5F5F5</item>
+        <item name="android:colorBackground">@color/nuvio_background</item>
+        <item name="android:windowBackground">@color/nuvio_background</item>
+        <item name="android:statusBarColor">@color/nuvio_background</item>
+        <item name="android:navigationBarColor">@color/nuvio_background</item>
+    </style>
+
+    <style name="Theme.Nuvio.Splash" parent="@style/Theme.Nuvio" />
+    <style name="Theme.Nuvio.Splash.ArcticBlue" parent="@style/Theme.Nuvio.Splash" />
+    <style name="Theme.Nuvio.Splash.Emerald" parent="@style/Theme.Nuvio.Splash" />
+    <style name="Theme.Nuvio.Splash.RoseGold" parent="@style/Theme.Nuvio.Splash" />
+    <style name="Theme.Nuvio.Splash.Copper" parent="@style/Theme.Nuvio.Splash" />
+    <style name="Theme.Nuvio.Splash.Graphite" parent="@style/Theme.Nuvio.Splash" />
+</resources>

@@ -86,6 +86,7 @@ android {
     productFlavors {
         create("full") {
             dimension = "distribution"
+            proguardFiles("../composeApp/proguard-cloudstream-full.pro")
         }
         create("playstore") {
             dimension = "distribution"
@@ -141,14 +142,14 @@ android {
                 .map(String::toBooleanStrict)
                 .getOrElse(true)
             isMinifyEnabled = minifyRelease
-            isShrinkResources = minifyRelease
+            val shrinkResourcesRelease = providers.gradleProperty("releaseShrinkResourcesEnabled")
+                .map(String::toBooleanStrict)
+                .getOrElse(minifyRelease)
+            isShrinkResources = shrinkResourcesRelease
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "../composeApp/proguard-rules.pro",
             )
-            if (androidDistribution == "full") {
-                proguardFiles("../composeApp/proguard-cloudstream-full.pro")
-            }
             signingConfig = signingConfigs.getByName("release")
             ndk {
                 debugSymbolLevel = "FULL"
@@ -227,6 +228,15 @@ val rust = tasks.register<CargoNdkBuild>("buildRust") {
 }
 
 androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        // Full loads third-party CloudStream .cs3 DEX at runtime. R8/AAPT2 cannot
+        // see resource references inside those external DEX archives, so resource
+        // shrinking can remove layouts/styles/drawables that plugin settings need.
+        // Keep R8 code minification enabled; disable only resource shrinking for Full.
+        if (variant.productFlavors.contains("distribution" to "full")) {
+            variant.shrinkResources = false
+        }
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.applicationId.set("com.nuviodebug.com")
     }

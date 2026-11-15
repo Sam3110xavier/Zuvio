@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CloudStreamMatchTest {
@@ -365,6 +366,26 @@ class CloudStreamMatchTest {
     }
 
     @Test
+    fun acceptsAuthoritativeImdbSeriesLookupWithoutCachedTitle() {
+        val request = CloudStreamSearchRequest(
+            title = "",
+            type = "series",
+            year = null,
+            season = 1,
+            episode = 1,
+            externalId = "tt0903747",
+        )
+        val loaded = CloudStreamLoadItem(
+            providerId = "provider",
+            data = "breaking-bad",
+            name = "Breaking Bad",
+            type = CloudStreamTvType.TvSeries,
+        )
+
+        assertTrue(loaded.matchesCloudStreamExternalIdRequest(request))
+    }
+
+    @Test
     fun rejectsExternalIdUnrelatedSeriesEvenWhenReleaseYearMatches() {
         val request = CloudStreamSearchRequest(
             "The Office", type = "series", year = 2005, season = null, episode = null,
@@ -413,4 +434,72 @@ class CloudStreamMatchTest {
 
         assertEquals("s1e1", loaded.linkDataForCloudStreamRequest(request))
     }
+
+    @Test
+    fun extractsTmdbIdFromPrefixedContentId() {
+        val request = buildCloudStreamSearchRequest(
+            type = "movie",
+            videoId = "tmdb:603",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = null,
+            episode = null,
+            searchTitle = "The Matrix",
+        )
+
+        assertEquals(603, request?.tmdbId)
+    }
+
+    @Test
+    fun preservesImdbAndTmdbIdsAsSeparateLookupPaths() {
+        val request = buildCloudStreamSearchRequest(
+            type = "series",
+            videoId = "tmdb:1396",
+            parentMetaId = "tt0903747",
+            parentMetaType = "series",
+            season = 1,
+            episode = 1,
+            searchTitle = "Breaking Bad",
+        )
+
+        assertEquals(1396, request?.tmdbId)
+        assertEquals("tt0903747", request?.externalId)
+    }
+
+    @Test
+    fun buildsTmdbOnlyRequestWhenMetadataTitleIsNotCached() {
+        val request = buildCloudStreamSearchRequest(
+            type = "movie",
+            videoId = "tmdb:9912345",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = null,
+            episode = null,
+            searchTitle = null,
+        )
+
+        val resolved = assertNotNull(request)
+        assertEquals("", resolved.title)
+        assertEquals(9912345, resolved.tmdbId)
+        assertTrue(resolved.titleCandidates.isEmpty())
+    }
+
+    @Test
+    fun buildsImdbOnlyRequestWhenMetadataTitleIsNotCached() {
+        val request = buildCloudStreamSearchRequest(
+            type = "series",
+            videoId = "tt1234567",
+            parentMetaId = null,
+            parentMetaType = null,
+            season = 1,
+            episode = 1,
+            searchTitle = null,
+        )
+
+        val resolved = assertNotNull(request)
+        assertEquals("", resolved.title)
+        assertEquals("tt1234567", resolved.externalId)
+        assertTrue(resolved.titleCandidates.isEmpty())
+    }
+
 }
