@@ -138,6 +138,65 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
+    fun hideIncludedMergedRowSourcesMovesThemToHiddenRowsAndRestoresPreviousVisibility() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
+        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+        val sourceKey = sourceKeys.first()
+
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
+            .filter { it.key in sourceKeys }
+            .all { it.enabled })
+
+        val rowId = requireNotNull(HomeCatalogSettingsRepository.createMergedRow(
+            title = "Combined",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            hideIncludedRows = true,
+        ))
+
+        val afterCreate = HomeCatalogSettingsRepository.uiState.value.items
+        assertTrue(afterCreate.single { it.key == mergedHomeRowKey(rowId) }.enabled)
+        assertTrue(afterCreate.filter { it.key in sourceKeys }.all { !it.enabled })
+
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId,
+            title = "Combined",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            deduplicate = true,
+            hideIncludedRows = false,
+        ))
+        val afterDisable = HomeCatalogSettingsRepository.uiState.value.items
+        assertTrue(afterDisable.filter { it.key in sourceKeys }.all { it.enabled })
+
+        HomeCatalogSettingsRepository.setEnabled(sourceKey, false)
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId,
+            title = "Combined",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            deduplicate = true,
+            hideIncludedRows = true,
+        ))
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
+            .filter { it.key in sourceKeys }
+            .all { !it.enabled })
+
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId,
+            title = "Combined",
+            sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            deduplicate = true,
+            hideIncludedRows = false,
+        ))
+        assertFalse(HomeCatalogSettingsRepository.uiState.value.items.single { it.key == sourceKey }.enabled)
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
+            .filter { it.key in sourceKeys && it.key != sourceKey }
+            .all { it.enabled })
+    }
+
+    @Test
     fun mergedRowsRejectMoreThanTheMaximumSourcesInsteadOfSilentlyTruncating() {
         val catalogIds = (1..14).map { "catalog-$it" }
         HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(catalogIds)))
