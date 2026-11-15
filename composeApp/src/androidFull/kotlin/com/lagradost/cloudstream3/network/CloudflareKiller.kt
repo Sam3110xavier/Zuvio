@@ -93,7 +93,7 @@ class CloudflareKiller : Interceptor {
             if (allowInteractiveVerification) {
                 interactivePlaybackScopes.incrementAndGet()
             }
-            try {
+            return try {
                 withContext(cloudStreamRequestContext.asContextElement(context)) {
                     block()
                 }
