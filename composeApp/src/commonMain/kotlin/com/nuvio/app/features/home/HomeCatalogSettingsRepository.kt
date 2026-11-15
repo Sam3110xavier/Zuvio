@@ -1152,6 +1152,14 @@ object HomeCatalogSettingsRepository {
 
     private fun publish() {
         val collectionMap = collectionDefinitions.associateBy { it.key }
+        // Treat source rows hidden by a merged row as ordinary hidden Home rows.
+        // Keep the user's stored enabled preference untouched so disabling the
+        // merged-row option restores each source row to its previous visibility.
+        val hiddenIncludedSourceKeys = mergedRows
+            .asSequence()
+            .filter { it.hideIncludedRows }
+            .flatMap { it.sourceKeys.asSequence() }
+            .toSet()
         val catalogItems = definitions
             .map { definition ->
                 val preference = preferences[definition.key]
@@ -1160,7 +1168,7 @@ object HomeCatalogSettingsRepository {
                     defaultTitle = definition.defaultTitle,
                     addonName = definition.addonName,
                     customTitle = preference?.customTitle.orEmpty(),
-                    enabled = preference?.enabled ?: true,
+                    enabled = (preference?.enabled ?: true) && definition.key !in hiddenIncludedSourceKeys,
                     heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
                     addonId = if (ServerCatalog.isServerKey(definition.key)) null else definition.addonGroupId(),
