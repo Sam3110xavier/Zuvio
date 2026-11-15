@@ -1,9 +1,11 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -13,10 +15,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -258,29 +263,30 @@ private fun MergedHomeRowEditorDialog(
     var hideIncluded by remember(row?.id) { mutableStateOf(row?.hideIncludedRows ?: false) }
     var hidePosterless by remember(row?.id) { mutableStateOf(row?.hideTitlesWithoutPosters ?: false) }
     var validationError by remember(row?.id) { mutableStateOf<String?>(null) }
+    val validationSnackbarHostState = remember(row?.id) { SnackbarHostState() }
+    LaunchedEffect(validationError) {
+        validationError?.let { message ->
+            validationSnackbarHostState.showSnackbar(message)
+            validationError = null
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (row == null) "Create merged row" else "Edit merged row") },
         text = {
-            Column(
-                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
+            Box {
+                Column(
+                    modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Row title") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                validationError?.let {
-                    Text(
-                        text = it,
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-                    )
-                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = deduplicate, onCheckedChange = { deduplicate = it })
                     Text("Remove duplicate titles")
@@ -351,6 +357,10 @@ private fun MergedHomeRowEditorDialog(
                         }
                     }
                 }
+                SnackbarHost(
+                    hostState = validationSnackbarHostState,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp),
+                )
             }
         },
         confirmButton = {
