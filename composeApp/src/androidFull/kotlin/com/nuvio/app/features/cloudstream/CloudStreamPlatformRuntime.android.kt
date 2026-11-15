@@ -40,6 +40,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.extractorApis
 import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.network.CloudStreamCallContextRegistry
 import com.lagradost.nicehttp.ignoreAllSSLErrors
 import dalvik.system.DexClassLoader
 import java.io.File
@@ -154,6 +155,10 @@ internal actual object CloudStreamPlatformRuntime {
                 // This applies only to CloudStream's dedicated client, not Zuvio's app clients.
                 .ignoreAllSSLErrors()
                 .cache(Cache(cacheDirectory, 50L * 1024L * 1024L))
+                // NiceHttp creates Calls inside the plugin coroutine but executes interceptors
+                // on OkHttp dispatcher threads. Snapshot the operation context at newCall()
+                // so CloudflareKiller authorizes only the originating playback Call.
+                .eventListenerFactory(CloudStreamCallContextRegistry.eventListenerFactory())
                 .build()
             cloudStreamNetworkingInitialized = true
             log.i { "Initialized CloudStream NiceHttp base client" }

@@ -9,14 +9,22 @@ import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.network.CloudStreamCallContextRegistry
 import com.lagradost.cloudstream3.utils.DataStore
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import com.lagradost.cloudstream3.utils.DataStoreHelper
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -85,49 +93,6 @@ class CloudStreamRuntimeAbiTest {
     }
 
     @Test
-    fun cloudflareInteractivePlaybackScopeExcludesHomeAndSearchRequests() = runBlocking {
-        val homeStarted = CompletableDeferred<Unit>()
-        val finishHome = CompletableDeferred<Unit>()
-        val playbackStarted = CompletableDeferred<Unit>()
-        val finishPlayback = CompletableDeferred<Unit>()
-        val homeDuringPlaybackStarted = CompletableDeferred<Unit>()
-
-        val home = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("home-catalog", allowInteractiveVerification = false) {
-                homeStarted.complete(Unit)
-                finishHome.await()
-            }
-        }
-        homeStarted.await()
-
-        val playback = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("player-load-links", allowInteractiveVerification = true) {
-                playbackStarted.complete(Unit)
-                finishPlayback.await()
-            }
-        }
-        delay(50)
-        assertFalse("Playback must wait for an active Home provider request", playbackStarted.isCompleted)
-
-        finishHome.complete(Unit)
-        playbackStarted.await()
-
-        val homeDuringPlayback = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("home-refresh", allowInteractiveVerification = false) {
-                homeDuringPlaybackStarted.complete(Unit)
-            }
-        }
-        delay(50)
-        assertFalse("Home requests must not enter while playback may show Cloudflare UI", homeDuringPlaybackStarted.isCompleted)
-
-        finishPlayback.complete(Unit)
-        playback.await()
-        homeDuringPlayback.await()
-        home.await()
-        assertTrue(homeDuringPlaybackStarted.isCompleted)
-    }
-
-    @Test
     fun dataStoreExposesExpectedExtensionMethods() {
         val type = DataStore::class.java
         assertNotNull(type.getMethod("getDefaultSharedPrefs", android.content.Context::class.java))
@@ -140,5 +105,63 @@ class CloudStreamRuntimeAbiTest {
     fun pluginManagerOnlineAndLocalCollectionsAreSafeWhenEmpty() {
         assertTrue(PluginManager.pluginsOnline.isEmpty())
         assertTrue(PluginManager.pluginsLocal.isEmpty())
+    }
+
+    @Test
+    fun cloudflarePermissionIsCapturedPerOkHttpCallAcrossDispatcherThreads() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.start()
+        try {
+            val observed = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+            val client = OkHttpClient.Builder()
+                .eventListenerFactory(CloudStreamCallContextRegistry.eventListenerFactory())
+                .addInterceptor { chain ->
+                    val label = chain.request().header("X-Test-Call")!!
+                    observed[label] = CloudflareKiller.isInteractiveVerificationAllowed(chain.call())
+                    chain.proceed(chain.request())
+                }
+                .build()
+
+            suspend fun request(label: String, allowInteractiveVerification: Boolean) {
+                CloudflareKiller.withRequestContext(
+                    pluginId = label,
+                    allowInteractiveVerification = allowInteractiveVerification,
+                ) {
+                    val call = client.newCall(
+                        Request.Builder()
+                            .url(server.url("/$label"))
+                            .header("X-Test-Call", label)
+                            .build(),
+                    )
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        continuation.invokeOnCancellation { call.cancel() }
+                        call.enqueue(object : Callback {
+                            override fun onFailure(call: Call, error: java.io.IOException) {
+                                continuation.resumeWith(Result.failure(error))
+                            }
+
+                            override fun onResponse(call: Call, response: Response) {
+                                response.close()
+                                continuation.resumeWith(Result.success(Unit))
+                            }
+                        })
+                    }
+                }
+            }
+
+            coroutineScope {
+                listOf(
+                    async { request("home", allowInteractiveVerification = false) },
+                    async { request("playback", allowInteractiveVerification = true) },
+                ).awaitAll()
+            }
+
+            assertEquals(false, observed["home"])
+            assertEquals(true, observed["playback"])
+        } finally {
+            server.shutdown()
+        }
     }
 }

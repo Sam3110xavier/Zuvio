@@ -11,13 +11,10 @@ import com.lagradost.nicehttp.Requests.Companion.await
 import com.lagradost.nicehttp.cookies
 import java.net.URI
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withLock
 import okhttp3.Headers
 import okhttp3.Headers.Companion.toHeaders
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
@@ -25,13 +22,14 @@ import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
+import java.io.IOException
 
 
 /**
- * Request ownership is propagated from the CloudStream runtime into plugin HTTP
- * interceptors. Interactive anti-bot UI is permitted only while a user-requested
- * stream extraction is running.
+ * NiceHttp creates each OkHttp Call synchronously on the plugin coroutine, then executes
+ * its interceptors on OkHttp dispatcher threads. Capture the coroutine context at Call
+ * creation time with EventListener.Factory so the interceptor can authorize that exact
+ * Call instead of consulting process-wide playback state.
  */
 private data class CloudStreamRequestContext(
     val pluginId: String,
@@ -40,21 +38,36 @@ private data class CloudStreamRequestContext(
 
 private val cloudStreamRequestContext = ThreadLocal<CloudStreamRequestContext?>()
 
-// OkHttp's enqueue() dispatches interceptors on its own worker threads, so a
-// coroutine ThreadLocal cannot authorize the actual network callback reliably.
-// Keep only the lifetime of an explicit playback-link-resolution operation here.
-private const val CLOUDSTREAM_OPERATION_PERMITS = 32
-
-// Provider catalogue/search/load calls may run concurrently, but an explicit playback
-// link-resolution operation takes every permit. That prevents an unrelated Home request
-// from inheriting playback's permission to open Cloudflare's interactive WebView.
-private val cloudStreamOperationGate = Semaphore(CLOUDSTREAM_OPERATION_PERMITS)
-private val interactiveOperationMutex = Mutex()
-private val interactiveWaiters = MutableStateFlow(0)
-private val interactivePlaybackScopes = AtomicInteger(0)
 private val interactiveChallengeInProgress = AtomicBoolean(false)
 private val recentInteractiveChallenges = ConcurrentHashMap<String, Long>()
 private const val INTERACTIVE_CHALLENGE_COOLDOWN_MS = 60_000L
+
+/**
+ * Context hand-off from NiceHttp's call-creation thread to the OkHttp interceptor thread.
+ * The EventListener is created by OkHttpClient.newCall(), before enqueue()/execute() moves
+ * interceptor execution to a dispatcher thread. Each Call gets its own immutable context.
+ */
+internal object CloudStreamCallContextRegistry {
+    private val contexts = ConcurrentHashMap<Call, CloudStreamRequestContext>()
+
+    fun eventListenerFactory(): EventListener.Factory = EventListener.Factory { call ->
+        cloudStreamRequestContext.get()?.let { contexts[call] = it }
+        object : EventListener() {
+            override fun callEnd(call: Call) {
+                contexts.remove(call)
+            }
+
+            override fun callFailed(call: Call, ioe: IOException) {
+                contexts.remove(call)
+            }
+        }
+    }
+
+    fun isInteractiveVerificationAllowed(call: Call): Boolean =
+        contexts[call]?.allowInteractiveVerification == true
+
+    fun pluginId(call: Call): String? = contexts[call]?.pluginId
+}
 
 private val DEFAULT_HEADERS = mapOf("user-agent" to USER_AGENT)
 
@@ -90,9 +103,10 @@ class CloudflareKiller : Interceptor {
         private val cloudflareServers = setOf("cloudflare-nginx", "cloudflare")
 
         /**
-         * Run one plugin callback with its identity and operation purpose attached
-         * to the coroutine's worker threads. The context is restored automatically
-         * when nested/concurrent plugin calls complete.
+         * Attach operation purpose to the coroutine that creates each NiceHttp Call.
+         * OkHttp's EventListener.Factory snapshots this context into the Call itself,
+         * so interceptor execution on dispatcher threads does not depend on ThreadLocal
+         * propagation or a process-wide playback counter.
          */
         suspend fun <T> withRequestContext(
             pluginId: String?,
@@ -103,76 +117,16 @@ class CloudflareKiller : Interceptor {
                 pluginId = pluginId?.takeIf(String::isNotBlank) ?: "unknown-plugin",
                 allowInteractiveVerification = allowInteractiveVerification,
             )
-            return if (allowInteractiveVerification) {
-                withExclusivePlaybackOperation {
-                    interactivePlaybackScopes.incrementAndGet()
-                    try {
-                        withContext(cloudStreamRequestContext.asContextElement(context)) {
-                            block()
-                        }
-                    } finally {
-                        interactivePlaybackScopes.decrementAndGet()
-                    }
-                }
-            } else {
-                withNonInteractiveOperation {
-                    withContext(cloudStreamRequestContext.asContextElement(context)) {
-                        block()
-                    }
-                }
-            }
-        }
-
-        /**
-     * Ordinary CloudStream work shares permits, preserving parallel catalogue loading.
-     * If an interactive playback scope is waiting, new ordinary work waits rather than
-     * starving playback. The post-acquire check closes the race with a newly queued writer.
-     */
-    private suspend fun <T> withNonInteractiveOperation(block: suspend () -> T): T {
-        while (true) {
-            if (interactiveWaiters.value > 0) {
-                interactiveWaiters.first { waiting -> waiting == 0 }
-                continue
-            }
-            cloudStreamOperationGate.acquire()
-            if (interactiveWaiters.value == 0) break
-            cloudStreamOperationGate.release()
-        }
-
-        return try {
-            block()
-        } finally {
-            cloudStreamOperationGate.release()
-        }
-    }
-
-    /**
-     * Playback link resolution is the only operation allowed to open Cloudflare's WebView.
-     * It waits for existing catalogue/search work to drain, then owns every permit until
-     * loadLinks returns. Only one such scope can acquire permits at a time.
-     */
-    private suspend fun <T> withExclusivePlaybackOperation(block: suspend () -> T): T =
-        interactiveOperationMutex.withLock {
-            interactiveWaiters.value = interactiveWaiters.value + 1
-            var acquiredPermits = 0
-            try {
-                repeat(CLOUDSTREAM_OPERATION_PERMITS) {
-                    cloudStreamOperationGate.acquire()
-                    acquiredPermits++
-                }
-            } catch (error: Throwable) {
-                repeat(acquiredPermits) { cloudStreamOperationGate.release() }
-                throw error
-            } finally {
-                interactiveWaiters.value = (interactiveWaiters.value - 1).coerceAtLeast(0)
-            }
-
-            try {
+            return withContext(cloudStreamRequestContext.asContextElement(context)) {
                 block()
-            } finally {
-                repeat(CLOUDSTREAM_OPERATION_PERMITS) { cloudStreamOperationGate.release() }
             }
         }
+
+        internal fun isInteractiveVerificationAllowed(call: Call): Boolean =
+            CloudStreamCallContextRegistry.isInteractiveVerificationAllowed(call)
+
+        internal fun requestPluginId(call: Call): String? =
+            CloudStreamCallContextRegistry.pluginId(call)
 
     fun parseCookieMap(cookie: String): Map<String, String> =
             cookie.split(';').mapNotNull { entry ->
@@ -203,12 +157,12 @@ class CloudflareKiller : Interceptor {
         if (response.header("Server") !in cloudflareServers || response.code !in errorCodes) {
             return@runBlocking response
         }
-        val requestContext = cloudStreamRequestContext.get()
-        if (interactivePlaybackScopes.get() <= 0) {
+        val requestContext = CloudStreamCallContextRegistry.pluginId(chain.call())
+        if (!CloudStreamCallContextRegistry.isInteractiveVerificationAllowed(chain.call())) {
             Log.i(
                 TAG,
-                "Deferring interactive Cloudflare verification outside active playback resolution " +
-                    "plugin=${requestContext?.pluginId ?: "unscoped"} host=${request.url.host}",
+                "Deferring interactive Cloudflare verification for non-playback request " +
+                    "plugin=${requestContext ?: "unscoped"} host=${request.url.host}",
             )
             return@runBlocking response
         }
@@ -240,7 +194,7 @@ class CloudflareKiller : Interceptor {
             Log.i(
                 TAG,
                 "Interactive Cloudflare verification allowed during playback resolution " +
-                    "plugin=${requestContext?.pluginId ?: "unscoped"} host=${request.url.host}",
+                    "plugin=${requestContext ?: "unscoped"} host=${request.url.host}",
             )
             response.close()
             bypassCloudflare(request)?.let {
