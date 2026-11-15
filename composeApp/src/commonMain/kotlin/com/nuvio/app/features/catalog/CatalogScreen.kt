@@ -376,9 +376,6 @@ fun CatalogScreen(
                         }
                     }
                 }
-                if (!showMergedSourceTabs || !showMergedTabs || uiState.mergedSourceTabs.isEmpty()) {
-                    mergedTabsHeightPx = 0
-                }
             }
         }
     }
