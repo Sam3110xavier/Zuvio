@@ -267,6 +267,13 @@ private fun MergedHomeRowEditorDialog(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Row title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 validationError?.let {
                     Text(
                         text = it,
@@ -282,13 +289,6 @@ private fun MergedHomeRowEditorDialog(
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
                     Text("Hide included source rows from Home")
                 }
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Row title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
                 Text("Display mode", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                 MergedChoiceRow("Unified carousel", displayMode == MergedHomeRowDisplayMode.UNIFIED_CAROUSEL) {
                     displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL
