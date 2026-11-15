@@ -13,10 +13,7 @@ import com.lagradost.cloudstream3.network.CloudStreamCallContextRegistry
 import com.lagradost.cloudstream3.utils.DataStore
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import com.lagradost.cloudstream3.utils.DataStoreHelper
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
