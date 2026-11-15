@@ -166,6 +166,7 @@ fun HomeScreen(
     }
     val homeUiState by HomeRepository.uiState.collectAsStateWithLifecycle()
     HomeHeroMetaLoadEffect(homeUiState.heroItems)
+    val homeHeroState = rememberHomeHeroState(homeUiState.heroItems)
     val homeSettingsUiState by remember {
         HomeCatalogSettingsRepository.snapshot()
         HomeCatalogSettingsRepository.uiState
@@ -1075,7 +1076,6 @@ fun HomeScreen(
             ) {
                 if (showHeroSlot) {
                     item(key = "home_hero", contentType = "hero") {
-                        val homeHeroState = rememberHomeHeroState(homeUiState.heroItems)
                         Crossfade(
                             targetState = showHeroSkeleton,
                             modifier = Modifier.nuvioHorizontalScrollBleed(LocalVerticalBarPadding.current),
