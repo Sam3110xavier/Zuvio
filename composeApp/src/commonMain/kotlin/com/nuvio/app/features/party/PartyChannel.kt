@@ -58,10 +58,11 @@ internal class PartyChannel(
         created.subscribe(blockUntilSubscribed = false)
     }
 
-    suspend fun send(event: String, payload: JsonObject) {
-        val current = channel ?: return
-        if (current.status.value != RealtimeChannel.Status.SUBSCRIBED) return
+    suspend fun send(event: String, payload: JsonObject): Boolean {
+        val current = channel ?: return false
+        if (current.status.value != RealtimeChannel.Status.SUBSCRIBED) return false
         current.broadcast(event, payload)
+        return true
     }
 
     suspend fun track(payload: JsonObject) {

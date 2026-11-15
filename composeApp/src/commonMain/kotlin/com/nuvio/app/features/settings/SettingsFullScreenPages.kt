@@ -28,6 +28,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_continue_watch
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
+import nuvio.composeapp.generated.resources.compose_settings_page_cloudstream
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -80,6 +81,8 @@ fun HomescreenSettingsScreen(
             showCatalogType = homescreenSettingsUiState.showCatalogType,
             hideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
             items = homescreenSettingsUiState.items,
+            addonGroups = homescreenSettingsUiState.addonGroups,
+            addonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
             isCatalogLoading = addonManifestsLoading,
             catalogErrorMessage = addonManifestErrorMessage,
         )
@@ -189,6 +192,28 @@ fun PluginsSettingsScreen(
             )
         }
         pluginsSettingsContent()
+    }
+}
+
+@Composable
+fun CloudStreamSettingsScreen(
+    onBack: () -> Unit,
+) {
+    if (!AppFeaturePolicy.pluginsEnabled) {
+        AddonsSettingsScreen(onBack = onBack)
+        return
+    }
+
+    NuvioScreen(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        stickyHeader {
+            NuvioScreenHeader(
+                title = stringResource(Res.string.compose_settings_page_cloudstream),
+                onBack = onBack,
+            )
+        }
+        cloudStreamSettingsContent()
     }
 }
 

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Nuvio" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">#F5F5F5</item>
+        <item name="colorPrimaryDark">#E0E0E0</item>
+        <item name="colorPrimaryVariant">#E0E0E0</item>
+        <item name="colorOnPrimary">#111111</item>
+        <item name="colorSecondary">#F5F5F5</item>
+        <item name="colorSecondaryVariant">#E0E0E0</item>
+        <item name="colorOnSecondary">#111111</item>
+        <item name="colorSurface">#1A1A1A</item>
+        <item name="colorOnSurface">#F5F7F8</item>
+        <item name="colorOnBackground">#F5F7F8</item>
+        <item name="android:colorAccent">#F5F5F5</item>
+        <item name="android:colorBackground">@color/nuvio_background</item>
+        <item name="android:windowBackground">@color/nuvio_background</item>
+        <item name="android:statusBarColor">@color/nuvio_background</item>
+        <item name="android:navigationBarColor">@color/nuvio_background</item>
+    </style>
+
+    <style name="Theme.Nuvio.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/nuvio_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Nuvio</item>
+    </style>
+
+    <style name="Theme.Nuvio.Splash.ArcticBlue" parent="@style/Theme.Nuvio.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo_arctic_blue</item>
+    </style>
+    <style name="Theme.Nuvio.Splash.Emerald" parent="@style/Theme.Nuvio.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo_emerald</item>
+    </style>
+    <style name="Theme.Nuvio.Splash.RoseGold" parent="@style/Theme.Nuvio.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo_rose_gold</item>
+    </style>
+    <style name="Theme.Nuvio.Splash.Copper" parent="@style/Theme.Nuvio.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo_copper</item>
+    </style>
+    <style name="Theme.Nuvio.Splash.Graphite" parent="@style/Theme.Nuvio.Splash">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo_graphite</item>
+    </style>
+</resources>

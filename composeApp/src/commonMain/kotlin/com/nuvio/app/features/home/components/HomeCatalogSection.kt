@@ -1,14 +1,37 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioShelfSection
+import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.PosterRowImagePrefetchEffect
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -28,6 +51,9 @@ fun HomeCatalogRowSection(
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    selectedTabKey: String? = null,
+    onTabSelected: ((String) -> Unit)? = null,
+    showTabSelector: Boolean = true,
 ) {
     if (sectionPadding != null) {
         HomeCatalogRowSectionContent(
@@ -40,6 +66,9 @@ fun HomeCatalogRowSection(
             onViewAllClick = onViewAllClick,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
+            selectedTabKey = selectedTabKey,
+            onTabSelected = onTabSelected,
+            showTabSelector = showTabSelector,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -53,6 +82,9 @@ fun HomeCatalogRowSection(
                 onViewAllClick = onViewAllClick,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
+                selectedTabKey = selectedTabKey,
+                onTabSelected = onTabSelected,
+                showTabSelector = showTabSelector,
             )
         }
     }
@@ -69,38 +101,137 @@ private fun HomeCatalogRowSectionContent(
     onViewAllClick: (() -> Unit)?,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
+    selectedTabKey: String?,
+    onTabSelected: ((String) -> Unit)?,
+    showTabSelector: Boolean,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
+    val netflixStyleEnabled = posterCardStyle.netflixStyleEnabled
+    val catalogPosterStyle = remember(posterCardStyle, netflixStyleEnabled) {
+        if (!netflixStyleEnabled) {
+            posterCardStyle
+        } else {
+            val width = maxOf(posterCardStyle.widthDp, NETFLIX_HOME_POSTER_WIDTH_DP)
+            posterCardStyle.copy(
+                widthDp = width,
+                heightDp = (width * 3) / 2,
+                cornerRadiusDp = minOf(posterCardStyle.cornerRadiusDp, 8),
+                catalogLandscapeModeEnabled = false,
+            )
+        }
+    }
+    val isTopTenShelf = remember(section.title) {
+        section.title.contains("top 10", ignoreCase = true) ||
+            section.title.contains("top ten", ignoreCase = true)
+    }
+    var internalSelectedTabKey by remember(section.key) { mutableStateOf("all") }
+    val activeSelectedTabKey = selectedTabKey ?: internalSelectedTabKey
+    val selectedTab = section.sourceTabs.firstOrNull { it.key == activeSelectedTabKey }
+        ?: section.sourceTabs.firstOrNull()
+    val previewEntryKeys = remember(entries) { entries.mapTo(hashSetOf()) { it.stableKey() } }
+    val visibleEntries = remember(selectedTab, previewEntryKeys, entries) {
+        (selectedTab?.items ?: entries).filter { item -> item.stableKey() in previewEntryKeys }
+    }
     val rowState = rememberLazyListState()
-    val prefetchTargets = remember(entries, posterCardStyle) {
-        entries.map { item ->
-            item.homePosterImages(posterCardStyle, useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled)
-                .toPrefetchTarget()
+    LaunchedEffect(activeSelectedTabKey) {
+        rowState.scrollToItem(0)
+    }
+    val prefetchTargets = remember(visibleEntries, catalogPosterStyle) {
+        visibleEntries.map { item ->
+            item.homePosterImages(
+                catalogPosterStyle,
+                useLandscapeBackdropMode = catalogPosterStyle.catalogLandscapeModeEnabled,
+            ).toPrefetchTarget()
         }
     }
     PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
 
-    NuvioShelfSection(
-        title = section.title,
-        entries = entries,
-        modifier = modifier,
-        headerHorizontalPadding = sectionPadding,
-        rowContentPadding = PaddingValues(horizontal = sectionPadding),
-        onViewAllClick = onViewAllClick,
-        viewAllPillSize = NuvioViewAllPillSize.Compact,
-        key = { item -> item.stableKey() },
-        state = rowState,
-    ) { item ->
-        HomePosterCard(
-            item = item,
-            useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled,
-            isWatched = WatchingState.isPosterWatched(
-                watchedKeys = watchedKeys,
-                item = item,
-                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
-            ),
-            onClick = onPosterClick?.let { { it(item) } },
-            onLongClick = onPosterLongClick?.let { { it(item) } },
-        )
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (showTabSelector && section.sourceTabs.size > 1) {
+            MergedHomeRowTabSelector(
+                tabs = section.sourceTabs,
+                selectedTabKey = selectedTab?.key,
+                sectionPadding = sectionPadding,
+                onTabSelected = { key ->
+                    if (onTabSelected != null) onTabSelected(key) else internalSelectedTabKey = key
+                },
+            )
+        }
+
+        NuvioShelfSection(
+            title = section.title,
+            entries = visibleEntries,
+            modifier = Modifier.fillMaxWidth(),
+            headerHorizontalPadding = sectionPadding,
+            rowContentPadding = PaddingValues(horizontal = sectionPadding),
+            onViewAllClick = onViewAllClick,
+            viewAllPillSize = NuvioViewAllPillSize.Compact,
+            key = { item -> item.stableKey() },
+            state = rowState,
+        ) { item ->
+            val rank = visibleEntries.indexOf(item) + 1
+            val poster = @Composable {
+                HomePosterCard(
+                    item = item,
+                    useLandscapeBackdropMode = catalogPosterStyle.catalogLandscapeModeEnabled,
+                    isWatched = WatchingState.isPosterWatched(
+                        watchedKeys = watchedKeys,
+                        item = item,
+                        fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                    ),
+                    posterCardStyleOverride = catalogPosterStyle,
+                    onClick = onPosterClick?.let { { it(item) } },
+                    onLongClick = onPosterLongClick?.let { { it(item) } },
+                )
+            }
+            if (netflixStyleEnabled && isTopTenShelf && rank in 1..10) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Box(
+                        modifier = Modifier
+                            .width(58.dp)
+                            .height(catalogPosterStyle.heightDp.dp),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
+                        Text(
+                            text = rank.toString(),
+                            color = Color(0xFF777777),
+                            fontSize = if (rank == 10) 76.sp else 100.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                        )
+                    }
+                    poster()
+                }
+            } else {
+                poster()
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun MergedHomeRowTabSelector(
+    tabs: List<com.nuvio.app.features.home.HomeCatalogTab>,
+    selectedTabKey: String?,
+    sectionPadding: Dp,
+    onTabSelected: (String) -> Unit,
+) {
+    if (tabs.size <= 1) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = sectionPadding, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        tabs.forEach { tab ->
+            FilterChip(
+                selected = selectedTabKey == tab.key,
+                onClick = { onTabSelected(tab.key) },
+                label = { Text(tab.title) },
+            )
+        }
     }
 }
