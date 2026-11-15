@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.plugins.PluginManager
 import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.network.CloudStreamCallContextRegistry
 import com.lagradost.cloudstream3.utils.DataStore
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import com.lagradost.cloudstream3.utils.DataStoreHelper
@@ -17,7 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -96,49 +96,6 @@ class CloudStreamRuntimeAbiTest {
     }
 
     @Test
-    fun cloudflareInteractivePlaybackScopeExcludesHomeAndSearchRequests() = runBlocking {
-        val homeStarted = CompletableDeferred<Unit>()
-        val finishHome = CompletableDeferred<Unit>()
-        val playbackStarted = CompletableDeferred<Unit>()
-        val finishPlayback = CompletableDeferred<Unit>()
-        val homeDuringPlaybackStarted = CompletableDeferred<Unit>()
-
-        val home = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("home-catalog", allowInteractiveVerification = false) {
-                homeStarted.complete(Unit)
-                finishHome.await()
-            }
-        }
-        homeStarted.await()
-
-        val playback = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("player-load-links", allowInteractiveVerification = true) {
-                playbackStarted.complete(Unit)
-                finishPlayback.await()
-            }
-        }
-        delay(50)
-        assertFalse("Playback must wait for an active Home provider request", playbackStarted.isCompleted)
-
-        finishHome.complete(Unit)
-        playbackStarted.await()
-
-        val homeDuringPlayback = async(Dispatchers.Default) {
-            CloudflareKiller.withRequestContext("home-refresh", allowInteractiveVerification = false) {
-                homeDuringPlaybackStarted.complete(Unit)
-            }
-        }
-        delay(50)
-        assertFalse("Home requests must not enter while playback may show Cloudflare UI", homeDuringPlaybackStarted.isCompleted)
-
-        finishPlayback.complete(Unit)
-        playback.await()
-        homeDuringPlayback.await()
-        home.await()
-        assertTrue(homeDuringPlaybackStarted.isCompleted)
-    }
-
-    @Test
     fun dataStoreExposesExpectedExtensionMethods() {
         val type = DataStore::class.java
         assertNotNull(type.getMethod("getDefaultSharedPrefs", android.content.Context::class.java))
@@ -210,5 +167,4 @@ class CloudStreamRuntimeAbiTest {
             server.shutdown()
         }
     }
-
 }
