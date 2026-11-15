@@ -172,7 +172,7 @@ internal fun buildLibraryVerticalProjection(
     } else {
         sections
     }
-    val selectedSection = if (selectSection) {
+    val selectedSection = if (sourceMode != LibrarySourceMode.LOCAL && selectSection) {
         availableSections.firstOrNull { it.type == selectedSectionKey } ?: availableSections.firstOrNull()
     } else {
         null
