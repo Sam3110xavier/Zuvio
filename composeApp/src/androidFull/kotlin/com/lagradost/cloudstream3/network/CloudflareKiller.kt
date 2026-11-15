@@ -11,6 +11,11 @@ import com.lagradost.nicehttp.Requests.Companion.await
 import com.lagradost.nicehttp.cookies
 import java.net.URI
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Headers
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.Interceptor
@@ -38,6 +43,14 @@ private val cloudStreamRequestContext = ThreadLocal<CloudStreamRequestContext?>(
 // OkHttp's enqueue() dispatches interceptors on its own worker threads, so a
 // coroutine ThreadLocal cannot authorize the actual network callback reliably.
 // Keep only the lifetime of an explicit playback-link-resolution operation here.
+private const val CLOUDSTREAM_OPERATION_PERMITS = 32
+
+// Provider catalogue/search/load calls may run concurrently, but an explicit playback
+// link-resolution operation takes every permit. That prevents an unrelated Home request
+// from inheriting playback's permission to open Cloudflare's interactive WebView.
+private val cloudStreamOperationGate = Semaphore(CLOUDSTREAM_OPERATION_PERMITS)
+private val interactiveOperationMutex = Mutex()
+private val interactiveWaiters = MutableStateFlow(0)
 private val interactivePlaybackScopes = AtomicInteger(0)
 private val interactiveChallengeInProgress = AtomicBoolean(false)
 private val recentInteractiveChallenges = ConcurrentHashMap<String, Long>()
@@ -90,21 +103,78 @@ class CloudflareKiller : Interceptor {
                 pluginId = pluginId?.takeIf(String::isNotBlank) ?: "unknown-plugin",
                 allowInteractiveVerification = allowInteractiveVerification,
             )
-            if (allowInteractiveVerification) {
-                interactivePlaybackScopes.incrementAndGet()
-            }
-            return try {
-                withContext(cloudStreamRequestContext.asContextElement(context)) {
-                    block()
+            return if (allowInteractiveVerification) {
+                withExclusivePlaybackOperation {
+                    interactivePlaybackScopes.incrementAndGet()
+                    try {
+                        withContext(cloudStreamRequestContext.asContextElement(context)) {
+                            block()
+                        }
+                    } finally {
+                        interactivePlaybackScopes.decrementAndGet()
+                    }
                 }
-            } finally {
-                if (allowInteractiveVerification) {
-                    interactivePlaybackScopes.decrementAndGet()
+            } else {
+                withNonInteractiveOperation {
+                    withContext(cloudStreamRequestContext.asContextElement(context)) {
+                        block()
+                    }
                 }
             }
         }
 
-        fun parseCookieMap(cookie: String): Map<String, String> =
+        /**
+     * Ordinary CloudStream work shares permits, preserving parallel catalogue loading.
+     * If an interactive playback scope is waiting, new ordinary work waits rather than
+     * starving playback. The post-acquire check closes the race with a newly queued writer.
+     */
+    private suspend fun <T> withNonInteractiveOperation(block: suspend () -> T): T {
+        while (true) {
+            if (interactiveWaiters.value > 0) {
+                interactiveWaiters.first { waiting -> waiting == 0 }
+                continue
+            }
+            cloudStreamOperationGate.acquire()
+            if (interactiveWaiters.value == 0) break
+            cloudStreamOperationGate.release()
+        }
+
+        return try {
+            block()
+        } finally {
+            cloudStreamOperationGate.release()
+        }
+    }
+
+    /**
+     * Playback link resolution is the only operation allowed to open Cloudflare's WebView.
+     * It waits for existing catalogue/search work to drain, then owns every permit until
+     * loadLinks returns. Only one such scope can acquire permits at a time.
+     */
+    private suspend fun <T> withExclusivePlaybackOperation(block: suspend () -> T): T =
+        interactiveOperationMutex.withLock {
+            interactiveWaiters.value = interactiveWaiters.value + 1
+            var acquiredPermits = 0
+            try {
+                repeat(CLOUDSTREAM_OPERATION_PERMITS) {
+                    cloudStreamOperationGate.acquire()
+                    acquiredPermits++
+                }
+            } catch (error: Throwable) {
+                repeat(acquiredPermits) { cloudStreamOperationGate.release() }
+                throw error
+            } finally {
+                interactiveWaiters.value = (interactiveWaiters.value - 1).coerceAtLeast(0)
+            }
+
+            try {
+                block()
+            } finally {
+                repeat(CLOUDSTREAM_OPERATION_PERMITS) { cloudStreamOperationGate.release() }
+            }
+        }
+
+    fun parseCookieMap(cookie: String): Map<String, String> =
             cookie.split(';').mapNotNull { entry ->
                 val separator = entry.indexOf('=')
                 if (separator <= 0) return@mapNotNull null
