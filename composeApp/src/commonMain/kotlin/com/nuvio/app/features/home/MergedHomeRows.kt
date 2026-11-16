@@ -479,7 +479,7 @@ private fun sortMergedItems(
 
 /**
  * Source names are presentation labels, not identifiers. Strip provider IDs and type suffixes,
- * then keep a short, recognisable 2–3 word label.
+ * preserve the complete human-readable catalog name.
  */
 internal fun cleanMergedSourceTabTitle(rawTitle: String): String {
     val raw = rawTitle.trim()
@@ -516,10 +516,7 @@ internal fun cleanMergedSourceTabTitle(rawTitle: String): String {
         cleaned.equals("anime", ignoreCase = true) && hasMixedType -> "Anime Mix"
         cleaned.equals("movieboxin", ignoreCase = true) -> "MovieBox"
         else -> cleaned
-    }.replace(
-        Regex("""\bfor you\b""", RegexOption.IGNORE_CASE),
-        " ",
-    ).replace(Regex("""\s+"""), " ").trim()
+    }.replace(Regex("""\s+"""), " ").trim()
 
     val words = canonical.split(' ')
         .filter {
@@ -527,5 +524,5 @@ internal fun cleanMergedSourceTabTitle(rawTitle: String): String {
                 it.lowercase() !in setOf("other", "movie", "movies", "series", "tv", "mixed", "catalog", "catalogs")
         }
     if (words.isEmpty()) return "Unnamed Source"
-    return words.take(3).joinToString(" ")
+    return words.joinToString(" ")
 }
