@@ -79,6 +79,24 @@ actual object AddonStorage {
             ?.putString("${addonEnabledStatesKey}_$profileId", payload)
             ?.apply()
     }
+
+    actual fun loadAddonCatalogHiddenStates(profileId: Int): Map<String, Boolean> =
+        preferences
+            ?.getString("${addonCatalogHiddenStatesKey}_$profileId", null)
+            .orEmpty()
+            .lineSequence()
+            .mapNotNull(::parseCatalogHiddenStateLine)
+            .toMap()
+
+    actual fun saveAddonCatalogHiddenStates(profileId: Int, states: Map<String, Boolean>) {
+        val payload = states.entries.joinToString(separator = "\n") { (url, hidden) ->
+            "$url\t$hidden"
+        }
+        preferences
+            ?.edit()
+            ?.putString("${addonCatalogHiddenStatesKey}_$profileId", payload)
+            ?.apply()
+    }
 }
 
 private fun parseEnabledStateLine(line: String): Pair<String, Boolean>? {
