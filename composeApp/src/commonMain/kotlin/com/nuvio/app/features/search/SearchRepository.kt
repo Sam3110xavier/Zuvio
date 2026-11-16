@@ -433,8 +433,7 @@ object SearchRepository {
         addons: List<ManagedAddon>,
         query: String,
     ): List<SearchCatalogRequest> =
-        addons.asSequence()
-            .filterNot { addon -> addon.hideCatalogs }
+        addons.filterNot { addon -> addon.hideCatalogs }
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
                 addon to manifest
@@ -453,11 +452,9 @@ object SearchRepository {
                         )
                     }
             }
-            .toList()
-
+ 
     private fun buildDiscoverSources(addons: List<ManagedAddon>): List<DiscoverCatalogOption> =
-        addons.asSequence()
-            .filterNot { addon -> addon.hideCatalogs }
+        addons.filterNot { addon -> addon.hideCatalogs }
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
                 addon to manifest
@@ -480,7 +477,6 @@ object SearchRepository {
                         )
                     }
             }
-            .toList()
 
     private suspend fun SearchCatalogRequest.toSection(forceRefresh: Boolean): HomeCatalogSection {
         val manifest = requireNotNull(addon.manifest)
