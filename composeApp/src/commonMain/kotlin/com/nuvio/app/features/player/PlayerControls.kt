@@ -115,8 +115,6 @@ import com.nuvio.app.core.ui.glass.isAmbientLiquidGlassActive
 @Composable
 internal fun PlayerControlsShell(
     title: String,
-    streamTitle: String,
-    providerName: String,
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
@@ -293,8 +291,6 @@ internal fun PlayerControlsShell(
                     badges = badges,
                     releaseInfo = releaseInfo,
                     animeEnhancement = playbackSnapshot.animeEnhancement,
-                    streamTitle = streamTitle,
-                    providerName = providerName,
                     seasonNumber = seasonNumber,
                     episodeNumber = episodeNumber,
                     episodeTitle = episodeTitle,
@@ -596,32 +592,6 @@ private fun PlayerHeader(
                         titleFontWeight = FontWeight.Bold,
                         horizontalContentPadding = 0.dp,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = streamTitle,
-                            style = typeScale.labelSm.copy(
-                                fontSize = metrics.metadataSize,
-                                lineHeight = metrics.metadataSize * 1.25f,
-                            ),
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = providerName,
-                            style = typeScale.labelSm.copy(
-                                fontSize = metrics.metadataSize,
-                                lineHeight = metrics.metadataSize * 1.25f,
-                                fontStyle = FontStyle.Italic,
-                            ),
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
                 ParentalGuideOverlay(
                     warnings = parentalWarnings,
