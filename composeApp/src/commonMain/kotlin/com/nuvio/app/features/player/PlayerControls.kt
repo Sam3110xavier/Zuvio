@@ -588,6 +588,7 @@ private fun PlayerHeader(
                         titleFontWeight = FontWeight.Bold,
                         horizontalContentPadding = 0.dp,
                         titleLogoMaxHeight = metrics.titleLogoMaxHeight,
+                        contentSpacing = 6.dp,
                     )
                 }
                 ParentalGuideOverlay(
