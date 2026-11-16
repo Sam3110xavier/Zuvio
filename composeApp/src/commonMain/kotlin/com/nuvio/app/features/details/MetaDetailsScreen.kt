@@ -113,6 +113,9 @@ import com.nuvio.app.core.ui.glass.LocalLiquidGlassBackdrop
 import com.nuvio.app.core.ui.glass.nuvioBackdropSource
 import com.nuvio.app.core.ui.glass.rememberNuvioBackdrop
 import com.nuvio.app.features.downloads.DownloadsSettingsRepository
+import com.nuvio.app.features.downloads.DownloadsRepository
+import com.nuvio.app.features.downloads.EpisodeDownloadIndex
+import com.nuvio.app.features.downloads.DownloadItem
 import com.nuvio.app.features.details.components.DetailActions
 import com.nuvio.app.features.details.components.CommentDetailSheet
 import com.nuvio.app.features.details.components.DetailAdditionalInfoSection
@@ -305,6 +308,10 @@ fun MetaDetailsScreen(
     val cinematicArtworkBackdrop = rememberNuvioBackdrop()
     val cinematicContentBackdrop = rememberNuvioBackdrop()
     var selectedSeasonForActions by remember(type, id) { mutableStateOf<Int?>(null) }
+    val downloadsUiState by DownloadsRepository.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(meta.id) {
+        DownloadsRepository.ensureLoaded()
+    }
     var userRatingSheetRequest by remember(type, id) { mutableStateOf<UserRatingSheetRequest?>(null) }
     val commentsEnabled by remember {
         TraktCommentsSettings.ensureLoaded()
@@ -1148,6 +1155,12 @@ fun MetaDetailsScreen(
                 }
                 val listState = rememberLazyListState()
                 val episodeNavigator = rememberEpisodeNavigatorState(meta.id)
+                val episodeDownloadIndex = remember(meta.id, downloadsUiState.items) {
+                    EpisodeDownloadIndex.build(downloadsUiState.items, meta.id)
+                }
+                val episodeDownloadFor: (MetaVideo) -> DownloadItem? = { episode ->
+                    episodeDownloadIndex.find(episode.season, episode.episode, episode.id)
+                }
                 val heroStretchState = rememberHeroStretchState(listState)
                 val density = LocalDensity.current
                 val safeAreaTopPx = with(density) {
@@ -2389,6 +2402,7 @@ private fun LazyListScope.configuredMetaSectionItems(
             onEpisodeClick = onEpisodeClick,
             onEpisodeLongPress = onEpisodeLongPress,
             onSeasonLongPress = onSeasonLongPress,
+            episodeDownloadFor = episodeDownloadFor,
         )
         emittedItemCount += emitted
         return emitted > 0
@@ -2660,6 +2674,9 @@ private fun ConfiguredMetaSections(
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeLongPress = onEpisodeLongPress,
                         onSeasonLongPress = onSeasonLongPress,
+                        episodeDownloadFor = episodeDownloadFor,
+                        selectedSeason = episodeNavigator.selectedSeason,
+                        onSeasonSelected = episodeNavigator::selectSeason,
                     )
                 }
             }
