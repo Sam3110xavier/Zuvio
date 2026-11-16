@@ -1007,7 +1007,13 @@ private fun TabletSettingsScreen(
     val sidebarTopOffset = if (isCompactHeight) max(statusBarPadding + 12.dp, 24.dp) else topOffset
 
     LaunchedEffect(page) {
-        if (page.opensInlineOnTablet) {
+        if (page == SettingsPage.NuvioReshaped) {
+            // The Reshaped settings are a compact/mobile-only destination.
+            // If a stale navigation state opens it in the tablet/landscape layout,
+            // return to the normal settings root instead.
+            selectedCategory = SettingsCategory.Look.name
+            onPageChange(SettingsPage.Root)
+        } else if (page.opensInlineOnTablet) {
             selectedCategory = page.category.name
         }
     }
@@ -1047,7 +1053,9 @@ private fun TabletSettingsScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 Spacer(modifier = Modifier.height(10.dp))
-                SettingsCategory.entries.forEach { category ->
+                SettingsCategory.entries
+                    .filter { it != SettingsCategory.Reshaped }
+                    .forEach { category ->
                     SettingsSidebarItem(
                         label = stringResource(category.labelRes),
                         icon = category.icon,
