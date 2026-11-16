@@ -41,7 +41,6 @@ data class HomeCatalogSettingsItem(
 
 enum class HomeCatalogRowPlacement(val storageValue: String) {
     NORMAL("normal"),
-    PINNED_POSITION("pinned_position"),
     PINNED_TOP("pinned_top"),
     PINNED_BOTTOM("pinned_bottom");
 
@@ -559,10 +558,6 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         val current = preferences[key] ?: defaultPreferenceForMissingKey(key) ?: return
         if (current.rowPlacement == placement.storageValue) return
-        if (placement == HomeCatalogRowPlacement.PINNED_POSITION) {
-            val visibleKeys = _uiState.value.items.map { it.key }
-            if (key in visibleKeys) persistVisibleOrder(visibleKeys)
-        }
         updatePreference(key) { preference ->
             preference.copy(rowPlacement = placement.storageValue)
         }
@@ -968,7 +963,7 @@ object HomeCatalogSettingsRepository {
         val start = minOf(fromIndex, toIndex)
         val end = maxOf(fromIndex, toIndex)
         if (groupItems.subList(start, end + 1).any { item ->
-            item.rowPlacement == HomeCatalogRowPlacement.PINNED_POSITION || pinSection(item) != fromSection
+            pinSection(item) != fromSection
         }) return
 
         val reorderedGroup = groupItems.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
@@ -1005,8 +1000,7 @@ object HomeCatalogSettingsRepository {
         // A position-pinned row is an anchor, not merely an unpinned row that
         // avoids add-on grouping. Do not move it or let another row cross it.
         val crossedPinnedBoundary = items.subList(start, end + 1).any { item ->
-            item.rowPlacement == HomeCatalogRowPlacement.PINNED_POSITION ||
-                pinSection(item) != fromPinSection
+            pinSection(item) != fromPinSection
         }
         if (crossedPinnedBoundary) return
         val orderedKeys = items.map { it.key }.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }

@@ -256,46 +256,6 @@ class HomeAddonLayoutTest {
     }
 
     @Test
-    fun `pin-at-position rows stay independent of add-on ordering`() {
-        val items = listOf(
-            settingItem("A", "one", 0),
-            settingItem("C", "one", 1),
-            settingItem("B", "one", 2),
-            settingItem("C", "two", 3).copy(rowPlacement = HomeCatalogRowPlacement.PINNED_POSITION),
-            settingItem("D", "one", 4),
-            settingItem("C", "new", 5),
-        )
-        val addonIds = items.filterNot { it.isCollection }
-            .associate { it.key to it.key.substringBefore(":movie:") }
-        val layouts = mapOf("C" to HomeAddonLayoutPreference(
-            mode = HomeAddonLayoutMode.PINNED_BOTTOM,
-            order = 1,
-            anchorOrder = 1,
-        ))
-        val expected = listOf("A:one", "C:one", "C:new", "B:one", "C:two", "D:one")
-
-        assertEquals(expected, orderHomeCatalogSettingsItems(items, addonIds, layouts).map(::settingLabel))
-
-        val definitions = listOf(
-            definition("A", "one"),
-            definition("C", "one"),
-            definition("B", "one"),
-            definition("C", "two"),
-            definition("D", "one"),
-            definition("C", "new"),
-        )
-        val baseState = snapshot(definitions, layouts = layouts)
-        val state = baseState.copy(
-            preferences = baseState.preferences + (
-                "C:movie:two" to baseState.preferences.getValue("C:movie:two").copy(
-                    rowPlacement = HomeCatalogRowPlacement.PINNED_POSITION,
-                )
-            ),
-        )
-        assertEquals(expected, orderHomeCatalogDefinitions(definitions, state).map(::label))
-    }
-
-    @Test
     fun `pinned top and bottom rows can each be reordered without changing normal rows`() {
         val items = listOf(
             settingItem("A", "top-one", 0).copy(rowPlacement = HomeCatalogRowPlacement.PINNED_TOP),

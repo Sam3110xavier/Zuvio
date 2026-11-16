@@ -46,7 +46,6 @@ internal enum class SettingsCategory(
     val labelRes: StringResource,
     val icon: ImageVector,
 ) {
-    Reshaped(Res.string.settings_group_reshaped, Icons.Default.AutoAwesome),
     You(Res.string.settings_group_you, Icons.Default.Person),
     Look(Res.string.settings_group_look, Icons.Default.Palette),
     Watch(Res.string.settings_group_watch, Icons.Rounded.PlayArrow),
@@ -63,11 +62,6 @@ internal enum class SettingsPage(
         titleRes = Res.string.compose_settings_page_root,
         category = SettingsCategory.Look,
         parentPage = null,
-    ),
-    NuvioReshaped(
-        titleRes = Res.string.settings_nuvio_reshaped_title,
-        category = SettingsCategory.Reshaped,
-        parentPage = Root,
     ),
     Layout(
         titleRes = Res.string.compose_settings_page_layout,
@@ -295,14 +289,12 @@ internal fun settingsCategoryForName(name: String): SettingsCategory = when (nam
     "Account" -> SettingsCategory.You
     "General" -> SettingsCategory.Look
     "About", "Advanced" -> SettingsCategory.System
-    "Reshaped" -> SettingsCategory.Reshaped
     else -> SettingsCategory.entries.firstOrNull { it.name == name } ?: SettingsCategory.Look
 }
 
 internal val SettingsPage.icon: ImageVector
     get() = when (this) {
         SettingsPage.Root -> Icons.Rounded.Settings
-        SettingsPage.NuvioReshaped -> Icons.Default.AutoAwesome
         SettingsPage.Account -> Icons.Default.Person
         SettingsPage.SupportersContributors -> Icons.Default.Favorite
         SettingsPage.LicensesAttributions -> Icons.Default.Info

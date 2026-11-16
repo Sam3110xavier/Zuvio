@@ -84,6 +84,8 @@ object AddonRepository {
         val storedUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(profileId))
         val enabledByUrl = AddonStorage.loadAddonEnabledStates(profileId)
             .mapKeys { (url, _) -> ensureManifestSuffix(url) }
+        val hiddenCatalogsByUrl = AddonStorage.loadAddonCatalogHiddenStates(profileId)
+            .mapKeys { (url, _) -> ensureManifestSuffix(url) }
         val existingByUrl = synchronized(activeRefreshJobsLock) {
             if (!isProfileGenerationCurrentLocked(profileId, generation)) return
             _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
@@ -92,6 +94,7 @@ object AddonRepository {
             existingByUrl[manifestUrl].toPendingAddon(
                 manifestUrl = manifestUrl,
                 enabled = enabledByUrl[manifestUrl],
+                hideCatalogs = hiddenCatalogsByUrl[manifestUrl],
             )
         }
         val applied = synchronized(activeRefreshJobsLock) {
@@ -207,12 +210,14 @@ object AddonRepository {
                 if (localUrls.isNotEmpty()) {
                     log.w { "pullFromServer() — remote empty while local has ${localUrls.size} addons; preserving local addons" }
                     val enabledByUrl = loadLocalEnabledStates()
+                    val hiddenCatalogsByUrl = loadLocalCatalogHiddenStates()
                     val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
                     _uiState.value = AddonsUiState(
                         addons = localUrls.map { url ->
                             existingByUrl[url].toPendingAddon(
                                 manifestUrl = url,
                                 enabled = enabledByUrl[url],
+                                hideCatalogs = hiddenCatalogsByUrl[url],
                             )
                         },
                     )
@@ -230,6 +235,7 @@ object AddonRepository {
                 }
             }
 
+            val hiddenCatalogsByUrl = loadLocalCatalogHiddenStates()
             val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
             _uiState.value = AddonsUiState(
                 addons = urls.map { url ->
@@ -238,6 +244,7 @@ object AddonRepository {
                         manifestUrl = url,
                         userSetName = row?.name?.takeIf { it.isNotBlank() },
                         enabled = row?.enabled,
+                        hideCatalogs = hiddenCatalogsByUrl[url],
                     )
                 },
             )
@@ -406,6 +413,29 @@ object AddonRepository {
         if (shouldRefresh) {
             refreshAddon(manifestUrl)
         }
+    }
+
+    fun setAddonHideCatalogs(manifestUrl: String, hideCatalogs: Boolean) {
+        if (isUsingPrimaryAddonsFromSecondaryProfile()) return
+
+        var changed = false
+        _uiState.update { current ->
+            current.copy(
+                addons = current.addons.map { addon ->
+                    if (
+                        addon.manifestUrl != manifestUrl ||
+                        !addon.enabled ||
+                        addon.hideCatalogs == hideCatalogs
+                    ) {
+                        addon
+                    } else {
+                        changed = true
+                        addon.copy(hideCatalogs = hideCatalogs)
+                    }
+                },
+            )
+        }
+        if (changed) persist()
     }
 
     fun refreshAll() {
@@ -591,10 +621,18 @@ object AddonRepository {
             currentProfileId,
             addons.associate { it.manifestUrl to it.enabled },
         )
+        AddonStorage.saveAddonCatalogHiddenStates(
+            currentProfileId,
+            addons.associate { it.manifestUrl to it.hideCatalogs },
+        )
     }
 
     private fun loadLocalEnabledStates(): Map<String, Boolean> =
         AddonStorage.loadAddonEnabledStates(currentProfileId)
+            .mapKeys { (url, _) -> ensureManifestSuffix(url) }
+
+    private fun loadLocalCatalogHiddenStates(): Map<String, Boolean> =
+        AddonStorage.loadAddonCatalogHiddenStates(currentProfileId)
             .mapKeys { (url, _) -> ensureManifestSuffix(url) }
 
     private fun activateProfile(profileId: Int, forceReset: Boolean = false): List<Job> =
@@ -635,6 +673,7 @@ private fun ManagedAddon?.toPendingAddon(
     manifestUrl: String,
     userSetName: String? = null,
     enabled: Boolean? = null,
+    hideCatalogs: Boolean? = null,
 ): ManagedAddon =
     when {
         this == null -> ManagedAddon(
@@ -642,17 +681,20 @@ private fun ManagedAddon?.toPendingAddon(
             isRefreshing = enabled ?: true,
             userSetName = userSetName,
             enabled = enabled ?: true,
+            hideCatalogs = hideCatalogs ?: false,
         )
         manifest != null -> copy(
             manifestUrl = manifestUrl,
             isRefreshing = false,
             userSetName = userSetName ?: this.userSetName,
             enabled = enabled ?: this.enabled,
+            hideCatalogs = hideCatalogs ?: this.hideCatalogs,
         )
         isRefreshing -> copy(
             manifestUrl = manifestUrl,
             userSetName = userSetName ?: this.userSetName,
             enabled = enabled ?: this.enabled,
+            hideCatalogs = hideCatalogs ?: this.hideCatalogs,
         )
         else -> copy(
             manifestUrl = manifestUrl,
@@ -660,6 +702,7 @@ private fun ManagedAddon?.toPendingAddon(
             errorMessage = null,
             userSetName = userSetName ?: this.userSetName,
             enabled = enabled ?: this.enabled,
+            hideCatalogs = hideCatalogs ?: this.hideCatalogs,
         )
     }
 

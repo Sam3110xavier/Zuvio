@@ -31,6 +31,20 @@ class HomeCatalogDefinitionTest {
         assertEquals("Popular", definition.titleFor(showCatalogType = false))
     }
 
+
+    @Test
+    fun `hide catalogs changes the home catalog refresh signature`() {
+        val addon = ManagedAddon(
+            manifestUrl = "https://example.test/manifest.json",
+            enabled = true,
+        )
+
+        val visibleSignature = buildAddonCatalogRefreshSignature(listOf(addon))
+        val hiddenSignature = buildAddonCatalogRefreshSignature(listOf(addon.copy(hideCatalogs = true)))
+
+        assertNotEquals(visibleSignature, hiddenSignature)
+    }
+
     @Test
     fun `addon refresh signature tracks unresolved terminal and loaded manifest states`() {
         val pendingAddon = ManagedAddon(
