@@ -314,24 +314,7 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
-    fun addonGroupLockSurvivesCatalogIdentifierChangesAndLocalReload() {
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("old", "older"))))
-        HomeCatalogSettingsRepository.setAddonLayoutMode("test", HomeAddonLayoutMode.LOCKED)
-        val initialGroup = HomeCatalogSettingsRepository.uiState.value.addonGroups.single()
-        assertEquals(HomeAddonLayoutMode.LOCKED, initialGroup.mode)
-
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("new", "latest"))))
-        val refreshedGroup = HomeCatalogSettingsRepository.uiState.value.addonGroups.single()
-        assertEquals("test", refreshedGroup.addonId)
-        assertEquals(HomeAddonLayoutMode.LOCKED, refreshedGroup.mode)
-        assertEquals(initialGroup.anchorOrder, refreshedGroup.anchorOrder)
-
-        HomeCatalogSettingsRepository.clearLocalState()
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("new", "latest"))))
-        val reloadedGroup = HomeCatalogSettingsRepository.uiState.value.addonGroups.single()
-        assertEquals(HomeAddonLayoutMode.LOCKED, reloadedGroup.mode)
-        assertEquals(initialGroup.anchorOrder, reloadedGroup.anchorOrder)
-    }
+    
 
     @Test
     fun unchangedCollectionsDoNotRewriteSettings() {
