@@ -35,8 +35,10 @@ import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.NuvioViewAllPillSize
 import com.nuvio.app.core.ui.PosterRowImagePrefetchEffect
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
+import com.nuvio.app.features.home.HOME_CATALOG_PREVIEW_LIMIT
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.homeCatalogPreviewItems
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.watching.application.WatchingState
 
@@ -128,9 +130,8 @@ private fun HomeCatalogRowSectionContent(
     val activeSelectedTabKey = selectedTabKey ?: internalSelectedTabKey
     val selectedTab = section.sourceTabs.firstOrNull { it.key == activeSelectedTabKey }
         ?: section.sourceTabs.firstOrNull()
-    val previewEntryKeys = remember(entries) { entries.mapTo(hashSetOf()) { it.stableKey() } }
-    val visibleEntries = remember(selectedTab, previewEntryKeys, entries) {
-        (selectedTab?.items ?: entries).filter { item -> item.stableKey() in previewEntryKeys }
+    val visibleEntries = remember(selectedTab, entries) {
+        homeCatalogPreviewItems(selectedTab, entries)
     }
     val rowState = rememberLazyListState()
     LaunchedEffect(activeSelectedTabKey) {
