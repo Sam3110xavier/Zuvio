@@ -49,7 +49,9 @@ fun DeviceStorageBar(
     val initialStats = DeviceStorageStats(0L, 0L)
     val stats by produceState(initialStats) {
         while (true) {
-            value = withContext(Dispatchers.Default) { DownloadsStoragePlatform.getDeviceStorageStats() }
+            value = runCatching {
+                withContext(Dispatchers.Default) { DownloadsStoragePlatform.getDeviceStorageStats() }
+            }.getOrDefault(initialStats)
             delay(STORAGE_REFRESH_INTERVAL_MS)
         }
     }

@@ -486,9 +486,28 @@ object DownloadsRepository {
         var shouldPersistNormalized = false
         val normalized = decoded.items
             .map { item ->
-                val statusNormalized = DownloadsPlatformDownloader.restoreItem(item)
+                // A stale or broken Android transfer record must not crash the screen
+                // while the remaining saved downloads are being restored.
+                val statusNormalized = runCatching {
+                    DownloadsPlatformDownloader.restoreItem(item)
+                }.getOrElse { error ->
+                    if (item.status == DownloadStatus.Downloading) {
+                        // Stop a transfer that could not be reattached before exposing it as failed.
+                        runCatching { DownloadsPlatformDownloader.pauseRestoredItem(item) }
+                        shouldPersistNormalized = true
+                        item.copy(
+                            status = DownloadStatus.Failed,
+                            errorMessage = error.message?.takeIf { it.isNotBlank() }
+                                ?: "Unable to restore this download. Tap retry.",
+                        )
+                    } else {
+                        item
+                    }
+                }
 
-                val localUriNormalized = normalizeCompletedLocalFileUri(statusNormalized)
+                val localUriNormalized = runCatching {
+                    normalizeCompletedLocalFileUri(statusNormalized)
+                }.getOrDefault(statusNormalized)
                 if (localUriNormalized != item) {
                     shouldPersistNormalized = true
                 }
@@ -505,7 +524,7 @@ object DownloadsRepository {
                     item
                 } else {
                     shouldPersistNormalized = true
-                    DownloadsPlatformDownloader.pauseRestoredItem(item)
+                    runCatching { DownloadsPlatformDownloader.pauseRestoredItem(item) }
                     item.copy(status = DownloadStatus.Queued)
                 }
             } else {
@@ -528,7 +547,7 @@ object DownloadsRepository {
     private fun startDownload(item: DownloadItem) {
         val request = DownloadPlatformRequest(item)
 
-        val handle = DownloadsPlatformDownloader.start(
+        val handle = try { DownloadsPlatformDownloader.start(
             request = request,
             onProgress = { downloadedBytes, totalBytes ->
                 scope.launch {
@@ -602,7 +621,21 @@ object DownloadsRepository {
                     }
                 }
             },
-        )
+        ) } catch (error: Exception) {
+            mutateItem(item.id) { current ->
+                if (current.status != DownloadStatus.Downloading) {
+                    current
+                } else {
+                    current.copy(
+                        status = DownloadStatus.Failed,
+                        errorMessage = error.message?.takeIf { it.isNotBlank() }
+                            ?: "Unable to start this download. Tap retry.",
+                        updatedAtEpochMs = DownloadsClock.nowEpochMs(),
+                    )
+                }
+            }
+            return
+        }
 
         activeHandles[item.id] = handle
     }

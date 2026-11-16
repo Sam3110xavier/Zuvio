@@ -113,6 +113,50 @@ internal fun LibrarySavedControls(
             )
         }
 
+        if (layoutMode == LibraryLayoutMode.VERTICAL) {
+            // Keep the library facets together on their own row, separate from media-type
+            // chips and sorting so every filter remains visible and independently accessible.
+            LibraryFilterRow {
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.library_filter_genre),
+                    label = verticalProjection.selectedGenre ?: allLabel,
+                    selectedKey = verticalProjection.selectedGenre.orEmpty(),
+                    options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
+                    enabled = verticalProjection.availableGenres.isNotEmpty(),
+                    onSelected = { option -> onGenreSelected(option.key.takeIf { it.isNotBlank() }) },
+                )
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.library_filter_year),
+                    label = verticalProjection.selectedYear ?: allLabel,
+                    selectedKey = verticalProjection.selectedYear.orEmpty(),
+                    options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
+                    enabled = verticalProjection.availableYears.isNotEmpty(),
+                    onSelected = { option -> onYearSelected(option.key.takeIf { it.isNotBlank() }) },
+                )
+                val watchedOptions = listOf(
+                    LibraryWatchedFilter.ALL,
+                    LibraryWatchedFilter.WATCHED,
+                    LibraryWatchedFilter.UNWATCHED,
+                ).map { filter ->
+                    NuvioDropdownOption(
+                        key = filter.name,
+                        label = libraryWatchedFilterLabel(filter),
+                    )
+                }
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.library_filter_watched),
+                    label = libraryWatchedFilterLabel(watchedFilter),
+                    selectedKey = watchedFilter.name,
+                    options = watchedOptions,
+                    onSelected = { option ->
+                        LibraryWatchedFilter.entries
+                            .firstOrNull { it.name == option.key }
+                            ?.let(onWatchedFilterSelected)
+                    },
+                )
+            }
+        }
+
         if (
             layoutMode == LibraryLayoutMode.VERTICAL &&
             sourceMode.isRemoteTrackingSource &&

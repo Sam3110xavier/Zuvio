@@ -210,10 +210,10 @@ private fun LazyListScope.downloadsRootContent(
                 )
             }
         }
-        items(items = activeMovies, key = { it.id }) { item -> movieRow(item) }
+        items(items = activeMovies, key = { "downloads-active-movie:${it.id}" }) { item -> movieRow(item) }
         items(
             items = activeShows,
-            key = { (showId, _) -> "active_$showId" },
+            key = { (showId, _) -> "downloads-active-show:$showId" },
         ) { (showId, episodes) ->
             val title = episodes.first().title
             val allShowEpisodes = remember(uiState.items, showId) {
@@ -256,7 +256,7 @@ private fun LazyListScope.downloadsRootContent(
         item {
             SectionTitle(stringResource(Res.string.downloads_section_movies))
         }
-        items(items = completedMovies, key = { it.id }) { item -> movieRow(item) }
+        items(items = completedMovies, key = { "downloads-completed-movie:${it.id}" }) { item -> movieRow(item) }
     }
 
     if (completedShows.isNotEmpty()) {
@@ -265,7 +265,7 @@ private fun LazyListScope.downloadsRootContent(
         }
         items(
             items = completedShows,
-            key = { (showId, _) -> showId },
+            key = { (showId, _) -> "downloads-completed-show:$showId" },
         ) { (showId, episodes) ->
             val title = episodes.first().title
             val seriesStats = remember(episodes) { calculateSeriesDownloadStats(episodes) }
@@ -293,7 +293,7 @@ private fun LazyListScope.downloadsRootContent(
     }
 
     if (uiState.items.isEmpty()) {
-        item {
+        item(key = "downloads-empty-state") {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -309,7 +309,7 @@ private fun LazyListScope.downloadsRootContent(
         }
     }
 
-    item(key = "downloads_device_storage_bar") {
+    item(key = "downloads-device-storage-bar") {
         DeviceStorageBar(
             appDownloadsBytes = uiState.items.sumOf { it.downloadedBytes },
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
@@ -370,7 +370,7 @@ private fun LazyListScope.downloadsShowContent(
 
         items(
             items = sortedEpisodes,
-            key = { it.id },
+            key = { "downloads-show-episode:${it.id}" },
         ) { item ->
             val title = item.displayTitle()
             DownloadRow(
