@@ -216,6 +216,10 @@ internal fun buildLibraryVerticalProjection(
     selectedSectionKey: String?,
     selectedType: String?,
     sortOption: LibrarySortOption,
+    selectedGenre: String? = null,
+    selectedYear: String? = null,
+    watchedFilter: LibraryWatchedFilter = LibraryWatchedFilter.ALL,
+    isWatched: (LibraryItem) -> Boolean = { false },
     providerOrders: Map<String, Map<String, Int>> = emptyMap(),
     selectSection: Boolean = true,
 ): LibraryVerticalProjection {

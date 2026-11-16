@@ -305,6 +305,13 @@ object StreamsRepository {
             return
         }
 
+        val downloadedGroup = findDownloadedStreamGroup(
+            type = type,
+            videoId = videoId,
+            parentMetaId = parentMetaId,
+            season = season,
+            episode = episode,
+        )
         val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
         if (embeddedStreams.isNotEmpty()) {
             InAppLogger.info("Streams/StreamsRepository", "Using embedded streams count=${embeddedStreams.size} type=$type id=$videoId")
@@ -358,7 +365,7 @@ object StreamsRepository {
         } else {
             emptyList()
         }
-        if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
+        if (downloadedGroup == null && installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
             InAppLogger.warn("Streams/StreamsRepository", "No stream addons or providers installed for type=$type id=$videoId")
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
@@ -388,7 +395,7 @@ object StreamsRepository {
                 "for type=$type id=$videoId",
         )
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
+        if (downloadedGroup == null && streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
             InAppLogger.warn("Streams/StreamsRepository", "No compatible stream addon or provider for type=$type id=$videoId")
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
@@ -401,7 +408,7 @@ object StreamsRepository {
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(
+        val placeholderGroups = StreamAutoPlaySelector.orderAddonStreams(
             groups = streamAddons.map { addon ->
                 AddonStreamGroup(
                     addonName = addon.addonName,

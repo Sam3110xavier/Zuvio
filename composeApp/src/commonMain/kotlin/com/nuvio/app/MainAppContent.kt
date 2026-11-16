@@ -894,6 +894,11 @@ internal fun MainAppContent(
                                 )
                             }
 
+                            is AddAddonResult.TrackingConsentRequired -> {
+                                InAppLogger.info("App/DeepLink", "tracking addon requires explicit consent name=${result.manifest.name}")
+                                AddonRepository.requestTrackingConsent(result.manifest)
+                            }
+
                             is AddAddonResult.Error -> {
                                 InAppLogger.warn("App/DeepLink", "addon install failed message=${result.message}")
                                 NuvioToastController.show(result.message)
@@ -1096,7 +1101,6 @@ internal fun MainAppContent(
             resumeProgressFraction: Float?,
             manualSelection: Boolean,
             startFromBeginning: Boolean,
-            downloadMode: Boolean = false,
             forceExternalPlayer: Boolean = false,
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
@@ -1174,7 +1178,6 @@ internal fun MainAppContent(
                     resumeProgressFraction = targetResumeProgressFraction,
                     manualSelection = manualSelection,
                     startFromBeginning = startFromBeginning,
-                    downloadMode = downloadMode,
                     forceExternalPlayer = forceExternalPlayer,
                 ),
             )
@@ -1256,30 +1259,6 @@ internal fun MainAppContent(
                     resumeProgressFraction = null,
                     manualSelection = true,
                     startFromBeginning = false,
-                )
-            }
-
-        val onDownloadContent: ContentPlayAction =
-            { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
-                launchPlaybackWithDownloadPreference(
-                    type = type,
-                    videoId = videoId,
-                    parentMetaId = parentMetaId,
-                    parentMetaType = parentMetaType,
-                    title = title,
-                    logo = logo,
-                    poster = poster,
-                    background = background,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    episodeTitle = episodeTitle,
-                    episodeThumbnail = episodeThumbnail,
-                    pauseDescription = pauseDescription,
-                    resumePositionMs = resumePositionMs,
-                    resumeProgressFraction = null,
-                    manualSelection = true,
-                    startFromBeginning = false,
-                    downloadMode = true,
                 )
             }
 
@@ -1850,7 +1829,6 @@ internal fun MainAppContent(
                             navController = navController,
                             onPlay = onPlay,
                             onPlayManually = onPlayManually,
-                            onDownload = onDownloadContent,
                             onPlayExternally = onPlayExternally,
                             onPlayFromStart = onPlayFromStart,
                             sharedTransitionScope = this@SharedTransitionLayout,
