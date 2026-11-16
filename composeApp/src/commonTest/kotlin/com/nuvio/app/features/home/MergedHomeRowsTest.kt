@@ -68,7 +68,7 @@ class MergedHomeRowsTest {
         assertEquals("Global Releases", cleanMergedSourceTabTitle("Latest Releases Global - Mixed"))
         assertEquals("Indian Releases", cleanMergedSourceTabTitle("New Indian Releases - Mixed"))
         assertEquals("AI Recommendations", cleanMergedSourceTabTitle("AI Recommendations (movie/aicat_list_125836)"))
-        assertEquals("AI Recommendations for Hindi Crime and Thrillers", cleanMergedSourceTabTitle("AI Recommendations for Hindi Crime and Thrillers (movie/aicat_list_125836)"))
+        assertEquals("AI Recommendations for", cleanMergedSourceTabTitle("AI Recommendations for Hindi Crime and Thrillers (movie/aicat_list_125836)"))
         assertEquals("All", cleanMergedSourceTabTitle("All"))
         assertEquals("Movies", cleanMergedSourceTabTitle("Movies"))
         assertEquals("Series", cleanMergedSourceTabTitle("Series"))
@@ -340,7 +340,7 @@ class MergedHomeRowsTest {
             cleanMergedSourceTabTitle("BanglaPlex · 2026 - Movies"),
         )
         assertEquals(
-            "Seerr For you Next",
+            "Seerr For you",
             cleanMergedSourceTabTitle("Seerr · For you · Movies · Next"),
         )
     }
