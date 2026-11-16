@@ -545,8 +545,6 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             title = title,
             titleLogo = playerTitleLogo,
             showTitleLogo = showPlayerTitleLogo,
-            streamTitle = activeStreamTitle,
-            providerName = liveTvNowProgramTitle?.let { programTitle -> "$activeProviderName · $programTitle" } ?: activeProviderName,
             seasonNumber = activeSeasonNumber,
             episodeNumber = activeEpisodeNumber,
             episodeTitle = activeEpisodeTitle,
@@ -938,6 +936,9 @@ private fun BoxScope.RenderPlaybackOverlays(
                 positionMs = playbackSnapshot.positionMs,
                 durationMs = playbackSnapshot.durationMs,
                 isEnded = playbackSnapshot.isEnded,
+                creditsStartMs = skipIntervals.firstOrNull { it.type == "movie-credits" }
+                    ?.startTime
+                    ?.let { (it * 1_000.0).toLong() },
             )
             showMovieRecommendationCard = false
         },

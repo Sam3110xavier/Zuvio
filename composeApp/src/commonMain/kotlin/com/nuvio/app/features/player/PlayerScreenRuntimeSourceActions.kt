@@ -518,11 +518,19 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     episode: MetaVideo,
     serverResumeMs: Long? = null,
     saveForReuse: Boolean = true,
+    sourceFallbackTried: PlayerSourceFallbackTried? = null,
 ) {
-    if (prepareServerForPlayer(stream) { switchToEpisodeStream(it, episode, serverResumeMs = newerServerResumeMs(it, episode)) }) return
+    if (prepareServerForPlayer(stream) {
+            switchToEpisodeStream(
+                it,
+                episode,
+                serverResumeMs = newerServerResumeMs(it, episode),
+                sourceFallbackTried = sourceFallbackTried,
+            )
+        }) return
     if (
         resolveYouTubeForPlayer(stream) { resolved ->
-            switchToEpisodeStream(resolved, episode, saveForReuse = false)
+            switchToEpisodeStream(resolved, episode, saveForReuse = false, sourceFallbackTried = sourceFallbackTried)
         }
     ) return
     if (
@@ -530,7 +538,9 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
             stream = stream,
             season = episode.season,
             episode = episode.episode,
-            onResolved = { resolvedStream -> switchToEpisodeStream(resolvedStream, episode) },
+            onResolved = { resolvedStream ->
+                switchToEpisodeStream(resolvedStream, episode, sourceFallbackTried = sourceFallbackTried)
+            },
             onStale = {
                 PlayerStreamsRepository.loadEpisodeStreams(
                     type = contentType ?: parentMetaType,
@@ -544,6 +554,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     ) return
     if (isP2pStream(stream)) {
         switchToP2pEpisodeStream(stream, episode)
+        restartSourceFallback(activeSourceUrl, sourceFallbackTried)
         return
     }
     if (openExternalSourceUrl(stream)) return
@@ -558,6 +569,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     }
     externalSubtitles = stream.externalSubtitles
     activeSourceUrl = url
+    restartSourceFallback(url, sourceFallbackTried)
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
@@ -601,6 +613,7 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
 
     externalSubtitles = DownloadSubtitles.localSubtitles(localFileUri)
     activeSourceUrl = localFileUri
+    restartSourceFallback(localFileUri, null)
     activeSourceAudioUrl = null
     activeSourceHeaders = emptyMap()
     activeSourceResponseHeaders = emptyMap()
@@ -661,8 +674,10 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         onDownloadedEpisodeSelected = { item, episode ->
             if (isCurrentRequest()) switchToDownloadedEpisode(item, episode)
         },
-        onEpisodeStreamSelected = { stream, episode ->
-            if (isCurrentRequest()) switchToEpisodeStream(stream, episode)
+        onEpisodeStreamSelected = { stream, episode, tried ->
+            if (isCurrentRequest()) {
+                switchToEpisodeStream(stream, episode, sourceFallbackTried = tried)
+            }
         },
         onManualSelectionRequired = { nextVideo ->
             if (isCurrentRequest()) {

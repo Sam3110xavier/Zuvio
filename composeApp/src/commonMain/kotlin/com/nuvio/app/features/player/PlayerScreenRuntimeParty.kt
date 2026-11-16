@@ -241,7 +241,7 @@ private fun PlayerScreenRuntime.handlePartyMediaChange(media: PartyMedia) {
             clearPartyNudge()
             playerController?.pause()
             shouldPlay = false
-            onFollowPartyMedia(media)
+            args.onFollowPartyMedia(media)
         }
     }
 }
