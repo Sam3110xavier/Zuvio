@@ -248,7 +248,6 @@ internal fun AppTabHost(
                     onPreviewClick = actions.onPosterClick,
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
-                    onOpenDownload = actions.onOpenDownload,
                     disintegrationRequest = state.libraryDisintegrationRequest,
                 )
             }
