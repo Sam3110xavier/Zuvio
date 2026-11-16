@@ -282,6 +282,38 @@ internal fun settingsSearchEntries(
         pageLabel = downloadsPage,
         section = downloadsPage,
     )
+    addRow(
+        page = SettingsPage.Downloads,
+        key = "preferred-resolution",
+        title = stringResource(Res.string.downloads_preferred_resolution_title),
+        description = stringResource(Res.string.downloads_preferred_resolution_description),
+        pageLabel = downloadsPage,
+        section = downloadsPage,
+    )
+    addRow(
+        page = SettingsPage.Downloads,
+        key = "max-concurrent-downloads",
+        title = stringResource(Res.string.downloads_max_concurrent_title),
+        description = stringResource(Res.string.downloads_max_concurrent_description),
+        pageLabel = downloadsPage,
+        section = downloadsPage,
+    )
+    addRow(
+        page = SettingsPage.Downloads,
+        key = "max-episodes-per-show",
+        title = stringResource(Res.string.downloads_max_series_episode_concurrent_title),
+        description = stringResource(Res.string.downloads_max_series_episode_concurrent_description),
+        pageLabel = downloadsPage,
+        section = downloadsPage,
+    )
+    addRow(
+        page = SettingsPage.Downloads,
+        key = "max-concurrent-shows",
+        title = stringResource(Res.string.downloads_max_concurrent_shows_title),
+        description = stringResource(Res.string.downloads_max_concurrent_shows_description),
+        pageLabel = downloadsPage,
+        section = downloadsPage,
+    )
     addPage(
         page = SettingsPage.Playback,
         key = "playback",
@@ -557,12 +589,6 @@ internal fun settingsSearchEntries(
             key = "plugins",
             title = pluginsPage,
             description = stringResource(Res.string.settings_content_discovery_plugins_description),
-        )
-        addPage(
-            page = SettingsPage.CloudStream,
-            key = "cloudstream",
-            title = stringResource(Res.string.compose_settings_page_cloudstream),
-            description = stringResource(Res.string.settings_content_discovery_cloudstream_description),
         )
     }
     addPage(

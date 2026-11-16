@@ -94,6 +94,9 @@ data class DownloadsRoute(override val title: String = "") : AppRoute {
 }
 
 @Serializable
+data class DownloadsSettingsRoute(override val title: String = "") : SettingsDestinationRoute
+
+@Serializable
 data class DownloadShowRoute(
     val showId: String,
     override val title: String,
@@ -104,9 +107,6 @@ data class AddonsSettingsRoute(override val title: String = "") : SettingsDestin
 
 @Serializable
 data class PluginsSettingsRoute(override val title: String = "") : SettingsDestinationRoute
-
-@Serializable
-data class CloudStreamSettingsRoute(override val title: String = "") : SettingsDestinationRoute
 
 @Serializable
 data class AccountSettingsRoute(override val title: String = "") : SettingsDestinationRoute

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.home.MetaPreview
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -7,6 +8,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.addons.AddonPlayerAction
+import com.nuvio.app.features.addons.AddonPlayerEventTarget
 import com.nuvio.app.features.addons.AddonsUiState
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsUiState
@@ -75,8 +78,6 @@ internal class PlayerScreenRuntime(
     val torrentTrackers: List<String> get() = args.torrentTrackers
     val initialPositionMs: Long get() = args.initialPositionMs
     val initialProgressFraction: Float? get() = args.initialProgressFraction
-    val onFollowPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit
-        get() = args.onFollowPartyMedia
     var externalSubtitles by mutableStateOf(args.externalSubtitles)
     val isSeries: Boolean get() = parentMetaType == "series"
     val isLiveTvPlayback: Boolean get() = contentType == "live"
@@ -127,8 +128,6 @@ internal class PlayerScreenRuntime(
             sourceUrl.contains(".m3u8", ignoreCase = true)
 
     var activeSourceUrl by mutableStateOf(sourceUrl)
-    /** Monotonic token that prevents stale resolver callbacks overriding a newer source. */
-    var sourceSwitchGeneration: Long = 0L
     var selectedPlayerQualityId by mutableStateOf<String?>(null)
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
 
@@ -149,10 +148,9 @@ internal class PlayerScreenRuntime(
     var activeTorrentTrackers by mutableStateOf(torrentTrackers)
     var p2pResolvedSourceUrl by mutableStateOf<String?>(null)
     var activeSourceIdentityKey by mutableStateOf(
-        args.stream?.playerSourceIdentityKey()
-            ?: torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
-                "torrent:$hash:${torrentFileIdx ?: -1}"
-            } ?: sourceUrl.trim().takeIf { it.isNotBlank() }?.let { url -> "url:$url" },
+        torrentInfoHash?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { hash ->
+            "torrent:$hash:${torrentFileIdx ?: -1}"
+        } ?: sourceUrl.trim().takeIf { it.isNotBlank() }?.let { url -> "url:$url" },
     )
     var activeStreamTitle by mutableStateOf(streamTitle)
     var activeStreamSubtitle by mutableStateOf(streamSubtitle)
@@ -162,7 +160,6 @@ internal class PlayerScreenRuntime(
     var activeProviderAddonId by mutableStateOf(providerAddonId)
     var activeLogo by mutableStateOf(logo)
     var activeStream by mutableStateOf(args.stream)
-    var deadLinkStatusMessage by mutableStateOf<String?>(null)
     var currentStreamBingeGroup by mutableStateOf(initialBingeGroup)
     var currentStreamFilename by mutableStateOf(args.stream?.behaviorHints?.filename)
     var currentStreamInfoHash by mutableStateOf(args.stream?.infoHash)
@@ -211,6 +208,8 @@ internal class PlayerScreenRuntime(
     var pendingSeekScrobbleRestart by mutableStateOf(false)
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
     var currentTrackingMedia by mutableStateOf<TrackingMediaReference?>(null)
+    var activeAddonPlayerEventTarget: AddonPlayerEventTarget? = null
+    var lastAddonPlayerAction: AddonPlayerAction? = null
 
     var showSourcesPanel by mutableStateOf(false)
     var showQualityPanel by mutableStateOf(false)
@@ -231,6 +230,7 @@ internal class PlayerScreenRuntime(
     var episodeStreamsPanelState by mutableStateOf(EpisodeStreamsPanelState())
     var playerMetaVideos by mutableStateOf<List<MetaVideo>>(emptyList())
     var playerMeta by mutableStateOf<MetaDetails?>(null)
+    var playerMoreLikeThis by mutableStateOf<List<MetaPreview>?>(null)
     val isAnimePlayback: Boolean
         get() {
             val genres = playerMeta?.genres.orEmpty()
