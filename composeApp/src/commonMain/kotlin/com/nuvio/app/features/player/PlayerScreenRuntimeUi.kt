@@ -417,7 +417,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
         Box(modifier = videoModifier) {
             RenderPlaybackOverlays(
                 runtime = runtime,
-                isInPip = isInPip,
                 currentGestureFeedback = currentGestureFeedback,
                 p2pInitialLoadingMessage = p2pInitialLoadingMessage,
                 p2pInitialLoadingProgress = p2pInitialLoadingProgress,
@@ -546,6 +545,8 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             title = title,
             titleLogo = playerTitleLogo,
             showTitleLogo = showPlayerTitleLogo,
+            streamTitle = activeStreamTitle,
+            providerName = liveTvNowProgramTitle?.let { programTitle -> "$activeProviderName · $programTitle" } ?: activeProviderName,
             seasonNumber = activeSeasonNumber,
             episodeNumber = activeEpisodeNumber,
             episodeTitle = activeEpisodeTitle,
@@ -804,7 +805,6 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
 @Composable
 private fun BoxScope.RenderPlaybackOverlays(
     runtime: PlayerScreenRuntime,
-    isInPip: Boolean,
     currentGestureFeedback: GestureFeedbackState?,
     p2pInitialLoadingMessage: String?,
     p2pInitialLoadingProgress: Float?,
@@ -822,7 +822,7 @@ private fun BoxScope.RenderPlaybackOverlays(
         val snapshotIsLoading by remember(runtime) { derivedStateOf { playbackSnapshot.isLoading } }
         val snapshotDurationMs by remember(runtime) { derivedStateOf { playbackSnapshot.durationMs } }
         val displayedPositionMs = scrubbingPositionMs ?: overlaySnapshot.positionMs
-        val openingOverlayVisible = (playerSettingsUiState.showLoadingOverlay && !initialLoadCompleted || deadLinkStatusMessage != null) && errorMessage == null
+        val openingOverlayVisible = playerSettingsUiState.showLoadingOverlay && !initialLoadCompleted && errorMessage == null
         val showNetworkSpeed = openingOverlayVisible &&
             playerSettingsUiState.showPlayerLoadingStatus &&
             p2pInitialLoadingMessage == null
@@ -855,7 +855,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             flushWatchProgress()
             args.onBack()
         },
-        openingLoadingMessage = deadLinkStatusMessage ?: if (playerSettingsUiState.showPlayerLoadingStatus) {
+        openingLoadingMessage = if (playerSettingsUiState.showPlayerLoadingStatus) {
             p2pInitialLoadingMessage ?: playerLoadingStatusMessage(
                 showStatus = true,
                 controllerReady = playerController != null,
@@ -933,12 +933,12 @@ private fun BoxScope.RenderPlaybackOverlays(
             flushWatchProgress()
             args.onOpenMetaDetails?.invoke(preview)
         },
-        onShowMovieRecommendations = {
-            movieRecommendationDismissedStage = 0
-            showMovieRecommendationCard = movieRecommendationStage > 0
-        },
         onDismissMovieRecommendations = {
-            movieRecommendationDismissedStage = movieRecommendationStage
+            movieRecommendationDismissedStage = PlayerNextEpisodeRules.movieRecommendationStage(
+                positionMs = playbackSnapshot.positionMs,
+                durationMs = playbackSnapshot.durationMs,
+                isEnded = playbackSnapshot.isEnded,
+            )
             showMovieRecommendationCard = false
         },
         errorMessage = errorMessage,
@@ -1319,7 +1319,7 @@ private const val MOVIE_RECOMMENDATION_LIMIT = 10
 internal val PlayerScreenRuntime.movieRecommendationCandidates: List<MetaPreview>
     get() {
         val watchedKeys = watchedUiState.watchedKeys
-        return playerMeta?.moreLikeThis.orEmpty()
+        return (playerMoreLikeThis ?: playerMeta?.moreLikeThis).orEmpty()
             .asSequence()
             .filterNot { it.id == parentMetaId }
             .filterNot { WatchingState.isPosterWatched(watchedKeys = watchedKeys, item = it) }

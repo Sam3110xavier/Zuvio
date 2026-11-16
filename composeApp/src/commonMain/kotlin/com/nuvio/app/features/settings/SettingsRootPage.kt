@@ -51,9 +51,7 @@ internal fun LazyListScope.settingsRootContent(
             SettingsProfileCard(isTablet = isTablet, onClick = onSwitchProfileClick)
         }
     }
-    SettingsCategory.entries.filter {
-        category == null || it == category
-    }.forEach { group ->
+    SettingsCategory.entries.filter { category == null || it == category }.forEach { group ->
         item(key = group.name) {
             SettingsGroup(isTablet = isTablet) {
                 when (group) {
@@ -101,6 +99,13 @@ internal fun LazyListScope.settingsRootContent(
                         SettingsPageRow(
                             page = SettingsPage.Playback,
                             description = Res.string.settings_playback_subtitle,
+                            isTablet = isTablet,
+                            onPageClick = onPageClick,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsPageRow(
+                            page = SettingsPage.Downloads,
+                            description = Res.string.compose_settings_root_downloads_description,
                             isTablet = isTablet,
                             onPageClick = onPageClick,
                         )
