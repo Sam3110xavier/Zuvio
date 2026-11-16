@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.animateItem
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -630,7 +629,7 @@ private fun HomescreenCatalogList(
                     val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
                     Surface(
-                        modifier = Modifier.animateItem(placementSpec = tween(durationMillis = 180)),
+                        modifier = Modifier,
                         shadowElevation = elevation,
                     ) {
                         Column {
