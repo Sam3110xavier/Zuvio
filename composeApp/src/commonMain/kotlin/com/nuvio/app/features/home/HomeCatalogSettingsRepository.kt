@@ -159,9 +159,6 @@ private data class StoredHomeCatalogPreference(
 )
 
 @Serializable
-
-
-@Serializable
 private data class StoredHomeCatalogSettingsPayload(
     val heroEnabled: Boolean = true,
     val heroStyle: String = HomeHeroStyle.FULL_BLEED.storageValue,
@@ -874,7 +871,6 @@ object HomeCatalogSettingsRepository {
     }
 
     private fun publish() {
-        val collectionMap = collectionDefinitions.associateBy { it.key }
         // Treat source rows hidden by a merged row as ordinary hidden Home rows.
         // Keep the user's stored enabled preference untouched so disabling the
         // merged-row option restores each source row to its previous visibility.
@@ -894,9 +890,7 @@ object HomeCatalogSettingsRepository {
                     enabled = (preference?.enabled ?: true) && definition.key !in hiddenIncludedSourceKeys,
                     heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
-                                rowPlacement = HomeCatalogRowPlacement.fromStorage(preference?.rowPlacement),
-                    // Add-on ordering is now controlled by the separate Add-ons Row Order section.
-                    // Do not let legacy group modes block individual row pinning or reordering.
+                    rowPlacement = HomeCatalogRowPlacement.fromStorage(preference?.rowPlacement),
                 )
             }
 
@@ -1115,8 +1109,6 @@ object HomeCatalogSettingsRepository {
             updatedPreferences[itemKey] = current.copy(order = index)
         }
         preferences = updatedPreferences
-
-        }
     }
 
     private fun defaultPreferenceForMissingKey(key: String): StoredHomeCatalogPreference? {
