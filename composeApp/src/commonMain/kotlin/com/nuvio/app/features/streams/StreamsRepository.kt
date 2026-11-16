@@ -163,7 +163,7 @@ object StreamsRepository {
         val telegramSnapshot = TelegramIntegrationBridge.snapshot.value
         val cloudStreamGroupByRepository = cloudStreamState?.groupStreamsByRepository == true
         val cloudStreamPluginIds = cloudStreamState?.plugins
-            ?.joinToString(",") { it.metadata.id.value }
+            ?.joinToString(",") { "${it.metadata.id.value}:${it.isRunnable}" }
             .orEmpty()
         val telegramConfiguration = if (telegramSnapshot.authenticated) {
             telegramSnapshot.selectedChatIds.sorted().joinToString(",")
@@ -189,7 +189,7 @@ object StreamsRepository {
             return
         }
 
-        if (forceRefresh || qualityAutoPlayRequestToken != requestToken) {
+        if (forceRefresh || activeRequestKey != requestKey || qualityAutoPlayRequestToken != requestToken) {
             qualityAutoPlayRequestToken = null
             qualityAutoPlayAttemptedKeys.clear()
         }
