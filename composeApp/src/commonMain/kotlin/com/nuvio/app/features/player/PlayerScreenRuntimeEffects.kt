@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.nuvio.app.features.addons.AddonPlayerAction
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
@@ -765,6 +766,10 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
             flushWatchProgress(TrackingScrobbleAction.PAUSE)
         }
 
+        if (!previousIsPlaying && playbackSnapshot.isPlaying) {
+            emitAddonPlayerEvent(AddonPlayerAction.START)
+        }
+
         if (playbackSnapshot.isPlaying && pendingSeekScrobbleRestart) {
             pendingSeekScrobbleRestart = false
             if (hasRequestedScrobbleStartForCurrentItem) {
@@ -1077,11 +1082,28 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
     }
 
+    LaunchedEffect(isMoviePlayback, playerSettingsUiState.movieRecommendationsEnabled, playerMeta?.id, playerMeta?.moreLikeThisSource) {
+        val meta = playerMeta
+        if (!isMoviePlayback || !playerSettingsUiState.movieRecommendationsEnabled || meta == null || meta.id != parentMetaId) {
+            playerMoreLikeThis = null
+            return@LaunchedEffect
+        }
+        playerMoreLikeThis = runCatching {
+            MetaDetailsRepository.withPreferredMoreLikeThis(
+                meta = meta,
+                fallbackItemId = parentMetaId,
+                fallbackItemType = parentMetaType,
+            ).moreLikeThis
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            .getOrNull()
+    }
+
     LaunchedEffect(
         playbackSnapshot.positionMs,
         playbackSnapshot.durationMs,
         playbackSnapshot.isEnded,
         playerMeta?.moreLikeThis,
+        playerMoreLikeThis,
         watchedUiState.watchedKeys,
         movieRecommendationDismissedStage,
         playerSettingsUiState.movieRecommendationsEnabled,
