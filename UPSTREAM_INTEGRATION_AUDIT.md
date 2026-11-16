@@ -146,3 +146,8 @@ The 32 paths reviewed against the common base were:
 - Therefore, when PR #44 is merged, A will inherit the upstream commit ancestry and will no longer be 74 commits behind b-upstream.
 - PR #44 is open and GitHub reports it as mergeable. The older direct upstream-to-A PR #43 is superseded.
 - GitHub reports no workflow runs, no check-runs, and no commit statuses for the integration head. The checked mobile-release workflow is `workflow_dispatch` only. No Kotlin build or automated test result is claimed here; run the documented KMP tests and Android build before merging.
+
+
+## Required merge method
+
+When merging PR #44, select GitHub's **Create a merge commit** option. Do not use Squash and merge or Rebase and merge: those strategies can discard the two-parent upstream ancestry and leave A showing the upstream commits as unmerged. The merge-commit strategy preserves the `b-upstream` parent already recorded on the integration branch.
