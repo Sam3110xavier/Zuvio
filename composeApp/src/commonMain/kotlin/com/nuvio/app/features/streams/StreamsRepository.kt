@@ -14,6 +14,9 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.downloads.DownloadsRepository
+import com.nuvio.app.features.downloads.DownloadSubtitles
+import com.nuvio.app.features.downloads.displayTitle
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.pluginContentId
@@ -34,6 +37,9 @@ import kotlinx.coroutines.flow.update
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 object StreamsRepository {
     private val log = Logger.withTag("StreamsRepo")
@@ -313,11 +319,12 @@ object StreamsRepository {
                 groups = listOf(group),
                 rules = streamBadgeRules,
             ).firstOrNull() ?: group
+            val finalGroups = listOfNotNull(downloadedGroup, presentedGroup)
             _uiState.value = StreamsUiState(
                 requestToken = requestToken,
-                groups = listOf(presentedGroup),
+                groups = finalGroups,
                 autoPlayDecided = true,
-                activeAddonIds = setOf("embedded"),
+                activeAddonIds = finalGroups.map { it.addonId }.toSet(),
                 isAnyLoading = false,
             )
             return
@@ -431,6 +438,7 @@ object StreamsRepository {
             installedOrder = installedAddonOrder,
             preferredGroupIds = preferredGroupIds,
         )
+        val initialGroups = listOfNotNull(downloadedGroup) + placeholderGroups
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
@@ -1152,5 +1160,46 @@ object StreamsRepository {
 
     fun setOverlayVisible(visible: Boolean, message: String? = null) {
         _uiState.update { it.copy(showDirectAutoPlayOverlay = visible, overlayMessage = message) }
+    }
+
+    private fun findDownloadedStreamGroup(
+        type: String,
+        videoId: String,
+        parentMetaId: String?,
+        season: Int?,
+        episode: Int?,
+    ): AddonStreamGroup? {
+        DownloadsRepository.ensureLoaded()
+        val downloadedItem = DownloadsRepository.findPlayableDownload(
+            parentMetaId = parentMetaId ?: videoId,
+            seasonNumber = season,
+            episodeNumber = episode,
+            videoId = videoId,
+        ) ?: return null
+        val localUri = DownloadsRepository.playableLocalFileUri(downloadedItem) ?: return null
+
+        val streamTitle = downloadedItem.streamTitle.ifBlank { downloadedItem.displayTitle() }
+        val streamSubtitle = downloadedItem.streamSubtitle
+            ?: downloadedItem.providerName.takeIf { it.isNotBlank() }
+        val streamItem = StreamItem(
+            name = streamTitle,
+            title = downloadedItem.episodeTitle ?: downloadedItem.title,
+            description = streamSubtitle,
+            url = localUri,
+            // StreamDestination forwards this name to the player as its provider label.
+            addonName = runBlocking { getString(Res.string.provider_downloaded) },
+            addonId = DOWNLOADED_ADDON_ID,
+            streamType = type,
+            behaviorHints = StreamBehaviorHints(
+                videoSize = downloadedItem.totalBytes?.takeIf { it > 0L } ?: downloadedItem.downloadedBytes,
+            ),
+            externalSubtitles = DownloadSubtitles.localSubtitles(localUri),
+        )
+        return AddonStreamGroup(
+            addonName = DOWNLOADED_ADDON_ID,
+            addonId = DOWNLOADED_ADDON_ID,
+            streams = listOf(streamItem),
+            isLoading = false,
+        )
     }
 }
