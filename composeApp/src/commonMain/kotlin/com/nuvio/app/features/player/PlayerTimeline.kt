@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,9 +76,13 @@ internal fun PlayerTimelineDetails(
     titleFontWeight: FontWeight = FontWeight.SemiBold,
     horizontalContentPadding: Dp = PlayerTimelineContentInset,
     titleLogoMaxHeight: Dp = metrics.timelineLogoMaxHeight,
+    contentSpacing: Dp = 0.dp,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
-    Column(modifier.padding(horizontal = horizontalContentPadding)) {
+    Column(
+        modifier = modifier.padding(horizontal = horizontalContentPadding),
+        verticalArrangement = Arrangement.spacedBy(contentSpacing),
+    ) {
         PlayerTitleArtwork(
             title = title,
             logoUrl = titleLogo,
