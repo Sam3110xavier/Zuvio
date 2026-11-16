@@ -3136,27 +3136,6 @@
     <string name="settings_telegram_description">Find playable video files in your selected Telegram channels and groups.</string>
 <string name="settings_homescreen_pinned_at_position">Pinned at position</string>
     <string name="settings_homescreen_pinned_to_bottom">Pinned to bottom</string>
-    <string name="settings_homescreen_addon_row_order">Add-ons Row Order</string>
-    <string name="settings_homescreen_addon_row_order_description">Choose the order for add-ons. This controls how their catalog rows are arranged.</string>
-    <string name="settings_homescreen_addon_order_edit">Edit add-on row order</string>
-    <string name="settings_homescreen_addon_order_cancel">Cancel</string>
-    <string name="settings_homescreen_addon_order_save">Save Changes</string>
-    <string name="settings_homescreen_addon_order_reorder">Reorder add-on</string>
-    <string name="settings_homescreen_addon_order_policy_title">How to apply changes</string>
-    <string name="settings_homescreen_addon_order_all_title">Move all rows together</string>
-    <string name="settings_homescreen_addon_order_all_description">Include individually pinned rows when changing an add-on's order.</string>
-    <string name="settings_homescreen_addon_order_unpinned_title">Move only unpinned rows</string>
-    <string name="settings_homescreen_addon_order_unpinned_description">Keep individually pinned rows in their current pinned positions.</string>
-    <string name="settings_homescreen_addon_order_upcoming_title">Apply to upcoming rows only</string>
-    <string name="settings_homescreen_addon_order_upcoming_description">Leave current rows as they are. New rows follow the add-on order.</string>
-    <string name="settings_homescreen_addon_groups">ADD-ON GROUPS</string>
-    <string name="settings_homescreen_addon_groups_description">Choose where dynamic catalogs from an add-on appear. Individual row pins override add-on placement rules.</string>
-    <string name="settings_homescreen_group_rows_count">%1$d catalog rows</string>
-    <string name="settings_homescreen_group_mode_normal">Use row order</string>
-    <string name="settings_homescreen_group_mode_locked">Lock group here</string>
-    <string name="settings_homescreen_group_mode_top">Pin all rows to top</string>
-    <string name="settings_homescreen_group_mode_bottom">Pin all rows to bottom</string>
-
     <string name="settings_group_reshaped">Nuvio Reshaped</string>
     <string name="settings_nuvio_reshaped_title">Nuvio Reshaped</string>
     <string name="settings_nuvio_reshaped_description">AutoSync, subtitle fonts, seek buffer and previews, pill menu and streams</string>
