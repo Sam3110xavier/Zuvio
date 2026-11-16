@@ -75,6 +75,7 @@ import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
+import com.nuvio.app.features.downloads.DownloadItem
 import com.nuvio.app.features.livetv.LiveTvChannel
 import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.livetv.LiveTvVodPlayback
@@ -246,6 +247,7 @@ internal fun AppTabHost(
                     onPreviewClick = actions.onPosterClick,
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
+                    onOpenDownload = actions.onOpenDownload,
                     disintegrationRequest = state.libraryDisintegrationRequest,
                 )
             }
