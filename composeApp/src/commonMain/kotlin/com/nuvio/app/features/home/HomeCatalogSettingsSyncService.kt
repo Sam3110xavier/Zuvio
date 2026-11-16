@@ -67,7 +67,10 @@ internal fun mergeHomeCatalogSettingsJson(
     remoteJson: JsonObject?,
     localJson: JsonObject,
 ): JsonObject = buildJsonObject {
-    remoteJson?.forEach { (key, value) -> put(key, value) }
+    val removedAddonOrderKeys = setOf("addon_layouts", "addon_row_order_policy", "upcoming_row_keys")
+    remoteJson?.forEach { (key, value) ->
+        if (key !in removedAddonOrderKeys) put(key, value)
+    }
     localJson.forEach { (key, value) -> put(key, value) }
 }
 
