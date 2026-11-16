@@ -81,6 +81,12 @@ actual object AddonStorage {
     }
 }
 
+private fun parseCatalogHiddenStateLine(line: String): Pair<String, Boolean>? {
+    val url = line.substringBefore("\t").trim().takeIf { it.isNotEmpty() } ?: return null
+    val rawHidden = line.substringAfter("\t", "false").trim().lowercase()
+    return url to (rawHidden == "true")
+}
+
 private fun parseEnabledStateLine(line: String): Pair<String, Boolean>? {
     val url = line.substringBefore("\t").trim().takeIf { it.isNotEmpty() } ?: return null
     val rawEnabled = line.substringAfter("\t", "true").trim().lowercase()
