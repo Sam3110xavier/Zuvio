@@ -63,6 +63,7 @@ import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.verticalBarWidth
 import com.nuvio.app.core.ui.platformPhysicalTopInset
+import com.nuvio.app.core.ui.platformNativeBarButtonAnchor
 import com.nuvio.app.navigation.LocalUseNativeNavigation
 
 @Composable
@@ -104,13 +105,16 @@ fun DetailHero(
             label = "detail_hero_trailer_alpha",
         )
         val muteIconSize = if (isTablet) 20.dp else 22.dp
-        val heroChromeTopPadding = if (LocalUseNativeNavigation.current) {
-            platformPhysicalTopInset() + 8.dp
-        } else {
-            WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+        val nativeBarAnchor = if (LocalUseNativeNavigation.current) platformNativeBarButtonAnchor() else null
+        val heroChromeTopPadding = when {
+            nativeBarAnchor != null -> nativeBarAnchor.centerY - muteIconSize / 2
+            LocalUseNativeNavigation.current -> platformPhysicalTopInset() + 8.dp
+            else -> WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
                 8.dp +
                 ((40.dp - muteIconSize) / 2)
         }
+        val heroChromeEndPadding = nativeBarAnchor?.let { it.trailingCenterX - muteIconSize / 2 }
+            ?: (12.dp + (40.dp - muteIconSize) / 2)
         val bottomGradientColor = if (netflixStyleEnabled) Color.Black else heroGradientColor ?: MaterialTheme.colorScheme.background
         var logoLoadError by remember(meta.id, meta.logo) {
             mutableStateOf(false)
@@ -229,7 +233,7 @@ fun DetailHero(
                             .padding(LocalVerticalBarPadding.current)
                             .padding(
                                 top = heroChromeTopPadding,
-                                end = if (isTablet) 32.dp else 22.dp,
+                                end = heroChromeEndPadding,
                             )
                             .graphicsLayer {
                                 alpha = trailerAlpha * 0.72f
