@@ -437,8 +437,7 @@ object SearchRepository {
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
                 addon to manifest
-            }
-            .flatMap { (addon, manifest) ->
+            }.flatMap { (addon, manifest) ->
                 manifest.catalogs
                     .filter { catalog -> catalog.supportsSearch() }
                     .map { catalog ->
@@ -452,14 +451,13 @@ object SearchRepository {
                         )
                     }
             }
- 
+
     private fun buildDiscoverSources(addons: List<ManagedAddon>): List<DiscoverCatalogOption> =
         addons.filterNot { addon -> addon.hideCatalogs }
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
                 addon to manifest
-            }
-            .flatMap { (addon, manifest) ->
+            }.flatMap { (addon, manifest) ->
                 manifest.catalogs
                     .filter { catalog -> catalog.supportsDiscover() }
                     .map { catalog ->
