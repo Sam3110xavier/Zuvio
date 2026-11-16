@@ -370,7 +370,10 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
-                onStreamSelected = onStreamSelected,
+                onStreamSelected = { stream, positionMs, progressFraction ->
+                    if (downloadMode) startStreamDownload(stream)
+                    else onStreamSelected(stream, positionMs, progressFraction)
+                },
                 onStreamLongPress = { stream -> streamActionsTarget = stream },
                 onRefresh = reloadStreams,
             )
