@@ -74,6 +74,7 @@ internal fun PlayerTimelineDetails(
     titleMaxLines: Int = 1,
     titleFontWeight: FontWeight = FontWeight.SemiBold,
     horizontalContentPadding: Dp = PlayerTimelineContentInset,
+    titleLogoMaxHeight: Dp = metrics.timelineLogoMaxHeight,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
     Column(modifier.padding(horizontal = horizontalContentPadding)) {
@@ -88,7 +89,7 @@ internal fun PlayerTimelineDetails(
             ),
             textColor = Color.White,
             maxLines = titleMaxLines,
-            maxLogoHeight = metrics.timelineLogoMaxHeight,
+            maxLogoHeight = titleLogoMaxHeight,
             maxLogoWidth = metrics.logoMaxWidth,
         )
         if (seasonNumber != null && episodeNumber != null) {
