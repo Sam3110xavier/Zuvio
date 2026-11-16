@@ -546,8 +546,6 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             title = title,
             titleLogo = playerTitleLogo,
             showTitleLogo = showPlayerTitleLogo,
-            streamTitle = activeStreamTitle,
-            providerName = liveTvNowProgramTitle?.let { programTitle -> "$activeProviderName · $programTitle" } ?: activeProviderName,
             seasonNumber = activeSeasonNumber,
             episodeNumber = activeEpisodeNumber,
             episodeTitle = activeEpisodeTitle,

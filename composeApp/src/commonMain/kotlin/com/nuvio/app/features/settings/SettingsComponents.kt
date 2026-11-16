@@ -647,10 +647,6 @@ internal fun HomescreenCatalogRow(
                         enabled = item.rowPlacement != HomeCatalogRowPlacement.NORMAL,
                     ) { Text("Default") }
                     TextButton(
-                        onClick = { onRowPlacementChange(HomeCatalogRowPlacement.PINNED_POSITION) },
-                        enabled = item.rowPlacement != HomeCatalogRowPlacement.PINNED_POSITION && !item.isPinnedToTop,
-                    ) { Text("Pin here") }
-                    TextButton(
                         onClick = { onRowPlacementChange(HomeCatalogRowPlacement.PINNED_TOP) },
                         enabled = item.rowPlacement != HomeCatalogRowPlacement.PINNED_TOP && !item.isPinnedToTop,
                     ) { Text("Pin top") }
