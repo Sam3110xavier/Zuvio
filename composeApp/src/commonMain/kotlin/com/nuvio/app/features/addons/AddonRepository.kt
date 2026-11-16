@@ -60,6 +60,8 @@ object AddonRepository {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val _uiState = MutableStateFlow(AddonsUiState())
     val uiState: StateFlow<AddonsUiState> = _uiState.asStateFlow()
+    private val _pendingTrackingConsent = MutableStateFlow<AddonManifest?>(null)
+    val pendingTrackingConsent: StateFlow<AddonManifest?> = _pendingTrackingConsent.asStateFlow()
 
     private var initialized = false
     private var pulledFromServer = false
@@ -275,6 +277,25 @@ object AddonRepository {
         }
     }
 
+    fun requestTrackingConsent(manifest: AddonManifest) {
+        _pendingTrackingConsent.value = manifest
+    }
+
+    fun dismissTrackingConsent() {
+        _pendingTrackingConsent.value = null
+    }
+
+    suspend fun installWithTrackingConsent(manifest: AddonManifest): AddAddonResult {
+        _pendingTrackingConsent.value = null
+        if (isUsingPrimaryAddonsFromSecondaryProfile()) {
+            return AddAddonResult.Error(getString(Res.string.profile_primary_addons_required))
+        }
+        if (_uiState.value.addons.any { it.manifestUrl == manifest.transportUrl }) {
+            return AddAddonResult.Error(getString(Res.string.addon_already_installed))
+        }
+        return installManifest(manifest.transportUrl, manifest)
+    }
+
     suspend fun addAddon(rawUrl: String): AddAddonResult {
         if (isUsingPrimaryAddonsFromSecondaryProfile()) {
             InAppLogger.warn("Addons/Repository", "addAddon blocked because active profile uses primary addons")
@@ -313,6 +334,13 @@ object AddonRepository {
             return AddAddonResult.Error(error.message ?: getString(Res.string.addon_load_manifest_failed))
         }
 
+        if (manifest.isTrackingAddon) {
+            return AddAddonResult.TrackingConsentRequired(manifest)
+        }
+        return installManifest(manifestUrl, manifest)
+    }
+
+    private fun installManifest(manifestUrl: String, manifest: AddonManifest): AddAddonResult {
         _uiState.update { current ->
             current.copy(
                 addons = current.addons + ManagedAddon(
