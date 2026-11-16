@@ -356,6 +356,7 @@ private fun MergedHomeRowEditorDialog(
                         }
                     }
                 }
+                }
                 SnackbarHost(
                     hostState = validationSnackbarHostState,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp),
