@@ -110,7 +110,6 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToLong
-import com.nuvio.app.core.i18n.localizedEpisodeTitle
 import com.nuvio.app.core.ui.glass.isAmbientLiquidGlassActive
 
 @Composable
@@ -292,6 +291,8 @@ internal fun PlayerControlsShell(
                     titleLogo = titleLogo,
                     showTitleLogo = showTitleLogo,
                     badges = badges,
+                    releaseInfo = releaseInfo,
+                    animeEnhancement = playbackSnapshot.animeEnhancement,
                     streamTitle = streamTitle,
                     providerName = providerName,
                     seasonNumber = seasonNumber,
@@ -529,6 +530,8 @@ private fun PlayerHeader(
     titleLogo: String?,
     showTitleLogo: Boolean,
     badges: List<StreamBadge>,
+    releaseInfo: String?,
+    animeEnhancement: AnimeEnhancementStatus?,
     streamTitle: String,
     providerName: String,
     seasonNumber: Int?,
@@ -578,44 +581,22 @@ private fun PlayerHeader(
                     modifier = Modifier.graphicsLayer { alpha = metadataAlpha },
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    PlayerTitleArtwork(
+                    PlayerTimelineDetails(
                         title = title,
-                        logoUrl = titleLogo,
-                        showLogo = showTitleLogo,
-                        textStyle = typeScale.titleLg.copy(
-                            fontSize = metrics.titleSize,
-                            lineHeight = metrics.titleSize * 1.16f,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        textColor = Color.White,
-                        maxLines = 2,
-                        maxLogoHeight = metrics.titleLogoMaxHeight,
-                        maxLogoWidth = metrics.logoMaxWidth,
+                        titleLogo = titleLogo,
+                        showTitleLogo = showTitleLogo,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = episodeNumber,
+                        episodeTitle = episodeTitle,
+                        releaseInfo = releaseInfo,
+                        metrics = metrics,
+                        badges = badges,
+                        animeEnhancement = animeEnhancement,
+                        titleMaxLines = 2,
+                        titleFontWeight = FontWeight.Bold,
+                        horizontalContentPadding = 0.dp,
+                        modifier = Modifier.graphicsLayer { alpha = metadataAlpha },
                     )
-                    if (seasonNumber != null && episodeNumber != null && !episodeTitle.isNullOrBlank()) {
-                        val displayEpisodeTitle = localizedEpisodeTitle(episodeTitle, episodeNumber) ?: episodeTitle
-                        Text(
-                            text = stringResource(
-                                Res.string.compose_player_episode_title_format,
-                                seasonNumber,
-                                episodeNumber,
-                                displayEpisodeTitle,
-                            ),
-                            style = typeScale.bodyMd.copy(
-                                fontSize = metrics.episodeInfoSize,
-                                lineHeight = metrics.episodeInfoSize * 1.3f,
-                            ),
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (badges.isNotEmpty()) {
-                        PlayerBadges(
-                            badges = badges,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
