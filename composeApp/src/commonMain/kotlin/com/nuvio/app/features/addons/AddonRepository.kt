@@ -340,7 +340,7 @@ object AddonRepository {
         return installManifest(manifestUrl, manifest)
     }
 
-    private fun installManifest(manifestUrl: String, manifest: AddonManifest): AddAddonResult {
+    private suspend fun installManifest(manifestUrl: String, manifest: AddonManifest): AddAddonResult {
         _uiState.update { current ->
             current.copy(
                 addons = current.addons + ManagedAddon(
