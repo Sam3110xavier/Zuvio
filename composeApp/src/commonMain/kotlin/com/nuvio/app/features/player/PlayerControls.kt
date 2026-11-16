@@ -595,7 +595,6 @@ private fun PlayerHeader(
                         titleMaxLines = 2,
                         titleFontWeight = FontWeight.Bold,
                         horizontalContentPadding = 0.dp,
-                        modifier = Modifier.graphicsLayer { alpha = metadataAlpha },
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
