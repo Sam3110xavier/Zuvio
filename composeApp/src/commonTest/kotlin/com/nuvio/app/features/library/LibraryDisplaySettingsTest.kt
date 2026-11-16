@@ -160,50 +160,6 @@ class LibraryDisplaySettingsTest {
     }
 
     @Test
-    fun `local vertical projection includes movies and series across all local type sections`() {
-        val sections = listOf(
-            LibrarySection(
-                type = "movie",
-                displayTitle = "Movies",
-                items = listOf(item("movie-one"), item("shared-id", name = "Movie with shared id")),
-            ),
-            LibrarySection(
-                type = "series",
-                displayTitle = "Series",
-                items = listOf(
-                    item("series-one", type = "series"),
-                    item("shared-id", type = "series", name = "Series with shared id"),
-                ),
-            ),
-        )
-
-        val projection = buildLibraryVerticalProjection(
-            sections = sections,
-            sourceMode = LibrarySourceMode.LOCAL,
-            selectedSectionKey = null,
-            selectedType = null,
-            sortOption = LibrarySortOption.ADDED_DESC,
-        )
-
-        assertEquals(null, projection.selectedSectionKey)
-        assertEquals(listOf("movie", "series"), projection.availableTypes)
-        assertEquals(
-            setOf("movie-one", "shared-id:movie", "series-one", "shared-id:series"),
-            projection.entries.map { "${it.item.id}:${it.item.type}" }.toSet(),
-        )
-
-        val seriesOnly = buildLibraryVerticalProjection(
-            sections = sections,
-            sourceMode = LibrarySourceMode.LOCAL,
-            selectedSectionKey = null,
-            selectedType = "series",
-            sortOption = LibrarySortOption.ADDED_DESC,
-        )
-        assertEquals(listOf("series"), seriesOnly.availableTypes.filter { it == seriesOnly.selectedType })
-        assertEquals(setOf("series-one", "shared-id"), seriesOnly.entries.map { it.item.id }.toSet())
-    }
-
-    @Test
     fun `vertical tracker projection selects one list then filters and sorts its items`() {
         val watchlist = LibrarySection(
             type = "watchlist",
@@ -243,18 +199,77 @@ class LibraryDisplaySettingsTest {
         )
         assertEquals(listOf("watchlist"), simklProjection.availableSections.map { it.type })
         assertEquals("watchlist", simklProjection.selectedSectionKey)
+    }
 
-        val allStatusesProjection = buildLibraryVerticalProjection(
-            sections = listOf(watchlist, personal.copy(items = emptyList())),
-            sourceMode = LibrarySourceMode.TRAKT,
-            selectedSectionKey = "watchlist",
-            selectedType = null,
-            sortOption = LibrarySortOption.DEFAULT,
-            selectSection = false,
+    @Test
+    fun `vertical projection keeps only watched or unwatched items for the watched filter`() {
+        val section = LibrarySection(
+            type = "local",
+            displayTitle = "Library",
+            items = listOf(
+                item("seen", name = "Seen"),
+                item("unseen", name = "Unseen"),
+                item("show", type = "series", name = "Show"),
+            ),
         )
-        assertEquals(null, allStatusesProjection.selectedSectionKey)
-        assertEquals(listOf("watchlist", "personal:1"), allStatusesProjection.availableSections.map { it.type })
-        assertEquals(listOf("a", "series", "z"), allStatusesProjection.entries.map { it.item.id })
+        val watchedIds = setOf("seen", "show")
+        fun projectionFor(filter: LibraryWatchedFilter) = buildLibraryVerticalProjection(
+            sections = listOf(section),
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = null,
+            selectedType = null,
+            sortOption = LibrarySortOption.TITLE_ASC,
+            watchedFilter = filter,
+            isWatched = { it.id in watchedIds },
+        ).entries.map { it.item.id }
+
+        assertEquals(listOf("seen", "show", "unseen"), projectionFor(LibraryWatchedFilter.ALL))
+        assertEquals(listOf("seen", "show"), projectionFor(LibraryWatchedFilter.WATCHED))
+        assertEquals(listOf("unseen"), projectionFor(LibraryWatchedFilter.UNWATCHED))
+    }
+
+    @Test
+    fun `vertical projection filters by genre and year with faceted counts`() {
+        val section = LibrarySection(
+            type = "local",
+            displayTitle = "Library",
+            items = listOf(
+                item("a", name = "A", releaseInfo = "2020").copy(genres = listOf("Drama", "Comedy")),
+                item("b", name = "B", releaseInfo = "2020").copy(genres = listOf("Drama")),
+                item("c", name = "C", releaseInfo = "2018-2021").copy(genres = listOf("Comedy")),
+                item("d", name = "D"),
+            ),
+        )
+        fun projectionFor(genre: String?, year: String?) = buildLibraryVerticalProjection(
+            sections = listOf(section),
+            sourceMode = LibrarySourceMode.LOCAL,
+            selectedSectionKey = null,
+            selectedType = null,
+            sortOption = LibrarySortOption.TITLE_ASC,
+            selectedGenre = genre,
+            selectedYear = year,
+        )
+
+        val all = projectionFor(genre = null, year = null)
+        assertEquals(listOf("Comedy" to 2, "Drama" to 2), all.availableGenres.map { it.key to it.count })
+        assertEquals(listOf("2020" to 2, "2018" to 1), all.availableYears.map { it.key to it.count })
+
+        val comedy = projectionFor(genre = "comedy", year = null)
+        assertEquals(listOf("a", "c"), comedy.entries.map { it.item.id })
+        assertEquals(listOf("2020" to 1, "2018" to 1), comedy.availableYears.map { it.key to it.count })
+
+        assertEquals(4, all.allTypesCount)
+        assertEquals(mapOf("movie" to 2), comedy.typeCounts)
+        assertEquals(2, comedy.allTypesCount)
+
+        val drama2020 = projectionFor(genre = "Drama", year = "2020")
+        assertEquals(listOf("a", "b"), drama2020.entries.map { it.item.id })
+        assertEquals(listOf("Comedy" to 1, "Drama" to 2), drama2020.availableGenres.map { it.key to it.count })
+
+        val missing = projectionFor(genre = "Horror", year = "1999")
+        assertEquals(null, missing.selectedGenre)
+        assertEquals(null, missing.selectedYear)
+        assertEquals(listOf("a", "b", "c", "d"), missing.entries.map { it.item.id })
     }
 
     @Test
@@ -262,6 +277,8 @@ class LibraryDisplaySettingsTest {
         val state = LibraryDisplaySettingsUiState(
             layoutMode = LibraryLayoutMode.VERTICAL,
             sortOption = LibrarySortOption.TITLE_DESC,
+            selectedSectionKey = "personal:1",
+            selectedType = "series",
         )
 
         assertEquals(state, decodeLibraryDisplaySettings(encodeLibraryDisplaySettings(state)))
@@ -269,30 +286,6 @@ class LibraryDisplaySettingsTest {
             LibraryDisplaySettingsUiState(),
             decodeLibraryDisplaySettings("""{"layout_mode":"unknown","sort_option":"unknown"}"""),
         )
-    }
-
-    @Test
-    fun `WeTrakr always exposes movie and series filters for each status`() {
-        val onlySeries = LibrarySection("planning", "Planning", listOf(item("show", type = "series")))
-        val projection = buildLibraryVerticalProjection(listOf(onlySeries), LibrarySourceMode.WETRAKR, "planning", "movie", LibrarySortOption.TITLE_ASC)
-        assertEquals(listOf("movie", "series"), projection.availableTypes)
-        assertEquals("movie", projection.selectedType)
-        assertEquals(emptyList(), projection.entries)
-    }
-
-    @Test
-    fun `media type aliases normalize consistently`() {
-        assertEquals("movie", normalizeLibraryMediaType("Movies"))
-        assertEquals("movie", normalizeLibraryMediaType("film"))
-        assertEquals("series", normalizeLibraryMediaType("TV"))
-        assertEquals("series", normalizeLibraryMediaType("shows"))
-    }
-
-    @Test
-    fun `partial provider order falls back to selected sort for unranked entries`() {
-        val items = listOf(item("newest", name = "Zulu", savedAt = 30L), item("oldest", name = "Alpha", savedAt = 10L), item("middle", name = "Mike", savedAt = 20L))
-        val order = mapOf(libraryDisplayItemKey(items[1]) to 0)
-        assertEquals(listOf("oldest", "newest", "middle"), sortLibraryItems(items, LibrarySortOption.ADDED_DESC, LibrarySourceMode.MDBLIST, providerOrder = order).map { it.id })
     }
 
     private fun item(

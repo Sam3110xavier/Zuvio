@@ -75,6 +75,7 @@ import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
+import com.nuvio.app.features.downloads.DownloadItem
 import com.nuvio.app.features.livetv.LiveTvChannel
 import com.nuvio.app.features.livetv.LiveTvScreen
 import com.nuvio.app.features.livetv.LiveTvVodPlayback
@@ -156,7 +157,7 @@ internal data class AppTabActions(
     val onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
     val onConnectCloudClick: (() -> Unit)? = null,
     val onDownloadsClick: () -> Unit = {},
-    val onSearchClick: () -> Unit = {},
+    val onOpenDownload: ((DownloadItem) -> Unit)? = null,
     val onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     val onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     val onLiveTvChannelClick: (LiveTvChannel) -> Unit = {},
@@ -208,9 +209,6 @@ internal fun AppTabHost(
                             onCatalogClick = actions.onCatalogClick,
                             onPosterClick = actions.onPosterClick,
                             onPosterLongClick = actions.onPosterLongClick,
-                            onSearchClick = actions.onSearchClick,
-                            onDownloadsClick = actions.onDownloadsClick,
-                            onProfileClick = actions.onSwitchProfile,
                             onContinueWatchingClick = actions.onContinueWatchingClick,
                             onContinueWatchingLongPress = actions.onContinueWatchingLongPress,
                             continueWatchingDisintegrationRequest = state.continueWatchingDisintegrationRequest,
@@ -246,6 +244,7 @@ internal fun AppTabHost(
                     onPreviewClick = actions.onPosterClick,
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
+                    onOpenDownload = actions.onOpenDownload,
                     disintegrationRequest = state.libraryDisintegrationRequest,
                 )
             }

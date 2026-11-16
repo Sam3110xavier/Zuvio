@@ -574,7 +574,7 @@ final class MPVPlayerViewController: UIViewController {
         view.layer.masksToBounds = true
 
         metalLayer.contentsGravity = .resize
-        metalLayer.contentsScale = view.window?.screen.nativeScale ?? UIScreen.main.nativeScale
+        metalLayer.contentsScale = renderScale()
         metalLayer.framebufferOnly = true
         metalLayer.backgroundColor = UIColor.black.cgColor
         metalLayer.wantsExtendedDynamicRangeContent = lastVideoOutputSettings?.extendedDynamicRange ?? true
@@ -764,11 +764,16 @@ final class MPVPlayerViewController: UIViewController {
         }
     }
 
+    private func renderScale() -> CGFloat {
+        let screen = view.window?.screen ?? UIScreen.main
+        return max(screen.scale, screen.nativeScale)
+    }
+
     private func layoutPlayerSurfaces() {
         let bounds = CGRect(origin: .zero, size: externallyManagedViewSize ?? view.bounds.size)
         guard bounds.width > 1, bounds.height > 1 else { return }
 
-        let scale = view.window?.screen.nativeScale ?? UIScreen.main.nativeScale
+        let scale = renderScale()
         let drawableSize = CGSize(
             width: (bounds.width * scale).rounded(.toNearestOrAwayFromZero),
             height: (bounds.height * scale).rounded(.toNearestOrAwayFromZero)
@@ -1929,7 +1934,7 @@ final class MPVPlayerViewController: UIViewController {
         }
         let cueText = getString("sub-text") ?? ""
         pictureInPictureController?.setSubtitleText(cueText, bold: lastSubtitleStyle?.bold ?? false)
-        let text = styled ? cueText : ""
+        let text = styled ? (getString("sub-text/ass") ?? cueText) : ""
         if text != lastSubtitleText {
             lastSubtitleText = text
             subtitleTextHandler?.onTextChanged(text: text)

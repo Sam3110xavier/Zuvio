@@ -88,6 +88,7 @@ internal fun AddonsSettingsPageContent(
     }
 
     val uiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+    val pendingTrackingConsent by AddonRepository.pendingTrackingConsent.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
     val coroutineScope = rememberCoroutineScope()
     var addonUrl by rememberSaveable { mutableStateOf("") }
@@ -132,6 +133,11 @@ internal fun AddonsSettingsPageContent(
                             AddonInstallModalState.Success(result.manifest.name)
                         }
 
+                        is AddAddonResult.TrackingConsentRequired -> {
+                            AddonRepository.requestTrackingConsent(result.manifest)
+                            null
+                        }
+
                         is AddAddonResult.Error -> {
                             AddonInstallModalState.Error(result.message)
                         }
@@ -171,9 +177,6 @@ internal fun AddonsSettingsPageContent(
                     onEnabledChange = { enabled ->
                         AddonRepository.setAddonEnabled(addon.manifestUrl, enabled)
                     },
-                    onHideCatalogsChange = { hide ->
-                        AddonRepository.setAddonHideCatalogs(addon.manifestUrl, hide)
-                    },
                     onConfigureClick = if (showConfigureAction && !configureUrl.isNullOrBlank()) {
                         {
                             runCatching {
@@ -203,6 +206,29 @@ internal fun AddonsSettingsPageContent(
                 addonPendingDeletionUrl = null
             },
             onDismiss = { addonPendingDeletionUrl = null },
+        )
+    }
+
+    val trackingConsentManifest = pendingTrackingConsent
+    if (trackingConsentManifest != null) {
+        TrackingAddonConsentDialog(
+            manifest = trackingConsentManifest,
+            onInstall = {
+                installModalState = AddonInstallModalState.Checking
+                coroutineScope.launch {
+                    installModalState = when (val result = AddonRepository.installWithTrackingConsent(trackingConsentManifest)) {
+                        is AddAddonResult.Success -> {
+                            addonUrl = ""
+                            AddonInstallModalState.Success(result.manifest.name)
+                        }
+
+                        is AddAddonResult.TrackingConsentRequired -> null
+
+                        is AddAddonResult.Error -> AddonInstallModalState.Error(result.message)
+                    }
+                }
+            },
+            onDismiss = AddonRepository::dismissTrackingConsent,
         )
     }
 
@@ -417,7 +443,6 @@ private fun InstalledAddonCard(
     onMoveDownClick: (() -> Unit)?,
     onRefreshClick: () -> Unit,
     onEnabledChange: (Boolean) -> Unit,
-    onHideCatalogsChange: (Boolean) -> Unit,
     onConfigureClick: (() -> Unit)?,
     onDeleteClick: () -> Unit,
 ) {
@@ -461,31 +486,6 @@ private fun InstalledAddonCard(
                     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
                 ),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Hide catalogs",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Keep this add-on available for streams, but hide its catalogs from Discover and Search.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = addon.hideCatalogs,
-                onCheckedChange = onHideCatalogsChange,
-                enabled = addon.enabled,
             )
         }
 
