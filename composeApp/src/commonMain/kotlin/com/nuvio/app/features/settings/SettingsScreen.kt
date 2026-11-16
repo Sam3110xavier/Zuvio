@@ -74,8 +74,6 @@ import com.nuvio.app.features.addons.hasPendingEnabledManifests
 import com.nuvio.app.features.addons.isWaitingForFirstEnabledManifest
 import com.nuvio.app.features.debrid.DebridSettings
 import com.nuvio.app.features.debrid.DebridSettingsRepository
-import com.nuvio.app.features.home.HomeAddonLayoutItem
-import com.nuvio.app.features.home.HomeAddonRowOrderPolicy
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MetaPreview
@@ -445,8 +443,6 @@ fun SettingsScreen(
                         homescreenShowCatalogType = homescreenSettingsUiState.showCatalogType,
                         homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                         homescreenItems = homescreenSettingsUiState.items,
-                        homescreenAddonGroups = homescreenSettingsUiState.addonGroups,
-                        homescreenAddonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
                         homescreenCatalogLoading = addonManifestsLoading,
                         homescreenCatalogErrorMessage = addonManifestErrorMessage,
                         metaScreenSettingsUiState = metaScreenSettingsUiState,
@@ -499,8 +495,6 @@ fun SettingsScreen(
                         homescreenShowCatalogType = homescreenSettingsUiState.showCatalogType,
                         homescreenHideUnreleasedContent = homescreenSettingsUiState.hideUnreleasedContent,
                         homescreenItems = homescreenSettingsUiState.items,
-                        homescreenAddonGroups = homescreenSettingsUiState.addonGroups,
-                        homescreenAddonRowOrderPolicy = homescreenSettingsUiState.addonRowOrderPolicy,
                         homescreenCatalogLoading = addonManifestsLoading,
                         homescreenCatalogErrorMessage = addonManifestErrorMessage,
                         metaScreenSettingsUiState = metaScreenSettingsUiState,
@@ -566,8 +560,6 @@ private fun MobileSettingsScreen(
     homescreenShowCatalogType: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
-    homescreenAddonGroups: List<HomeAddonLayoutItem>,
-    homescreenAddonRowOrderPolicy: HomeAddonRowOrderPolicy,
     homescreenCatalogLoading: Boolean,
     homescreenCatalogErrorMessage: String?,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
@@ -854,8 +846,6 @@ private fun MobileSettingsScreen(
                     showCatalogType = homescreenShowCatalogType,
                     hideUnreleasedContent = homescreenHideUnreleasedContent,
                     items = homescreenItems,
-                    addonGroups = homescreenAddonGroups,
-                    addonRowOrderPolicy = homescreenAddonRowOrderPolicy,
                     isCatalogLoading = homescreenCatalogLoading,
                     catalogErrorMessage = homescreenCatalogErrorMessage,
                 )
@@ -991,8 +981,6 @@ private fun TabletSettingsScreen(
     homescreenShowCatalogType: Boolean,
     homescreenHideUnreleasedContent: Boolean,
     homescreenItems: List<HomeCatalogSettingsItem>,
-    homescreenAddonGroups: List<HomeAddonLayoutItem>,
-    homescreenAddonRowOrderPolicy: HomeAddonRowOrderPolicy,
     homescreenCatalogLoading: Boolean,
     homescreenCatalogErrorMessage: String?,
     metaScreenSettingsUiState: MetaScreenSettingsUiState,
@@ -1326,8 +1314,6 @@ private fun TabletSettingsScreen(
                         showCatalogType = homescreenShowCatalogType,
                         hideUnreleasedContent = homescreenHideUnreleasedContent,
                         items = homescreenItems,
-                    addonGroups = homescreenAddonGroups,
-                    addonRowOrderPolicy = homescreenAddonRowOrderPolicy,
                         isCatalogLoading = homescreenCatalogLoading,
                         catalogErrorMessage = homescreenCatalogErrorMessage,
                     )
