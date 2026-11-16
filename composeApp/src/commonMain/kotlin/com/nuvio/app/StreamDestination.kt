@@ -561,6 +561,35 @@ internal fun StreamDestination(
             NuvioToastController.show("No playable links were found. Choose another quality or try again.")
         }
     }
+    LaunchedEffect(
+        qualityFlowEnabled,
+        qualitySelectionStarted,
+        selectedSemiAutoQuality,
+        qualityEligibleStreams,
+        qualityPreferredSourceOrder,
+        debridEnabledForQualitySelection,
+        p2pEnabled,
+        streamsUiState.requestToken,
+        expectedStreamsRequestToken,
+    ) {
+        if (!qualityFlowEnabled || !qualitySelectionStarted) return@LaunchedEffect
+        if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
+        val requestedQuality = selectedSemiAutoQuality
+            ?.let { runCatching { StreamAutoPlayPreferredQuality.valueOf(it) }.getOrNull() }
+            ?: return@LaunchedEffect
+        val refreshedCandidates = QualityFirstAutoPlayPolicy.rankCandidatesWithFallback(
+            streams = qualityEligibleStreams,
+            requestedQuality = requestedQuality,
+            debridEnabled = debridEnabledForQualitySelection,
+            preferredSourceOrder = qualityPreferredSourceOrder,
+            p2pEnabled = p2pEnabled,
+        )
+        StreamsRepository.refreshQualityFirstAutoPlayCandidates(
+            expectedRequestToken = expectedStreamsRequestToken,
+            discoveredCandidates = refreshedCandidates,
+        )
+    }
+
     val showLoadingScreen = autoPlayNavigationStarted || resolvingDebridStream || resolvingYouTubeStream || preparingServerStream ||
         (qualityFlowEnabled && qualityAutoPlayLoading) ||
         (!qualityFlowEnabled && streamsUiState.shouldShowAutoPlayLoading(

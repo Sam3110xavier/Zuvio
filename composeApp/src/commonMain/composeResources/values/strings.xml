@@ -3220,4 +3220,8 @@
     <string name="downloads_episodes_out_of_downloaded">Episode %1$d out of %2$d downloaded</string>
     <string name="batch_download_failed_single">%1$d episode could not be queued</string>
     <string name="batch_download_failed_multiple">%1$d episodes could not be queued</string>
+    <string name="compose_settings_page_cloudstream">CloudStream / CS3</string>
+    <string name="settings_telegram_title">Telegram</string>
+    <string name="settings_homescreen_pinned_at_position">Pinned at position %1$d</string>
+    <string name="settings_homescreen_pinned_to_bottom">Pinned to bottom</string>
 </resources>

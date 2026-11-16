@@ -20,7 +20,9 @@ import com.nuvio.app.features.tracking.TrackingLibraryTab
 import com.nuvio.app.features.tracking.TrackingLibraryTabKind
 import com.nuvio.app.features.tracking.TrackingMembershipApplyResult
 import com.nuvio.app.features.tracking.TrackingMembershipResolution
+import com.nuvio.app.features.tracking.TrackingListStatus
 import com.nuvio.app.features.tracking.TrackingProviderId
+import com.nuvio.app.features.tracking.matchesStatus
 import com.nuvio.app.features.tracking.TrackingProviderRegistry
 import com.nuvio.app.features.tracking.TrackingRefreshIntent
 import com.nuvio.app.features.tracking.TrackingSettingsRepository
@@ -450,6 +452,35 @@ object LibraryRepository {
             }
         }
         return libraryMembershipWithLocal(inLocal = inLocal, providerMembership = memberships)
+    }
+
+    suspend fun moveToStatus(
+        item: LibraryItem,
+        status: TrackingListStatus,
+        providerId: TrackingProviderId,
+        confirmedRemovalProviders: Set<TrackingProviderId> = emptySet(),
+    ): TrackingMembershipApplyResult {
+        ensureLoaded()
+        val tabs = libraryListTabs(item)
+        val targetTab = tabs.firstOrNull { tab ->
+            tab.providerId == providerId && tab.matchesStatus(status)
+        } ?: throw IllegalStateException(
+            "Tracking provider does not expose the requested status list for this item.",
+        )
+        val providerStatusTabs = tabs.filter { tab ->
+            tab.providerId == providerId &&
+                tab.kind == TrackingLibraryTabKind.STATUS &&
+                tab.isMembershipDestination
+        }
+        val desiredMembership = getMembershipSnapshot(item).toMutableMap()
+        providerStatusTabs.forEach { tab ->
+            desiredMembership[tab.key] = tab.key == targetTab.key
+        }
+        return applyMembershipChanges(
+            item = item,
+            desiredMembership = desiredMembership,
+            confirmedRemovalProviders = confirmedRemovalProviders,
+        )
     }
 
     suspend fun applyMembershipChanges(

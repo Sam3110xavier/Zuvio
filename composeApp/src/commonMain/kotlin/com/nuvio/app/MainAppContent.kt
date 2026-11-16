@@ -894,6 +894,10 @@ internal fun MainAppContent(
                                 )
                             }
 
+                            is AddAddonResult.TrackingConsentRequired -> {
+                                AddonRepository.requestTrackingConsent(result.manifest)
+                            }
+
                             is AddAddonResult.Error -> {
                                 InAppLogger.warn("App/DeepLink", "addon install failed message=${result.message}")
                                 NuvioToastController.show(result.message)
@@ -1755,7 +1759,7 @@ internal fun MainAppContent(
                                     }
                                 },
                                 onDownloadsClick = { navController.navigate(DownloadsRoute(downloadsTitle)) },
-                                onSearchClick = { activateTab(AppScreenTab.Search) },
+                                onOpenDownload = ::openDownloadedItem,
                                 onContinueWatchingClick = onContinueWatchingClick,
                                 onContinueWatchingLongPress = onContinueWatchingLongPress,
                                 onLiveTvChannelClick = onLiveTvChannelClick,

@@ -136,6 +136,7 @@ object StreamAutoPlaySelector {
         }
         val matchingStreams = when (mode) {
             StreamAutoPlayMode.MANUAL -> emptyList()
+            StreamAutoPlayMode.SEMI_AUTOMATIC -> candidateStreams
             StreamAutoPlayMode.FIRST_STREAM -> candidateStreams
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()

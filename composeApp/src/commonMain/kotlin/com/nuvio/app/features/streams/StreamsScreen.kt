@@ -139,8 +139,10 @@ fun StreamsScreen(
     resumePositionMs: Long? = null,
     resumeProgressFraction: Float? = null,
     manualSelection: Boolean = false,
+    qualitySelectionMode: Boolean = false,
     startFromBeginning: Boolean = false,
     showLoadingScreen: Boolean = false,
+    downloadMode: Boolean = false,
     onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit = { _, _, _ -> },
     onStreamActionOpen: (
         stream: StreamItem,
@@ -210,7 +212,7 @@ fun StreamsScreen(
     val effectiveResumePositionMs = resumeState.positionMs
     val effectiveResumeProgressFraction = resumeState.progressFraction
 
-    LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection) {
+    LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection, qualitySelectionMode) {
         StreamsRepository.load(
             type = type,
             videoId = videoId,
@@ -218,6 +220,7 @@ fun StreamsScreen(
             season = seasonNumber,
             episode = episodeNumber,
             manualSelection = manualSelection,
+            qualitySelectionMode = qualitySelectionMode,
         )
     }
 
@@ -251,6 +254,7 @@ fun StreamsScreen(
             season = seasonNumber,
             episode = episodeNumber,
             manualSelection = manualSelection,
+            qualitySelectionMode = qualitySelectionMode,
         )
     }
 
@@ -340,7 +344,10 @@ fun StreamsScreen(
                 appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
                 resumePositionMs = effectiveResumePositionMs,
                 resumeProgressFraction = effectiveResumeProgressFraction,
-                onStreamSelected = onStreamSelected,
+                onStreamSelected = { stream, positionMs, progressFraction ->
+                    if (downloadMode) startStreamDownload(stream)
+                    else onStreamSelected(stream, positionMs, progressFraction)
+                },
                 onStreamLongPress = { stream -> streamActionsTarget = stream },
                 onRefresh = reloadStreams,
             )
