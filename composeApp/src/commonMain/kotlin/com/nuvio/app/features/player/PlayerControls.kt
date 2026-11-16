@@ -86,7 +86,6 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -558,7 +557,6 @@ private fun PlayerHeader(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val typeScale = MaterialTheme.nuvioTypeScale
     val metadataAlpha by animateFloatAsState(
         targetValue = if (!showParentalGuide && showActions) 1f else 0f,
         animationSpec = tween(durationMillis = if (!showParentalGuide && showActions) 260 else 160),
