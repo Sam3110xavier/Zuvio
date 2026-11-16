@@ -340,7 +340,7 @@ class MergedHomeRowsTest {
             cleanMergedSourceTabTitle("BanglaPlex · 2026 - Movies"),
         )
         assertEquals(
-            "Seerr Next",
+            "Seerr For you Next",
             cleanMergedSourceTabTitle("Seerr · For you · Movies · Next"),
         )
     }
