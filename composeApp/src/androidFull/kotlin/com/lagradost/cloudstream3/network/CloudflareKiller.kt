@@ -20,7 +20,6 @@ import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 
 /**
@@ -35,10 +34,6 @@ private data class CloudStreamRequestContext(
 
 private val cloudStreamRequestContext = ThreadLocal<CloudStreamRequestContext?>()
 
-// OkHttp's enqueue() dispatches interceptors on its own worker threads, so a
-// coroutine ThreadLocal cannot authorize the actual network callback reliably.
-// Keep only the lifetime of an explicit playback-link-resolution operation here.
-private val interactivePlaybackScopes = AtomicInteger(0)
 private val interactiveChallengeInProgress = AtomicBoolean(false)
 private val recentInteractiveChallenges = ConcurrentHashMap<String, Long>()
 private const val INTERACTIVE_CHALLENGE_COOLDOWN_MS = 60_000L
@@ -90,16 +85,24 @@ class CloudflareKiller : Interceptor {
                 pluginId = pluginId?.takeIf(String::isNotBlank) ?: "unknown-plugin",
                 allowInteractiveVerification = allowInteractiveVerification,
             )
-            if (allowInteractiveVerification) {
-                interactivePlaybackScopes.incrementAndGet()
+            return withContext(cloudStreamRequestContext.asContextElement(context)) {
+                block()
             }
-            return try {
-                withContext(cloudStreamRequestContext.asContextElement(context)) {
-                    block()
-                }
-            } finally {
-                if (allowInteractiveVerification) {
-                    interactivePlaybackScopes.decrementAndGet()
+        }
+
+        /**
+         * Capture plugin ownership when OkHttp queues an asynchronous call.
+         * Calls queued outside an explicit CloudStream link-resolution scope remain unprivileged.
+         */
+        internal fun propagateRequestContext(task: Runnable): Runnable {
+            val captured = cloudStreamRequestContext.get()
+            return Runnable {
+                val previous = cloudStreamRequestContext.get()
+                try {
+                    cloudStreamRequestContext.set(captured)
+                    task.run()
+                } finally {
+                    cloudStreamRequestContext.set(previous)
                 }
             }
         }
@@ -134,7 +137,7 @@ class CloudflareKiller : Interceptor {
             return@runBlocking response
         }
         val requestContext = cloudStreamRequestContext.get()
-        if (interactivePlaybackScopes.get() <= 0) {
+        if (requestContext?.allowInteractiveVerification != true) {
             Log.i(
                 TAG,
                 "Deferring interactive Cloudflare verification outside active playback resolution " +
