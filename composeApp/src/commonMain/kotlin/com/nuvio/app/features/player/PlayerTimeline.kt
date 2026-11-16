@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.accentBrush
 import com.nuvio.app.core.ui.themePalette
@@ -70,9 +71,12 @@ internal fun PlayerTimelineDetails(
     titleLogo: String? = null,
     showTitleLogo: Boolean = false,
     animeEnhancement: AnimeEnhancementStatus? = null,
+    titleMaxLines: Int = 1,
+    titleFontWeight: FontWeight = FontWeight.SemiBold,
+    horizontalContentPadding: Dp = PlayerTimelineContentInset,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
-    Column(modifier.padding(horizontal = PlayerTimelineContentInset)) {
+    Column(modifier.padding(horizontal = horizontalContentPadding)) {
         PlayerTitleArtwork(
             title = title,
             logoUrl = titleLogo,
@@ -80,10 +84,10 @@ internal fun PlayerTimelineDetails(
             textStyle = typeScale.titleLg.copy(
                 fontSize = metrics.titleSize,
                 lineHeight = metrics.titleSize * 1.16f,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = titleFontWeight,
             ),
             textColor = Color.White,
-            maxLines = 1,
+            maxLines = titleMaxLines,
             maxLogoHeight = metrics.timelineLogoMaxHeight,
             maxLogoWidth = metrics.logoMaxWidth,
         )
