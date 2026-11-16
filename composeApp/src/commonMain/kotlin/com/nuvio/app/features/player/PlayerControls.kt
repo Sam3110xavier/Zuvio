@@ -114,8 +114,6 @@ import com.nuvio.app.core.ui.glass.isAmbientLiquidGlassActive
 @Composable
 internal fun PlayerControlsShell(
     title: String,
-    streamTitle: String,
-    providerName: String,
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
@@ -589,6 +587,7 @@ private fun PlayerHeader(
                         titleMaxLines = 2,
                         titleFontWeight = FontWeight.Bold,
                         horizontalContentPadding = 0.dp,
+                        titleLogoMaxHeight = metrics.titleLogoMaxHeight,
                     )
                 }
                 ParentalGuideOverlay(
