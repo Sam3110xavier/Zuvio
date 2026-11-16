@@ -305,6 +305,8 @@ object StreamsRepository {
             return
         }
 
+        val downloadedGroup = findDownloadedStreamGroup(type, videoId, parentMetaId, season, episode)
+
         val embeddedStreams = MetaDetailsRepository.findEmbeddedStreams(videoId)
         if (embeddedStreams.isNotEmpty()) {
             InAppLogger.info("Streams/StreamsRepository", "Using embedded streams count=${embeddedStreams.size} type=$type id=$videoId")
@@ -358,13 +360,30 @@ object StreamsRepository {
         } else {
             emptyList()
         }
+        fun showOnlyDownloadedOrEmpty(reason: StreamsEmptyStateReason, logMessage: String) {
+            _uiState.value = if (downloadedGroup != null) {
+                StreamsUiState(
+                    requestToken = requestToken,
+                    groups = listOf(downloadedGroup),
+                    activeAddonIds = setOf(DOWNLOADED_ADDON_ID),
+                    isAnyLoading = false,
+                    autoPlayDecided = true,
+                )
+            } else {
+                InAppLogger.warn("Streams/StreamsRepository", logMessage)
+                StreamsUiState(
+                    requestToken = requestToken,
+                    isAnyLoading = false,
+                    emptyStateReason = reason,
+                    autoPlayDecided = true,
+                )
+            }
+        }
+
         if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
-            InAppLogger.warn("Streams/StreamsRepository", "No stream addons or providers installed for type=$type id=$videoId")
-            _uiState.value = StreamsUiState(
-                requestToken = requestToken,
-                isAnyLoading = false,
-                emptyStateReason = StreamsEmptyStateReason.NoAddonsInstalled,
-                autoPlayDecided = true,
+            showOnlyDownloadedOrEmpty(
+                StreamsEmptyStateReason.NoAddonsInstalled,
+                "No stream addons or providers installed for type=$type id=$videoId",
             )
             return
         }
@@ -389,19 +408,16 @@ object StreamsRepository {
         )
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && cloudStreamProviderGroups.isEmpty() && serverSources.isEmpty() && !telegramAvailable) {
-            InAppLogger.warn("Streams/StreamsRepository", "No compatible stream addon or provider for type=$type id=$videoId")
-            _uiState.value = StreamsUiState(
-                requestToken = requestToken,
-                isAnyLoading = false,
-                emptyStateReason = StreamsEmptyStateReason.NoCompatibleAddons,
-                autoPlayDecided = true,
+            showOnlyDownloadedOrEmpty(
+                StreamsEmptyStateReason.NoCompatibleAddons,
+                "No compatible stream addon or provider for type=$type id=$videoId",
             )
             return
         }
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(
+        val orderedInitialGroups = StreamAutoPlaySelector.orderAddonStreams(
             groups = streamAddons.map { addon ->
                 AddonStreamGroup(
                     addonName = addon.addonName,
@@ -438,6 +454,7 @@ object StreamsRepository {
             installedOrder = installedAddonOrder,
             preferredGroupIds = preferredGroupIds,
         )
+        val initialGroups = listOfNotNull(downloadedGroup) + orderedInitialGroups
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         _uiState.value = StreamsUiState(
             requestToken = requestToken,
