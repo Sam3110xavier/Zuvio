@@ -433,46 +433,54 @@ object SearchRepository {
         addons: List<ManagedAddon>,
         query: String,
     ): List<SearchCatalogRequest> =
-        addons.mapNotNull { addon ->
-            val manifest = addon.manifest ?: return@mapNotNull null
-            addon to manifest
-        }.flatMap { (addon, manifest) ->
-            manifest.catalogs
-                .filter { catalog -> catalog.supportsSearch() }
-                .map { catalog ->
-                    SearchCatalogRequest(
-                        addon = addon,
-                        catalogId = catalog.id,
-                        catalogName = catalog.name,
-                        type = catalog.type,
-                        query = query,
-                        supportsPagination = catalog.supportsPagination(),
-                    )
-                }
-        }
+        addons.asSequence()
+            .filterNot { addon -> addon.hideCatalogs }
+            .mapNotNull { addon ->
+                val manifest = addon.manifest ?: return@mapNotNull null
+                addon to manifest
+            }
+            .flatMap { (addon, manifest) ->
+                manifest.catalogs
+                    .filter { catalog -> catalog.supportsSearch() }
+                    .map { catalog ->
+                        SearchCatalogRequest(
+                            addon = addon,
+                            catalogId = catalog.id,
+                            catalogName = catalog.name,
+                            type = catalog.type,
+                            query = query,
+                            supportsPagination = catalog.supportsPagination(),
+                        )
+                    }
+            }
+            .toList()
 
     private fun buildDiscoverSources(addons: List<ManagedAddon>): List<DiscoverCatalogOption> =
-        addons.mapNotNull { addon ->
-            val manifest = addon.manifest ?: return@mapNotNull null
-            addon to manifest
-        }.flatMap { (addon, manifest) ->
-            manifest.catalogs
-                .filter { catalog -> catalog.supportsDiscover() }
-                .map { catalog ->
-                    val genreExtra = catalog.genreExtra()
-                    DiscoverCatalogOption(
-                        key = "${manifest.id}:${catalog.type}:${catalog.id}",
-                        addonName = addon.displayTitle,
-                        manifestUrl = addon.manifestUrl,
-                        type = catalog.type,
-                        catalogId = catalog.id,
-                        catalogName = catalog.name,
-                        genreOptions = genreExtra?.options.orEmpty(),
-                        genreRequired = genreExtra?.isRequired == true,
-                        supportsPagination = catalog.supportsPagination(),
-                    )
-                }
-        }
+        addons.asSequence()
+            .filterNot { addon -> addon.hideCatalogs }
+            .mapNotNull { addon ->
+                val manifest = addon.manifest ?: return@mapNotNull null
+                addon to manifest
+            }
+            .flatMap { (addon, manifest) ->
+                manifest.catalogs
+                    .filter { catalog -> catalog.supportsDiscover() }
+                    .map { catalog ->
+                        val genreExtra = catalog.genreExtra()
+                        DiscoverCatalogOption(
+                            key = "${manifest.id}:${catalog.type}:${catalog.id}",
+                            addonName = addon.displayTitle,
+                            manifestUrl = addon.manifestUrl,
+                            type = catalog.type,
+                            catalogId = catalog.id,
+                            catalogName = catalog.name,
+                            genreOptions = genreExtra?.options.orEmpty(),
+                            genreRequired = genreExtra?.isRequired == true,
+                            supportsPagination = catalog.supportsPagination(),
+                        )
+                    }
+            }
+            .toList()
 
     private suspend fun SearchCatalogRequest.toSection(forceRefresh: Boolean): HomeCatalogSection {
         val manifest = requireNotNull(addon.manifest)
