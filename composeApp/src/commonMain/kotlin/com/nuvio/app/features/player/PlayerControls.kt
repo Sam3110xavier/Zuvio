@@ -291,6 +291,7 @@ internal fun PlayerControlsShell(
                     title = title,
                     titleLogo = titleLogo,
                     showTitleLogo = showTitleLogo,
+                    badges = badges,
                     streamTitle = streamTitle,
                     providerName = providerName,
                     seasonNumber = seasonNumber,
@@ -527,6 +528,7 @@ private fun PlayerHeader(
     title: String,
     titleLogo: String?,
     showTitleLogo: Boolean,
+    badges: List<StreamBadge>,
     streamTitle: String,
     providerName: String,
     seasonNumber: Int?,
@@ -606,6 +608,12 @@ private fun PlayerHeader(
                             color = Color.White.copy(alpha = 0.9f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (badges.isNotEmpty()) {
+                        PlayerBadges(
+                            badges = badges,
+                            modifier = Modifier.padding(vertical = 4.dp),
                         )
                     }
                     Row(
