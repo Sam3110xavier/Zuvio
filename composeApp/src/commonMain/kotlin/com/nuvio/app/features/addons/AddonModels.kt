@@ -66,6 +66,7 @@ data class ManagedAddon(
     val manifest: AddonManifest? = null,
     val userSetName: String? = null,
     val enabled: Boolean = true,
+    val hideCatalogs: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
