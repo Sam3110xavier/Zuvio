@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
@@ -38,6 +39,7 @@ import nuvio.composeapp.generated.resources.library_type_all
 import nuvio.composeapp.generated.resources.library_watched_filter_all
 import nuvio.composeapp.generated.resources.library_watched_filter_unwatched
 import nuvio.composeapp.generated.resources.library_watched_filter_watched
+import nuvio.composeapp.generated.resources.library_filter_sort
 import nuvio.composeapp.generated.resources.library_sort_added_asc
 import nuvio.composeapp.generated.resources.library_sort_added_desc
 import nuvio.composeapp.generated.resources.library_sort_title_asc
@@ -111,6 +113,36 @@ internal fun LibrarySavedControls(
                     enabled = typeOptions.size > 1,
                     onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
                 )
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (layoutMode == LibraryLayoutMode.VERTICAL) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LibraryChip(
+                        label = allTypesLabel,
+                        selected = verticalProjection.selectedType == null,
+                        onClick = { onTypeSelected(null) },
+                    )
+                    verticalProjection.availableTypes.forEach { type ->
+                        LibraryChip(
+                            label = localizedMediaTypeLabel(type),
+                            selected = verticalProjection.selectedType == type,
+                            onClick = { onTypeSelected(type) },
+                        )
+                    }
+                }
+            } else {
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
             }
 
             NuvioDropdownChip(
@@ -172,6 +204,22 @@ internal fun LibrarySavedControls(
                                 ?.let(onWatchedFilterSelected)
                         },
                         fillWidth = true,
+        if (
+            layoutMode == LibraryLayoutMode.VERTICAL &&
+            sourceMode.isRemoteTrackingSource &&
+            verticalProjection.availableSections.size > 1
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                verticalProjection.availableSections.forEach { section ->
+                    LibraryChip(
+                        label = localizedLibrarySectionTitle(section.type, section.displayTitle),
+                        selected = section.type == verticalProjection.selectedSectionKey,
+                        onClick = { onSectionSelected(section.type) },
                     )
                 }
             }

@@ -1,12 +1,19 @@
 package com.nuvio.app.features.catalog
 
-import com.nuvio.app.core.ui.background.appBackgroundCover
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import com.nuvio.app.core.ui.background.appBackgroundCover
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -22,10 +29,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.nuvio.app.core.ui.NuvioBackButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +72,7 @@ import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.MergedHomeRowDisplayMode
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.stableKey
@@ -105,7 +117,72 @@ fun CatalogScreen(
         initialFirstVisibleItemScrollOffset = initialScrollPosition.firstVisibleItemScrollOffset,
     )
     var headerHeightPx by remember { mutableIntStateOf(0) }
+    var mergedTabsHeightPx by remember { mutableIntStateOf(0) }
+    var showMergedTabs by rememberSaveable(target) { mutableStateOf(true) }
     var observedOfflineState by remember { mutableStateOf(false) }
+    var selectedMergedSourceKey by rememberSaveable(target) { mutableStateOf("all") }
+    val showMergedSourceTabs = target is CatalogTarget.MergedRow &&
+        uiState.mergedDisplayMode != MergedHomeRowDisplayMode.UNIFIED_CAROUSEL.storageValue
+    val usesPerSourceMergedTabs = uiState.mergedDisplayMode == MergedHomeRowDisplayMode.SOURCE_TABS.storageValue
+    val selectedMergedTab = uiState.mergedSourceTabs.firstOrNull { it.key == selectedMergedSourceKey }
+        ?: uiState.mergedSourceTabs.firstOrNull()
+    val visibleItems = if (showMergedSourceTabs) selectedMergedTab?.items.orEmpty() else uiState.items
+    val loadMoreSourceKey = selectedMergedTab?.key
+        ?.takeIf { showMergedSourceTabs && usesPerSourceMergedTabs && it != "all" }
+    val selectedCanLoadMore = if (target is CatalogTarget.MergedRow) {
+        if (showMergedSourceTabs) selectedMergedTab?.hasMore == true else uiState.mergedHasMore
+    } else {
+        uiState.canLoadMore
+    }
+    val failedVisibleSourceKeys = when {
+        !uiState.isMergedCatalog -> emptySet()
+        showMergedSourceTabs && usesPerSourceMergedTabs && selectedMergedTab?.key != "all" -> {
+            selectedMergedTab?.key?.let { key ->
+                uiState.failedMergedSourceKeys.filterTo(linkedSetOf()) { it == key }
+            } ?: emptySet()
+        }
+        else -> uiState.failedMergedSourceKeys
+    }
+    val showUnavailableSourceNotice = uiState.isMergedCatalog &&
+        uiState.unavailableMergedSourceCount > 0 &&
+        (!showMergedSourceTabs || !usesPerSourceMergedTabs || selectedMergedTab?.key == "all")
+
+    LaunchedEffect(uiState.mergedSourceTabs.map { it.key }) {
+        if (uiState.mergedSourceTabs.none { it.key == selectedMergedSourceKey }) {
+            selectedMergedSourceKey = "all"
+        }
+    }
+
+    LaunchedEffect(selectedMergedSourceKey, showMergedSourceTabs) {
+        if (showMergedSourceTabs) {
+            showMergedTabs = true
+            gridState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(gridState, target, showMergedSourceTabs) {
+        if (!showMergedSourceTabs) {
+            showMergedTabs = false
+            return@LaunchedEffect
+        }
+        var previousPosition: Pair<Int, Int>? = null
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { position ->
+                val previous = previousPosition
+                if (previous != null) {
+                    val movingDownContent = position.first > previous.first ||
+                        (position.first == previous.first && position.second > previous.second)
+                    val movingUpContent = position.first < previous.first ||
+                        (position.first == previous.first && position.second < previous.second)
+                    when {
+                        movingDownContent -> showMergedTabs = false
+                        movingUpContent -> showMergedTabs = true
+                    }
+                }
+                previousPosition = position
+            }
+    }
 
     LaunchedEffect(target, homeCatalogSettingsUiState.hideUnreleasedContent) {
         CatalogRepository.load(
@@ -125,16 +202,16 @@ fun CatalogScreen(
             }
     }
 
-    LaunchedEffect(gridState, uiState.canLoadMore, uiState.isLoading) {
+    LaunchedEffect(gridState, selectedCanLoadMore, uiState.isLoading, loadMoreSourceKey) {
         snapshotFlow { gridState.layoutInfo }
             .map { layoutInfo ->
                 val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 lastVisible >= layoutInfo.totalItemsCount - 6
             }
             .distinctUntilChanged()
-            .filter { it && uiState.canLoadMore && !uiState.isLoading }
+            .filter { it && selectedCanLoadMore && !uiState.isLoading }
             .collect {
-                CatalogRepository.loadMore()
+                CatalogRepository.loadMore(sourceKey = loadMoreSourceKey)
             }
     }
 
@@ -164,7 +241,7 @@ fun CatalogScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .appBackgroundCover(MaterialTheme.colorScheme.background),
     ) {
         val columns = remember(maxWidth) { catalogGridColumnsForWidth(maxWidth) }
 
@@ -175,14 +252,48 @@ fun CatalogScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
-                    top = with(androidx.compose.ui.platform.LocalDensity.current) { headerHeightPx.toDp() } + 12.dp,
+                    top = with(androidx.compose.ui.platform.LocalDensity.current) {
+                        (headerHeightPx + mergedTabsHeightPx).toDp()
+                    } + 12.dp,
                     end = 16.dp,
                     bottom = nuvioSafeBottomPadding(28.dp),
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                if (uiState.items.isEmpty() && uiState.isLoading) {
+                if (
+                    visibleItems.isNotEmpty() &&
+                    (failedVisibleSourceKeys.isNotEmpty() || showUnavailableSourceNotice)
+                ) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = if (failedVisibleSourceKeys.isNotEmpty()) {
+                                    "Some source catalogs could not be loaded."
+                                } else {
+                                    "Some configured source catalogs are currently unavailable."
+                                },
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (failedVisibleSourceKeys.isNotEmpty()) {
+                                TextButton(
+                                    onClick = {
+                                        CatalogRepository.retryFailedMergedSources(sourceKey = loadMoreSourceKey)
+                                    },
+                                ) {
+                                    Text(stringResource(Res.string.action_retry))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (visibleItems.isEmpty() && uiState.isLoading) {
                     items(columns * 3) {
                         SkeletonPoster(
                             modifier = Modifier.fillMaxWidth(),
@@ -190,23 +301,27 @@ fun CatalogScreen(
                             showLabels = !posterCardStyle.hideLabelsEnabled,
                         )
                     }
-                } else if (uiState.items.isEmpty()) {
+                } else if (visibleItems.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         CatalogEmptyState(
                             errorMessage = uiState.errorMessage,
                             networkCondition = networkStatusUiState.condition,
                             onRetry = {
                                 NetworkStatusRepository.requestRefresh(force = true)
-                                CatalogRepository.load(
-                                    target = target,
-                                    force = true,
-                                )
+                                if (target is CatalogTarget.MergedRow && uiState.failedMergedSourceKeys.isNotEmpty()) {
+                                    CatalogRepository.retryFailedMergedSources(sourceKey = loadMoreSourceKey)
+                                } else {
+                                    CatalogRepository.load(
+                                        target = target,
+                                        force = true,
+                                    )
+                                }
                             },
                         )
                     }
                 } else {
                     items(
-                        items = uiState.items.withDuplicateSafeLazyKeys { item -> item.stableKey() },
+                        items = visibleItems.withDuplicateSafeLazyKeys { item -> item.stableKey() },
                         key = { item -> item.lazyKey },
                     ) { keyedItem ->
                         val item = keyedItem.value
@@ -231,12 +346,37 @@ fun CatalogScreen(
                 }
             }
 
-            CatalogHeader(
-                title = title,
-                subtitle = subtitle,
-                modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
-                onBack = onBack,
-            )
+            Column(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                CatalogHeader(
+                    title = title,
+                    subtitle = subtitle,
+                    modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
+                    onBack = onBack,
+                )
+                AnimatedVisibility(
+                    visible = showMergedSourceTabs && showMergedTabs && uiState.mergedSourceTabs.isNotEmpty(),
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { mergedTabsHeightPx = it.height }
+                            .background(MaterialTheme.colorScheme.background)
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        uiState.mergedSourceTabs.forEach { tab ->
+                            FilterChip(
+                                selected = tab.key == selectedMergedTab?.key,
+                                onClick = { selectedMergedSourceKey = tab.key },
+                                label = { Text(tab.title) },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -261,7 +401,7 @@ private fun CatalogHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .appBackgroundCover(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
             .padding(top = 52.dp, bottom = 12.dp),
     ) {

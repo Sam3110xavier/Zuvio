@@ -24,6 +24,7 @@ fun PlayerScreen(
     onOpenExternalUrl: ((String) -> Unit)? = null,
     onOpenMetaDetails: ((com.nuvio.app.features.home.MetaPreview) -> Unit)? = null,
     onOpenPartyMedia: (PartyMedia) -> Unit = {},
+    onFollowPartyMedia: (PartyMedia) -> Unit = onOpenPartyMedia,
     modifier: Modifier = Modifier,
     logo: String? = null,
     poster: String? = null,
@@ -48,6 +49,7 @@ fun PlayerScreen(
     launchId: Long? = null,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    semiAutoSelectedQuality: com.nuvio.app.features.streams.StreamAutoPlayPreferredQuality? = null,
     sourceFromLinkCache: Boolean = false,
     sourceAutoSelected: Boolean = false,
 ) {
@@ -94,7 +96,9 @@ fun PlayerScreen(
             launchId = launchId,
             sourceFilename = sourceFilename,
             onOpenPartyMedia = onOpenPartyMedia,
+            onFollowPartyMedia = onFollowPartyMedia,
             stream = stream,
+            semiAutoSelectedQuality = semiAutoSelectedQuality,
             sourceFromLinkCache = sourceFromLinkCache,
             sourceAutoSelected = sourceAutoSelected,
         )
