@@ -61,6 +61,24 @@ actual object AddonStorage {
             forKey = "${addonEnabledStatesKey}_$profileId",
         )
     }
+
+    actual fun loadAddonCatalogHiddenStates(profileId: Int): Map<String, Boolean> =
+        NSUserDefaults.standardUserDefaults
+            .stringForKey("${addonCatalogHiddenStatesKey}_$profileId")
+            .orEmpty()
+            .lineSequence()
+            .mapNotNull(::parseCatalogHiddenStateLine)
+            .toMap()
+
+    actual fun saveAddonCatalogHiddenStates(profileId: Int, states: Map<String, Boolean>) {
+        val payload = states.entries.joinToString(separator = "\n") { (url, hidden) ->
+            "$url\t$hidden"
+        }
+        NSUserDefaults.standardUserDefaults.setObject(
+            payload,
+            forKey = "${addonCatalogHiddenStatesKey}_$profileId",
+        )
+    }
 }
 
 private fun parseEnabledStateLine(line: String): Pair<String, Boolean>? {
