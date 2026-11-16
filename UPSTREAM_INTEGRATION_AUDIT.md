@@ -135,3 +135,14 @@ The 32 paths reviewed against the common base were:
 - Structural review confirms downloaded-source grouping is included with ordinary stream sources and the CloudStream direct-route implementation remains present.
 - A build/test run is still required before merging. In particular, run the Kotlin Multiplatform host/common tests and Android debug build, then exercise the Library filters, downloaded playback, CloudStream playback, and hero mute-button positioning on device.
 - The integration branch must only become the new A after all required CI and manual QA checks pass.
+
+
+## Final staging history and CI status
+
+- A two-parent merge commit was created on `A-upstream-integration`: `ddecfda3f2bd444329822c7e2f1fd7f5ee74404d`.
+- Its first parent is the completed integration branch; its second parent is the `b-upstream` head `803194b575dab025ed7c233507716438ad02880a`.
+- The compare result is `A-upstream-integration` versus `b-upstream`: 50 commits ahead, **0 behind**.
+- The compare result is `A-upstream-integration` versus `A`: 90 commits ahead, **0 behind**.
+- Therefore, when PR #44 is merged, A will inherit the upstream commit ancestry and will no longer be 74 commits behind b-upstream.
+- PR #44 is open and GitHub reports it as mergeable. The older direct upstream-to-A PR #43 is superseded.
+- GitHub reports no workflow runs, no check-runs, and no commit statuses for the integration head. The checked mobile-release workflow is `workflow_dispatch` only. No Kotlin build or automated test result is claimed here; run the documented KMP tests and Android build before merging.
