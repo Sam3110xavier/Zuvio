@@ -524,5 +524,5 @@ internal fun cleanMergedSourceTabTitle(rawTitle: String): String {
                 it.lowercase() !in setOf("other", "movie", "movies", "series", "tv", "mixed", "catalog", "catalogs")
         }
     if (words.isEmpty()) return "Unnamed Source"
-    return words.joinToString(" ")
+    return words.take(3).joinToString(" ")
 }
