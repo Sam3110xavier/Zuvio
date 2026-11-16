@@ -112,6 +112,8 @@ fun DetailHero(
                 8.dp +
                 ((40.dp - muteIconSize) / 2)
         }
+        val heroChromeEndPadding = nativeBarAnchor?.let { it.trailingCenterX - muteIconSize / 2 }
+            ?: (12.dp + (40.dp - muteIconSize) / 2)
         val bottomGradientColor = if (netflixStyleEnabled) Color.Black else heroGradientColor ?: MaterialTheme.colorScheme.background
         var logoLoadError by remember(meta.id, meta.logo) {
             mutableStateOf(false)

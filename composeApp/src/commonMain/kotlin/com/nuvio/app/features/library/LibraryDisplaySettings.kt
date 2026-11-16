@@ -217,6 +217,10 @@ internal fun buildLibraryVerticalProjection(
     selectedType: String?,
     sortOption: LibrarySortOption,
     providerOrders: Map<String, Map<String, Int>> = emptyMap(),
+    selectedGenre: String? = null,
+    selectedYear: String? = null,
+    watchedFilter: LibraryWatchedFilter = LibraryWatchedFilter.ALL,
+    isWatched: (LibraryItem) -> Boolean = { false },
     selectSection: Boolean = true,
 ): LibraryVerticalProjection {
     // Local status sections are a navigation projection: hide statuses with no
@@ -248,7 +252,12 @@ internal fun buildLibraryVerticalProjection(
     val availableTypes = if (sourceMode == LibrarySourceMode.WETRAKR) listOf("movie", "series") else {
         deduplicatedEntries.values
             .map { entry -> (entry.item.mediaCategory ?: entry.item.type).normalizedLibraryType() }
-            .filter { it.isNotBlank() }.distinct().sorted()
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedWith(
+                compareBy<String> { type -> LibraryTypeOrder.indexOf(type).takeIf { it >= 0 } ?: LibraryTypeOrder.size }
+                    .thenBy { it },
+            )
     }
     val effectiveType = selectedType
         ?.normalizedLibraryType()

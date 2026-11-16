@@ -157,6 +157,7 @@ internal data class AppTabActions(
     val onCloudFilePlay: ((CloudLibraryItem, CloudLibraryFile) -> Unit)? = null,
     val onConnectCloudClick: (() -> Unit)? = null,
     val onDownloadsClick: () -> Unit = {},
+    val onOpenDownload: ((DownloadItem) -> Unit)? = null,
     val onSearchClick: () -> Unit = {},
     val onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     val onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,

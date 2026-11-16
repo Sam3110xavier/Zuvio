@@ -1,5 +1,17 @@
 package com.nuvio.app.features.library
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import nuvio.composeapp.generated.resources.library_filter_genre
+import nuvio.composeapp.generated.resources.library_filter_list
+import nuvio.composeapp.generated.resources.library_filter_type
+import nuvio.composeapp.generated.resources.library_filter_watched
+import nuvio.composeapp.generated.resources.library_filter_year
+import nuvio.composeapp.generated.resources.library_type_all
+import nuvio.composeapp.generated.resources.library_watched_filter_all
+import nuvio.composeapp.generated.resources.library_watched_filter_unwatched
+import nuvio.composeapp.generated.resources.library_watched_filter_watched
+
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -121,6 +133,54 @@ internal fun LibrarySavedControls(
                         label = localizedLibrarySectionTitle(section.type, section.displayTitle),
                         selected = section.type == verticalProjection.selectedSectionKey,
                         onClick = { onSectionSelected(section.type) },
+                    )
+                }
+            }
+        }
+
+        if (layoutMode == LibraryLayoutMode.VERTICAL) {
+            LibraryFilterRow {
+                if (verticalProjection.availableGenres.isNotEmpty()) {
+                    val genreTitle = stringResource(Res.string.library_filter_genre)
+                    Box(propagateMinConstraints = true) {
+                        NuvioDropdownChip(
+                            title = genreTitle,
+                            label = "$genreTitle: ${verticalProjection.selectedGenre ?: allLabel}",
+                            selectedKey = verticalProjection.selectedGenre.orEmpty(),
+                            options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
+                            onSelected = { option -> onGenreSelected(option.key.ifBlank { null }) },
+                            fillWidth = true,
+                        )
+                    }
+                }
+                if (verticalProjection.availableYears.isNotEmpty()) {
+                    val yearTitle = stringResource(Res.string.library_filter_year)
+                    Box(propagateMinConstraints = true) {
+                        NuvioDropdownChip(
+                            title = yearTitle,
+                            label = "$yearTitle: ${verticalProjection.selectedYear ?: allLabel}",
+                            selectedKey = verticalProjection.selectedYear.orEmpty(),
+                            options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
+                            onSelected = { option -> onYearSelected(option.key.ifBlank { null }) },
+                            fillWidth = true,
+                        )
+                    }
+                }
+                val watchedTitle = stringResource(Res.string.library_filter_watched)
+                Box(propagateMinConstraints = true) {
+                    NuvioDropdownChip(
+                        title = watchedTitle,
+                        label = "$watchedTitle: ${libraryWatchedFilterLabel(watchedFilter)}",
+                        selectedKey = watchedFilter.name,
+                        options = LibraryWatchedFilter.entries.map { filter ->
+                            NuvioDropdownOption(key = filter.name, label = libraryWatchedFilterLabel(filter))
+                        },
+                        onSelected = { option ->
+                            LibraryWatchedFilter.entries
+                                .firstOrNull { it.name == option.key }
+                                ?.let(onWatchedFilterSelected)
+                        },
+                        fillWidth = true,
                     )
                 }
             }
