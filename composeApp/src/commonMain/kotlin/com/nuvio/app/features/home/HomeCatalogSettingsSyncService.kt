@@ -39,9 +39,6 @@ data class SyncCatalogItem(
 )
 
 @Serializable
-
-
-@Serializable
 data class SyncHomeCatalogPayload(
     @SerialName("show_catalog_type") val showCatalogType: Boolean = true,
     @SerialName("hide_unreleased_content") val hideUnreleasedContent: Boolean = false,
