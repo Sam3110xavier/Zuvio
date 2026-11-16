@@ -46,6 +46,7 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.security.Security
 import okhttp3.Cache
+import okhttp3.Dispatcher
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -54,6 +55,11 @@ import org.conscrypt.Conscrypt
 import com.nuvio.app.core.network.IPv4FirstDns
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -83,6 +89,28 @@ internal actual object CloudStreamPlatformRuntime {
     private var appContext: Context? = null
     private var activityReference: WeakReference<Activity>? = null
     @Volatile private var cloudStreamNetworkingInitialized = false
+    private val httpThreadNumber = AtomicInteger()
+    private val cloudStreamHttpDispatcher = Dispatcher(
+        object : ThreadPoolExecutor(
+            0,
+            Int.MAX_VALUE,
+            60L,
+            TimeUnit.SECONDS,
+            SynchronousQueue(),
+            ThreadFactory { runnable ->
+                Thread(runnable, "CloudStream HTTP-${httpThreadNumber.incrementAndGet()}").apply {
+                    isDaemon = true
+                }
+            },
+        ) {
+            override fun execute(command: Runnable) {
+                // Capture the plugin context when OkHttp queues each asynchronous call.
+                // Requests created outside that plugin's explicit loadLinks callback
+                // cannot inherit permission to display an interactive Cloudflare WebView.
+                super.execute(CloudflareKiller.propagateRequestContext(command))
+            }
+        },
+    )
 
     // Share session cookies between CloudStream provider and delegated extractor requests.
     // This mirrors the official Nuvio TV extension cookie jar without sharing cookies
@@ -146,6 +174,7 @@ internal actual object CloudStreamPlatformRuntime {
                 .onFailure { error -> log.w(error) { "Could not install Conscrypt provider" } }
             val cacheDirectory = File(context.cacheDir, "cloudstream_http_cache").apply { mkdirs() }
             app.baseClient = OkHttpClient.Builder()
+                .dispatcher(cloudStreamHttpDispatcher)
                 .dns(IPv4FirstDns())
                 .cookieJar(extensionCookieJar)
                 .followRedirects(true)
