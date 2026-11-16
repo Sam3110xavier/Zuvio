@@ -102,7 +102,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import com.nuvio.app.features.home.HomeCatalogRowPlacement
-import nuvio.composeapp.generated.resources.settings_homescreen_group_rows_count
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_message
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_title
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden_count
