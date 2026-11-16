@@ -64,6 +64,9 @@
     <string name="addons_error_enter_url">Enter an addon URL.</string>
     <string name="addons_input_placeholder">Addon URL</string>
     <string name="addons_install_button">Install Addon</string>
+    <string name="addons_tracking_consent_title">Tracking addon</string>
+    <string name="addons_tracking_consent_body">%1$s is a tracking addon. Nuvio will send it your activity: what you play, pause and stop with the playback position, what you add to or remove from your library, and what you mark as watched or unwatched. This data leaves Nuvio and is handled by the addon's developer and the service it connects to.</string>
+    <string name="addons_tracking_consent_checkbox">I agree to share my watch activity and library with this addon</string>
     <string name="addons_loading_manifest_details">Loading manifest details...</string>
     <string name="addons_modal_checking_message">Validating the manifest URL and loading addon details before install.</string>
     <string name="addons_modal_checking_title">Checking Addon</string>
@@ -2260,12 +2263,36 @@
     <string name="downloads_enqueue_missing_url">No direct stream link available</string>
     <string name="downloads_enqueue_replaced">Replaced previous download</string>
     <string name="downloads_enqueue_started">Download started</string>
+    <string name="downloads_enqueue_queued">Download has been queued</string>
+    <string name="downloads_enqueue_queued_multiple">Downloads have been queued</string>
     <string name="downloads_enqueue_unsupported_format">Unsupported stream format for downloads</string>
-    <string name="downloads_enqueue_requires_wifi">Connect to Wi-Fi to download, or allow mobile data in Downloads settings</string>
+    <string name="downloads_resolution_720p">720p</string>
+    <string name="downloads_resolution_1080p">1080p</string>
+    <string name="downloads_resolution_2160p">2160p (4K)</string>
     <string name="downloads_allow_mobile_data_title">Allow mobile data</string>
     <string name="downloads_show_download_button_title">Show download button</string>
     <string name="downloads_show_download_button_description">Adds a download button under Play on a title's details page.</string>
     <string name="downloads_allow_mobile_data_description">By default, downloads only start on Wi-Fi. Enable this to also allow them on mobile data.</string>
+    <string name="downloads_preferred_resolution_title">Preferred resolution</string>
+    <string name="downloads_preferred_resolution_description">Select the target resolution for season downloads.</string>
+    <string name="downloads_max_concurrent_title">Maximum concurrent downloads</string>
+    <string name="downloads_max_concurrent_description">Limit how many downloads run at the same time.</string>
+    <string name="downloads_max_series_episode_concurrent_title">Max episodes per series</string>
+    <string name="downloads_max_series_episode_concurrent_description">Limit how many episodes download at once for the same series.</string>
+    <string name="downloads_max_concurrent_shows_title">Max concurrent shows</string>
+    <string name="downloads_max_concurrent_shows_description">Limit how many shows can download at the same time.</string>
+    <plurals name="downloads_count">
+        <item quantity="one">%1$d download</item>
+        <item quantity="other">%1$d downloads</item>
+    </plurals>
+    <plurals name="downloads_episodes_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+    <plurals name="downloads_shows_count">
+        <item quantity="one">%1$d show</item>
+        <item quantity="other">%1$d shows</item>
+    </plurals>
     <string name="downloads_error_empty_body">Empty response body</string>
     <string name="downloads_error_finalize_failed">Failed to finalize download file</string>
     <string name="downloads_error_http_failed">Request failed with HTTP %1$d</string>
@@ -2278,9 +2305,16 @@
     <string name="library_empty_message">Saved titles will appear here after you tap Save on a details screen.</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_filter_all_types">All types</string>
+    <string name="library_filter_genre">Genre</string>
     <string name="library_filter_list">Select list</string>
     <string name="library_filter_sort">Sort library</string>
     <string name="library_filter_type">Select type</string>
+    <string name="library_filter_watched">Watched</string>
+    <string name="library_filter_year">Year</string>
+    <string name="library_type_all">All</string>
+    <string name="library_watched_filter_all">All</string>
+    <string name="library_watched_filter_watched">Watched</string>
+    <string name="library_watched_filter_unwatched">Unwatched</string>
     <string name="library_layout_show_horizontal">Show horizontal shelves</string>
     <string name="library_layout_show_vertical">Show vertical grid</string>
     <string name="library_load_failed">Couldn't load library</string>
@@ -2329,7 +2363,14 @@
     <string name="library_sort_title_desc">Title Z–A</string>
     <string name="library_sort_provider_order">Tracker order</string>
     <string name="library_source_cloud">Cloud</string>
+    <string name="library_source_downloaded">Downloaded</string>
     <string name="library_source_saved">Saved</string>
+    <string name="downloads_section_active_queued">Active &amp; Queued</string>
+    <string name="downloads_show_active_queued">Active &amp; Queued Downloads</string>
+    <string name="downloads_action_pause_all">Pause All</string>
+    <string name="downloads_action_resume_all">Resume All</string>
+    <string name="downloads_empty_library_title">No Downloads Yet</string>
+    <string name="downloads_empty_library_message">Movies and TV episodes you download for offline playback will appear here.</string>
     <string name="library_title">Library</string>
     <string name="library_trakt_empty_message">Connect Trakt and save titles to your watchlist or personal lists.</string>
     <string name="library_trakt_empty_title">Your Trakt library is empty</string>
@@ -3115,6 +3156,7 @@
     <string name="subtitle_shadow_description">Separate the text from bright scenes.</string>
     <string name="subtitle_shadow_opacity">Shadow opacity</string>
     <string name="subtitle_shadow_size">Shadow size</string>
+    <string name="subtitle_outline_width">Outline width</string>
     <string name="subtitle_reset_appearance">Reset appearance</string>
     <string name="settings_glass_ui_section">Glass UI</string>
     <string name="settings_app_background">Background</string>
