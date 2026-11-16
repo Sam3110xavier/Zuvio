@@ -52,19 +52,11 @@ internal fun LazyListScope.settingsRootContent(
         }
     }
     SettingsCategory.entries.filter {
-        it != SettingsCategory.Reshaped && (category == null || it == category)
+        category == null || it == category
     }.forEach { group ->
         item(key = group.name) {
             SettingsGroup(isTablet = isTablet) {
                 when (group) {
-                    SettingsCategory.Reshaped -> {
-                        SettingsPageRow(
-                            page = SettingsPage.NuvioReshaped,
-                            description = Res.string.settings_nuvio_reshaped_description,
-                            isTablet = isTablet,
-                            onPageClick = onPageClick,
-                        )
-                    }
                     SettingsCategory.You -> {
                         SettingsPageRow(
                             page = SettingsPage.Account,

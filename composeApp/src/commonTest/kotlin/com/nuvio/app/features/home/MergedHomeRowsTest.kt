@@ -54,7 +54,7 @@ class MergedHomeRowsTest {
     }
 
     @Test
-    fun mergedSourceLabelsAreShortAndRemoveRedundantCatalogTypes() {
+    fun mergedSourceLabelsPreserveFullNamesAndRemoveInternalIdsAndTypeSuffixes() {
         assertEquals("Kisskh", cleanMergedSourceTabTitle("Kisskh (other) - Other"))
         assertEquals("Marvel", cleanMergedSourceTabTitle("Marvel (other) - Other"))
         assertEquals("MovieBox", cleanMergedSourceTabTitle("MovieBoxIN (other) - Other"))
@@ -68,6 +68,7 @@ class MergedHomeRowsTest {
         assertEquals("Global Releases", cleanMergedSourceTabTitle("Latest Releases Global - Mixed"))
         assertEquals("Indian Releases", cleanMergedSourceTabTitle("New Indian Releases - Mixed"))
         assertEquals("AI Recommendations", cleanMergedSourceTabTitle("AI Recommendations (movie/aicat_list_125836)"))
+        assertEquals("AI Recommendations for", cleanMergedSourceTabTitle("AI Recommendations for Hindi Crime and Thrillers (movie/aicat_list_125836)"))
         assertEquals("All", cleanMergedSourceTabTitle("All"))
         assertEquals("Movies", cleanMergedSourceTabTitle("Movies"))
         assertEquals("Series", cleanMergedSourceTabTitle("Series"))
@@ -339,7 +340,7 @@ class MergedHomeRowsTest {
             cleanMergedSourceTabTitle("BanglaPlex · 2026 - Movies"),
         )
         assertEquals(
-            "Seerr Next",
+            "Seerr For you",
             cleanMergedSourceTabTitle("Seerr · For you · Movies · Next"),
         )
     }

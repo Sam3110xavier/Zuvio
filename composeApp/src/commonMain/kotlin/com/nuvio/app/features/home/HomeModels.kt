@@ -45,6 +45,13 @@ data class HomeCatalogTab(
     val hasMore: Boolean = false,
 )
 
+const val HOME_CATALOG_PREVIEW_LIMIT = 18
+
+internal fun homeCatalogPreviewItems(
+    selectedTab: HomeCatalogTab?,
+    fallbackItems: List<MetaPreview>,
+): List<MetaPreview> = (selectedTab?.items ?: fallbackItems).take(HOME_CATALOG_PREVIEW_LIMIT)
+
 data class HomeCatalogSection(
     val key: String,
     val title: String,
