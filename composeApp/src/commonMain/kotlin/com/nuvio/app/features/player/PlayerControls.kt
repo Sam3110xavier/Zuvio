@@ -115,6 +115,8 @@ import com.nuvio.app.core.ui.glass.isAmbientLiquidGlassActive
 @Composable
 internal fun PlayerControlsShell(
     title: String,
+    streamTitle: String,
+    providerName: String,
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
@@ -528,8 +530,6 @@ private fun PlayerHeader(
     badges: List<StreamBadge>,
     releaseInfo: String?,
     animeEnhancement: AnimeEnhancementStatus?,
-    streamTitle: String,
-    providerName: String,
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
