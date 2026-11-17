@@ -115,6 +115,9 @@ internal fun LazyListScope.homescreenSettingsContent(
             selectedHeroSourceCount = selectedHeroSourceCount,
         )
     }
+    item(key = "merged_home_rows_settings") {
+        MergedHomeRowsSettingsSection(isTablet = isTablet)
+    }
     item {
         SettingsSection(
             title = stringResource(Res.string.settings_homescreen_section_hero),
@@ -176,6 +179,14 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
+                    title = "Hide entries without posters",
+                    description = "Apply across Home catalog rows, merged rows, source tabs, and the hero.",
+                    checked = HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle().value.hideMergedTitlesWithoutPosters,
+                    isTablet = isTablet,
+                    onCheckedChange = HomeCatalogSettingsRepository::setHideMergedTitlesWithoutPosters,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
                     title = stringResource(Res.string.layout_hide_unreleased),
                     description = stringResource(Res.string.layout_hide_unreleased_sub),
                     checked = hideUnreleasedContent,
@@ -186,7 +197,7 @@ internal fun LazyListScope.homescreenSettingsContent(
         }
     }
     item {
-        val catalogOnlyItems = items.filter { !it.isCollection }
+        val catalogOnlyItems = items.filter { !it.isCollection && !it.isMergedRow }
         if (heroEnabled && catalogOnlyItems.isNotEmpty()) {
             val settingsUiState by remember {
                 HomeCatalogSettingsRepository.uiState

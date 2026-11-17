@@ -1,6 +1,7 @@
 package com.nuvio.app.features.catalog
 
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.HomeCatalogTab
 
 data class CatalogUiState(
     val items: List<MetaPreview> = emptyList(),
@@ -8,9 +9,15 @@ data class CatalogUiState(
     val nextSkip: Int? = null,
     val consecutiveDuplicatePages: Int = 0,
     val errorMessage: String? = null,
+    val isMergedCatalog: Boolean = false,
+    val mergedDisplayMode: String? = null,
+    val mergedSourceTabs: List<HomeCatalogTab> = emptyList(),
+    val mergedHasMore: Boolean = false,
+    val failedMergedSourceKeys: Set<String> = emptySet(),
+    val unavailableMergedSourceCount: Int = 0,
 ) {
     val canLoadMore: Boolean
-        get() = nextSkip != null
+        get() = if (isMergedCatalog) mergedHasMore else nextSkip != null
 }
 
 data class CatalogScrollPosition(

@@ -31,6 +31,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -63,6 +64,74 @@ class HomeCatalogSettingsRepositoryTest {
         HomeCatalogSettingsRepository.clearLocalState()
         CollectionRepository.clearLocalState()
         HomeRepository.clear()
+    }
+
+    @Test
+    fun mergedRowBlendSelectionPersistsAcrossCreateEditAndReload() {
+        val catalogs = listOf(addon(listOf("popular", "latest")))
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+        val eligibleKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys()
+        assertEquals(setOf("test:movie:popular", "test:movie:latest"), eligibleKeys)
+        val rowId = requireNotNull(HomeCatalogSettingsRepository.createMergedRow(
+            title = "Combined", sourceKeys = eligibleKeys.toList(),
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+            blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED,
+        ))
+        assertEquals(MergedHomeRowBlendMode.RATING_WEIGHTED,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode())
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId, title = "Combined edited", sourceKeys = eligibleKeys.toList(),
+            displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL, deduplicate = true,
+            blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+        ))
+        assertEquals(MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode())
+        HomeCatalogSettingsRepository.clearLocalState()
+        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
+        assertEquals(MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode())
+    }
+
+    @Test
+    fun hideIncludedMergedRowSourcesRestoresTheirPreviousVisibility() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
+        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+        val sourceKey = sourceKeys.first()
+        val rowId = requireNotNull(HomeCatalogSettingsRepository.createMergedRow(
+            title = "Combined", sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS, hideIncludedRows = true,
+        ))
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items.single { it.key == mergedHomeRowKey(rowId) }.enabled)
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items.filter { it.key in sourceKeys }.all { !it.enabled })
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId, title = "Combined", sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS, deduplicate = true, hideIncludedRows = false,
+        ))
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items.filter { it.key in sourceKeys }.all { it.enabled })
+        HomeCatalogSettingsRepository.setEnabled(sourceKey, false)
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId, title = "Combined", sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS, deduplicate = true, hideIncludedRows = true,
+        ))
+        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
+            id = rowId, title = "Combined", sourceKeys = sourceKeys,
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS, deduplicate = true, hideIncludedRows = false,
+        ))
+        assertFalse(HomeCatalogSettingsRepository.uiState.value.items.single { it.key == sourceKey }.enabled)
+        assertTrue(HomeCatalogSettingsRepository.uiState.value.items.filter { it.key in sourceKeys && it.key != sourceKey }.all { it.enabled })
+    }
+
+    @Test
+    fun mergedRowsRejectTooManyOrUnavailableSources() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon((1..14).map { "catalog-$it" })))
+        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Too many", sourceKeys = sourceKeys, displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
+        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
+            title = "Missing", sourceKeys = sourceKeys.take(2) + "missing:catalog",
+            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
+        ))
     }
 
     @Test
@@ -228,7 +297,7 @@ class HomeCatalogSettingsRepositoryTest {
         assertEquals(settings, HomeCatalogSettingsRepository.uiState.value)
     }
 
-    private fun addon() = ManagedAddon(
+    private fun addon(catalogIds: List<String> = listOf("popular")) = ManagedAddon(
         manifestUrl = "https://example.com/manifest.json",
         manifest = AddonManifest(
             id = "test",
@@ -237,7 +306,7 @@ class HomeCatalogSettingsRepositoryTest {
             version = "1",
             resources = emptyList(),
             types = listOf("movie"),
-            catalogs = listOf(AddonCatalog(type = "movie", id = "popular", name = "Popular")),
+            catalogs = catalogIds.map { id -> AddonCatalog(type = "movie", id = id, name = id) },
             transportUrl = "https://example.com",
         ),
     )

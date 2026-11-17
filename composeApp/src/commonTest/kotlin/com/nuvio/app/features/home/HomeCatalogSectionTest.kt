@@ -2,6 +2,7 @@ package com.nuvio.app.features.home
 
 import com.nuvio.app.features.catalog.CatalogTarget
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -34,6 +35,24 @@ class HomeCatalogSectionTest {
         )
 
         assertFalse(section.canOpenCatalog(previewLimit = 18))
+    }
+
+    @Test
+    fun mergedRowsCanOpenCatalogEvenWhenTheMergedPreviewFitsOnOneShelf() {
+        val section = section(availableItemCount = 3, hasMore = false).copy(isMergedRow = true)
+        assertTrue(section.canOpenCatalog(previewLimit = 18))
+    }
+
+    @Test
+    fun sourceTabPreviewUsesTheSelectedSourcesItems() {
+        val fallback = (1..18).map { MetaPreview(id = "merged-$it", type = "movie", name = "Merged $it") }
+        val sourceItems = (1..20).map { MetaPreview(id = "source-$it", type = "movie", name = "Source $it") }
+        val preview = homeCatalogPreviewItems(
+            HomeCatalogTab(key = "source", title = "Source", items = sourceItems),
+            fallback,
+        )
+        assertEquals(18, preview.size)
+        assertEquals("source-1", preview.first().id)
     }
 
     private fun section(
