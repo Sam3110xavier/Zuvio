@@ -103,10 +103,10 @@ internal fun LibrarySavedControls(
             ) {
                 NuvioDropdownChip(
                     title = stringResource(Res.string.library_filter_sort),
-                    label = librarySortOptionLabel(sortOption),
+                    label = librarySortOptionLabel(sortOption, sourceMode),
                     selectedKey = sortOption.name,
                     options = sortOptions.map { option ->
-                        NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option))
+                        NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option, sourceMode))
                     },
                     enabled = sortOptions.size > 1,
                     onSelected = { option ->
@@ -165,7 +165,7 @@ internal fun LibrarySavedControls(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = stringResource(Res.string.library_filter_list),
+                            text = "Filters",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -180,25 +180,21 @@ internal fun LibrarySavedControls(
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            LibraryChip(
-                                label = allTypesLabel,
-                                selected = verticalProjection.selectedType == null,
-                                onClick = { onTypeSelected(null) },
-                            )
-                            verticalProjection.availableTypes.forEach { type ->
-                                LibraryChip(
-                                    label = localizedMediaTypeLabel(type),
-                                    selected = verticalProjection.selectedType == type,
-                                    onClick = { onTypeSelected(type) },
-                                )
-                            }
-                        }
+                        val typeTitle = stringResource(Res.string.library_filter_type)
+                        val selectedTypeLabel = verticalProjection.selectedType
+                            ?.let(::localizedMediaTypeLabel)
+                            ?: allTypesLabel
+                        NuvioDropdownChip(
+                            title = typeTitle,
+                            label = selectedTypeLabel,
+                            selectedKey = verticalProjection.selectedType.orEmpty(),
+                            options = listOf(NuvioDropdownOption(key = "", label = allTypesLabel)) +
+                                verticalProjection.availableTypes.map { type ->
+                                    NuvioDropdownOption(key = type, label = localizedMediaTypeLabel(type))
+                                },
+                            onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
+                            fillWidth = true,
+                        )
 
                         if (verticalProjection.availableGenres.isNotEmpty()) {
                             val genreTitle = stringResource(Res.string.library_filter_genre)
@@ -343,9 +339,10 @@ internal fun LazyItemScope.libraryContentTransitionModifier(): Modifier =
     )
 
 @Composable
-private fun librarySortOptionLabel(option: LibrarySortOption): String =
+private fun librarySortOptionLabel(option: LibrarySortOption, sourceMode: LibrarySourceMode): String =
     when (option) {
-        LibrarySortOption.DEFAULT -> stringResource(Res.string.library_sort_provider_order)
+        LibrarySortOption.DEFAULT -> if (sourceMode.isRemoteTrackingSource) "Tracker order"
+            else stringResource(Res.string.library_sort_provider_order)
         LibrarySortOption.ADDED_DESC -> stringResource(Res.string.library_sort_added_desc)
         LibrarySortOption.ADDED_ASC -> stringResource(Res.string.library_sort_added_asc)
         LibrarySortOption.RELEASED_DESC -> stringResource(Res.string.library_sort_released_desc)
