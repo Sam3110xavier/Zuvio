@@ -249,7 +249,7 @@ internal actual object CloudStreamPlatformRuntime {
             withContext(Dispatchers.Main.immediate) {
                 CloudflareKiller.withRequestContext(
                     pluginId = plugin.metadata.id.value,
-                    allowInteractiveVerification = false,
+                    allowInteractiveVerification = true,
                 ) {
                     callback.invoke(activity)
                 }
@@ -1065,12 +1065,12 @@ private class AndroidDexCloudStreamProvider(
                         links::add,
                     )
                 }
-                // Every provider gets the same scoped permission. Cloudflare UI is
-                // permitted only during this explicit loadLinks call, regardless of
-                // plugin name or the domain used by its extractors.
+                // Link fetching must never launch an interactive WebView. Reuse any
+                // previously verified WebView cookies, but defer a new challenge until
+                // the user explicitly opens this CloudStream plugin's settings.
                 CloudflareKiller.withRequestContext(
                     pluginId = api.sourcePlugin ?: api.javaClass.name,
-                    allowInteractiveVerification = true,
+                    allowInteractiveVerification = false,
                 ) { resolveLinks() }
             } catch (error: Throwable) {
                 // Preserve coroutine cancellation and VM-fatal conditions, but capture
