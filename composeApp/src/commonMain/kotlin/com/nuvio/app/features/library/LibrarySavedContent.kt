@@ -23,6 +23,16 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -67,56 +77,49 @@ internal fun LibrarySavedControls(
     val sortOptions = availableLibrarySortOptions(sourceMode)
     val allTypesLabel = stringResource(Res.string.library_filter_all_types)
     val allLabel = stringResource(Res.string.library_type_all)
+    var showFilters by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (layoutMode == LibraryLayoutMode.VERTICAL) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LibraryChip(
-                        label = allTypesLabel,
-                        selected = verticalProjection.selectedType == null,
-                        onClick = { onTypeSelected(null) },
-                    )
-                    verticalProjection.availableTypes.forEach { type ->
-                        LibraryChip(
-                            label = localizedMediaTypeLabel(type),
-                            selected = verticalProjection.selectedType == type,
-                            onClick = { onTypeSelected(type) },
-                        )
-                    }
-                }
-            } else {
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+        if (layoutMode == LibraryLayoutMode.VERTICAL) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LibraryChip(
+                    label = stringResource(Res.string.library_filter_list),
+                    selected = showFilters,
+                    onClick = { showFilters = true },
+                )
             }
-
-            NuvioDropdownChip(
-                title = stringResource(Res.string.library_filter_sort),
-                label = librarySortOptionLabel(sortOption),
-                selectedKey = sortOption.name,
-                options = sortOptions.map { option ->
-                    NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option))
-                },
-                enabled = sortOptions.size > 1,
-                onSelected = { option ->
-                    LibrarySortOption.entries
-                        .firstOrNull { it.name == option.key }
-                        ?.let(onSortSelected)
-                },
-            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NuvioDropdownChip(
+                    title = stringResource(Res.string.library_filter_sort),
+                    label = librarySortOptionLabel(sortOption),
+                    selectedKey = sortOption.name,
+                    options = sortOptions.map { option ->
+                        NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option))
+                    },
+                    enabled = sortOptions.size > 1,
+                    onSelected = { option ->
+                        LibrarySortOption.entries
+                            .firstOrNull { it.name == option.key }
+                            ?.let(onSortSelected)
+                    },
+                )
+            }
         }
 
+        // Keep the tracking-status tabs (Watching, Plan to Watch, Completed, Dropped)
+        // as a separate row beneath the consolidated filter entry point.
         if (
             layoutMode == LibraryLayoutMode.VERTICAL &&
             sourceMode.isRemoteTrackingSource &&
@@ -137,48 +140,119 @@ internal fun LibrarySavedControls(
                 }
             }
         }
+    }
 
-        if (layoutMode == LibraryLayoutMode.VERTICAL) {
-            LibraryFilterRow {
-                if (verticalProjection.availableGenres.isNotEmpty()) {
-                    val genreTitle = stringResource(Res.string.library_filter_genre)
-                    Box(propagateMinConstraints = true) {
+    if (showFilters) {
+        Dialog(
+            onDismissRequest = { showFilters = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 24.dp)
+                    .widthIn(max = 560.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.library_filter_list),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        TextButton(onClick = { showFilters = false }) {
+                            Text("Done")
+                        }
+                    }
+
+                    if (layoutMode == LibraryLayoutMode.VERTICAL) {
+                        Text(
+                            text = stringResource(Res.string.library_filter_type),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            LibraryChip(
+                                label = allTypesLabel,
+                                selected = verticalProjection.selectedType == null,
+                                onClick = { onTypeSelected(null) },
+                            )
+                            verticalProjection.availableTypes.forEach { type ->
+                                LibraryChip(
+                                    label = localizedMediaTypeLabel(type),
+                                    selected = verticalProjection.selectedType == type,
+                                    onClick = { onTypeSelected(type) },
+                                )
+                            }
+                        }
+
+                        if (verticalProjection.availableGenres.isNotEmpty()) {
+                            val genreTitle = stringResource(Res.string.library_filter_genre)
+                            NuvioDropdownChip(
+                                title = genreTitle,
+                                label = "$genreTitle: ${verticalProjection.selectedGenre ?: allLabel}",
+                                selectedKey = verticalProjection.selectedGenre.orEmpty(),
+                                options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
+                                onSelected = { option -> onGenreSelected(option.key.ifBlank { null }) },
+                                fillWidth = true,
+                            )
+                        }
+
+                        if (verticalProjection.availableYears.isNotEmpty()) {
+                            val yearTitle = stringResource(Res.string.library_filter_year)
+                            NuvioDropdownChip(
+                                title = yearTitle,
+                                label = "$yearTitle: ${verticalProjection.selectedYear ?: allLabel}",
+                                selectedKey = verticalProjection.selectedYear.orEmpty(),
+                                options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
+                                onSelected = { option -> onYearSelected(option.key.ifBlank { null }) },
+                                fillWidth = true,
+                            )
+                        }
+
+                        val watchedTitle = stringResource(Res.string.library_filter_watched)
                         NuvioDropdownChip(
-                            title = genreTitle,
-                            label = "$genreTitle: ${verticalProjection.selectedGenre ?: allLabel}",
-                            selectedKey = verticalProjection.selectedGenre.orEmpty(),
-                            options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
-                            onSelected = { option -> onGenreSelected(option.key.ifBlank { null }) },
+                            title = watchedTitle,
+                            label = "$watchedTitle: ${libraryWatchedFilterLabel(watchedFilter)}",
+                            selectedKey = watchedFilter.name,
+                            options = LibraryWatchedFilter.entries.map { filter ->
+                                NuvioDropdownOption(key = filter.name, label = libraryWatchedFilterLabel(filter))
+                            },
+                            onSelected = { option ->
+                                LibraryWatchedFilter.entries
+                                    .firstOrNull { it.name == option.key }
+                                    ?.let(onWatchedFilterSelected)
+                            },
                             fillWidth = true,
                         )
                     }
-                }
-                if (verticalProjection.availableYears.isNotEmpty()) {
-                    val yearTitle = stringResource(Res.string.library_filter_year)
-                    Box(propagateMinConstraints = true) {
-                        NuvioDropdownChip(
-                            title = yearTitle,
-                            label = "$yearTitle: ${verticalProjection.selectedYear ?: allLabel}",
-                            selectedKey = verticalProjection.selectedYear.orEmpty(),
-                            options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
-                            onSelected = { option -> onYearSelected(option.key.ifBlank { null }) },
-                            fillWidth = true,
-                        )
-                    }
-                }
-                val watchedTitle = stringResource(Res.string.library_filter_watched)
-                Box(propagateMinConstraints = true) {
+
                     NuvioDropdownChip(
-                        title = watchedTitle,
-                        label = "$watchedTitle: ${libraryWatchedFilterLabel(watchedFilter)}",
-                        selectedKey = watchedFilter.name,
-                        options = LibraryWatchedFilter.entries.map { filter ->
-                            NuvioDropdownOption(key = filter.name, label = libraryWatchedFilterLabel(filter))
+                        title = stringResource(Res.string.library_filter_sort),
+                        label = librarySortOptionLabel(sortOption),
+                        selectedKey = sortOption.name,
+                        options = sortOptions.map { option ->
+                            NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option))
                         },
+                        enabled = sortOptions.size > 1,
                         onSelected = { option ->
-                            LibraryWatchedFilter.entries
+                            LibrarySortOption.entries
                                 .firstOrNull { it.name == option.key }
-                                ?.let(onWatchedFilterSelected)
+                                ?.let(onSortSelected)
                         },
                         fillWidth = true,
                     )
