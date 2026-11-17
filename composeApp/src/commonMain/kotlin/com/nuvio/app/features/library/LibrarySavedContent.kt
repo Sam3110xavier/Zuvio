@@ -84,6 +84,17 @@ internal fun LibrarySavedControls(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (layoutMode == LibraryLayoutMode.VERTICAL) {
+            NuvioDropdownChip(
+                title = stringResource(Res.string.library_filter_type),
+                label = verticalProjection.selectedType?.let(::localizedMediaTypeLabel) ?: allTypesLabel,
+                selectedKey = verticalProjection.selectedType.orEmpty(),
+                options = listOf(NuvioDropdownOption(key = "", label = allTypesLabel)) +
+                    verticalProjection.availableTypes.map { type ->
+                        NuvioDropdownOption(key = type, label = localizedMediaTypeLabel(type))
+                    },
+                onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
+                fillWidth = true,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -175,27 +186,6 @@ internal fun LibrarySavedControls(
                     }
 
                     if (layoutMode == LibraryLayoutMode.VERTICAL) {
-                        Text(
-                            text = stringResource(Res.string.library_filter_type),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        val typeTitle = stringResource(Res.string.library_filter_type)
-                        val selectedTypeLabel = verticalProjection.selectedType
-                            ?.let(::localizedMediaTypeLabel)
-                            ?: allTypesLabel
-                        NuvioDropdownChip(
-                            title = typeTitle,
-                            label = selectedTypeLabel,
-                            selectedKey = verticalProjection.selectedType.orEmpty(),
-                            options = listOf(NuvioDropdownOption(key = "", label = allTypesLabel)) +
-                                verticalProjection.availableTypes.map { type ->
-                                    NuvioDropdownOption(key = type, label = localizedMediaTypeLabel(type))
-                                },
-                            onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
-                            fillWidth = true,
-                        )
-
                         if (verticalProjection.availableGenres.isNotEmpty()) {
                             val genreTitle = stringResource(Res.string.library_filter_genre)
                             NuvioDropdownChip(
