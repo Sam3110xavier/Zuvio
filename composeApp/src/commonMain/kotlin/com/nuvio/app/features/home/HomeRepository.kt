@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.absoluteValue
 import kotlin.random.Random
@@ -318,7 +319,7 @@ object HomeRepository {
             .flatMap { it.sourceKeys.asSequence() }
             .toSet()
 
-        val entries = orderHomeCatalogDefinitions(currentDefinitions, snapshot)
+        val entries = currentDefinitions.sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
             .mapNotNull { definition ->
                 val preference = preferences[definition.key]
                 if (preference?.enabled == false || definition.key in hiddenIncludedSourceKeys) return@mapNotNull null
