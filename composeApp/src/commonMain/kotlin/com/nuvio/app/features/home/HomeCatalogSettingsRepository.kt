@@ -425,7 +425,12 @@ object HomeCatalogSettingsRepository {
         val reorderedGroup = groupItems.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
         val otherItems = allItems.filter { it.enabled != visible }
         val orderedItems = if (visible) reorderedGroup + otherItems else otherItems + reorderedGroup
-        persistVisibleOrder(orderedItems.map { it.key })
+        val updatedPreferences = preferences.toMutableMap()
+        orderedItems.forEachIndexed { index, item ->
+            val current = updatedPreferences[item.key] ?: return@forEachIndexed
+            updatedPreferences[item.key] = current.copy(order = index)
+        }
+        preferences = updatedPreferences
         enforcePinnedCollectionsAtTop()
         publish()
         persist()

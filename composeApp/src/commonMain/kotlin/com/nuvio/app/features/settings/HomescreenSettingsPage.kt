@@ -87,8 +87,6 @@ import nuvio.composeapp.generated.resources.settings_homescreen_show_hero_descri
 import nuvio.composeapp.generated.resources.settings_homescreen_summary
 import nuvio.composeapp.generated.resources.settings_homescreen_summary_hint
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.style.TextOverflow
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_message
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_title
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden_count
@@ -333,8 +331,57 @@ internal fun LazyListScope.homescreenSettingsContent(
 }
 
 @Composable
-private fun HeroStyleOptions
+private fun HeroStyleOptions(
+    isTablet: Boolean,
+    selectedStyle: HomeHeroStyle,
+) {
+    SettingsGroup(isTablet = isTablet) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(Res.string.settings_homescreen_hero_style),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = stringResource(Res.string.settings_homescreen_hero_style_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HeroStyleOption(
+                    modifier = Modifier.weight(1f),
+                    style = HomeHeroStyle.FULL_BLEED,
+                    selectedStyle = selectedStyle,
+                    title = stringResource(Res.string.settings_homescreen_hero_style_full_bleed),
+                    description = stringResource(
+                        Res.string.settings_homescreen_hero_style_full_bleed_description,
+                    ),
+                )
+                HeroStyleOption(
+                    modifier = Modifier.weight(1f),
+                    style = HomeHeroStyle.CARD,
+                    selectedStyle = selectedStyle,
+                    title = stringResource(Res.string.settings_homescreen_hero_style_card),
+                    description = stringResource(
+                        Res.string.settings_homescreen_hero_style_card_description,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 @Composable
 private fun HeroStyleOption(
     modifier: Modifier,
