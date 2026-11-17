@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
