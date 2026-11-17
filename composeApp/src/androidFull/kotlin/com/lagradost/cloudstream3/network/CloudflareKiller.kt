@@ -291,6 +291,9 @@ class CloudflareKiller : Interceptor {
         }
         val currentCookies = getApplicableWebViewCookies(request.url.toString())
         if (currentCookies["cf_clearance"].isNullOrBlank()) return null
+        // Persist a successful verification so the same WebView clearance can be
+        // reused after the WebView closes and across subsequent app sessions.
+        safe { CookieManager.getInstance().flush() }
         return proceed(request, currentCookies)
     }
 }
