@@ -230,9 +230,9 @@ class CloudflareKiller : Interceptor {
     }
 
     /**
-     * Merge applicable WebView cookies before the first request. WebView values
-     * take precedence over plugin-supplied values with the same cookie name, so
-     * refreshed cf_clearance tokens are not shadowed by stale request headers.
+     * Merge applicable WebView cookies before the first request. Keep existing
+     * provider/session cookie values on name collisions; only Cloudflare cookies
+     * (for example cf_clearance and __cf_bm) are refreshed from WebView.
      */
     private fun withWebViewCookies(request: Request): Request {
         val webViewCookies = getApplicableWebViewCookies(request.url.toString())
@@ -241,13 +241,25 @@ class CloudflareKiller : Interceptor {
         val requestCookies = request.headers.values("Cookie")
             .flatMap { parseCookieMap(it).entries }
             .associate { it.key to it.value }
-        val mergedCookies = requestCookies + webViewCookies
+        val mergedCookies = mergeRequestAndWebViewCookies(requestCookies, webViewCookies)
         val cookieHeader = mergedCookies.entries.joinToString("; ") { (name, value) ->
             "$name=$value"
         }
         return request.newBuilder()
             .header("Cookie", cookieHeader)
             .build()
+    }
+
+    private fun mergeRequestAndWebViewCookies(
+        requestCookies: Map<String, String>,
+        webViewCookies: Map<String, String>,
+    ): Map<String, String> {
+        val cookiesToApply = webViewCookies.filter { (name, _) ->
+            name !in requestCookies ||
+                name.startsWith("cf_", ignoreCase = true) ||
+                name.startsWith("__cf", ignoreCase = true)
+        }
+        return requestCookies + cookiesToApply
     }
 
     private fun trySolveWithSavedCookies(request: Request): Boolean =
@@ -257,9 +269,11 @@ class CloudflareKiller : Interceptor {
         val userAgentHeaders = WebViewResolver.getWebViewUserAgent()?.let {
             mapOf("user-agent" to it)
         }.orEmpty()
-        // Prefer the live WebView cookie store over cached or caller-supplied
-        // values. CookieManager has already filtered these cookies for this URL.
-        val mergedCookies = request.cookies + cookies + getApplicableWebViewCookies(request.url.toString())
+        // CookieManager has already filtered its cookies for this URL. Preserve
+        // provider/session cookies on collisions, except for refreshed Cloudflare
+        // challenge cookies.
+        val webViewCookies = cookies + getApplicableWebViewCookies(request.url.toString())
+        val mergedCookies = mergeRequestAndWebViewCookies(request.cookies, webViewCookies)
         val headers = getHeaders(request.headers.toMap() + userAgentHeaders, mergedCookies)
         return app.baseClient.newCall(request.newBuilder().headers(headers).build()).await()
     }
