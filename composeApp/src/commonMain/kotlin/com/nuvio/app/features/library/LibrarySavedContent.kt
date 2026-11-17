@@ -203,6 +203,7 @@ internal fun LibrarySavedControls(
             }
         }
     }
+}
 
 internal fun LazyListScope.libraryVerticalContent(
     projection: LibraryVerticalProjection,
