@@ -32,6 +32,9 @@ import com.nuvio.app.features.telegram.TelegramIntegrationBridge
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_telegram_title
+import nuvio.composeapp.generated.resources.settings_telegram_build_index
+import nuvio.composeapp.generated.resources.settings_telegram_update_index
+import nuvio.composeapp.generated.resources.settings_telegram_indexed_media_count
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.telegramSettingsContent(isTablet: Boolean) {
@@ -216,9 +219,21 @@ private fun TelegramSettingsContent(isTablet: Boolean) {
                         onClick = { scope.launch { TelegramIntegrationBridge.indexSelectedChats() } },
                         enabled = state.selectedChatIds.isNotEmpty() && !state.isBusy,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (state.indexedFileCount > 0) "Build / update media index" else "Build media index") }
+                    ) {
+                        Text(
+                            if (state.indexedFileCount > 0) {
+                                stringResource(Res.string.settings_telegram_update_index)
+                            } else {
+                                stringResource(Res.string.settings_telegram_build_index)
+                            },
+                        )
+                    }
                     Text(
-                        "${state.indexedFileCount} media files indexed · ${state.indexStatus}",
+                        stringResource(
+                            Res.string.settings_telegram_indexed_media_count,
+                            state.indexedFileCount,
+                            state.indexStatus,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

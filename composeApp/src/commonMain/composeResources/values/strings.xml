@@ -3176,6 +3176,9 @@
     <string name="settings_glass_ui_style_vivid">Vivid</string>
     <string name="settings_telegram_title">Telegram</string>
     <string name="settings_telegram_description">Find playable video files in your selected Telegram channels and groups.</string>
+    <string name="settings_telegram_build_index">Build media index</string>
+    <string name="settings_telegram_update_index">Build / update media index</string>
+    <string name="settings_telegram_indexed_media_count">%1$d media files indexed · %2$s</string>
 <string name="settings_homescreen_pinned_at_position">Pinned at position</string>
     <string name="settings_homescreen_pinned_to_bottom">Pinned to bottom</string>
     <string name="settings_group_reshaped">Nuvio Reshaped</string>
