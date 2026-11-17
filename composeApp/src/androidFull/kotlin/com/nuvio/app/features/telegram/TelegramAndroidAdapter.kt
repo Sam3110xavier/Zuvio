@@ -33,8 +33,6 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
         private const val SELECTED_CHAT_IDS = "selected_chat_ids"
         private const val CHAT_LIMIT = 200
         private const val SEARCH_LIMIT = 40
-        private const val MAX_SEARCH_PAGES = 3
-        private const val MAX_PARALLEL_QUERIES = 2
         private const val INDEX_BATCH_SIZE = 100
         private const val INDEX_MAX_BATCHES_PER_RUN = 50
         private const val INDEX_FRESH_MS = 5 * 60 * 1000L
@@ -558,25 +556,16 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
             indexedMatches to true
         } else {
             val queries = buildQueries(title, year, season, episode, normalizedType)
-            val semaphore = Semaphore(permits = MAX_PARALLEL_QUERIES)
-            suspend fun searchBatch(batch: List<String>): List<ChatSearchResult> = coroutineScope {
-                batch.map { query ->
+            val semaphore = Semaphore(permits = 3)
+            val chatResults = coroutineScope {
+                selectedChatIds.map { chatId ->
                     async(Dispatchers.IO) {
-                        semaphore.withPermit { searchQuery(query, selectedChatIds) }
+                        semaphore.withPermit { searchChat(chatId, queries) }
                     }
                 }.map { deferred -> deferred.await() }
             }
-            val coreQueries = queries.take(2)
-            val fallbackQueries = queries.drop(2)
-            val coreResults = searchBatch(coreQueries)
-            val coreCandidates = coreResults.flatMap(ChatSearchResult::candidates)
-            val coreHasMatch = coreCandidates.any { candidate ->
-                matchCandidate(candidate, title, year, season, episode, normalizedType) > 0
-            }
-            val fallbackResults = if (coreHasMatch) emptyList() else searchBatch(fallbackQueries)
-            val usedResults = coreResults + fallbackResults
-            (indexedMatches + coreCandidates + fallbackResults.flatMap(ChatSearchResult::candidates)) to
-                usedResults.all(ChatSearchResult::complete)
+            (indexedMatches + chatResults.flatMap(ChatSearchResult::candidates)) to
+                chatResults.all(ChatSearchResult::complete)
         }
 
         val matched = candidates
@@ -606,52 +595,51 @@ internal class TelegramAndroidAdapter(context: Context) : TelegramPlatformAdapte
     }
 
 
-    private suspend fun searchQuery(query: String, selectedChatIds: Set<Long>): ChatSearchResult {
+    private suspend fun searchChat(chatId: Long, queries: List<String>): ChatSearchResult {
         val found = linkedMapOf<String, VideoCandidate>()
-        var offset = ""
-        var page = 0
+        // SearchChatMessages is deliberately bounded to one page per phrase. If Telegram reports
+        // more matches than it returned, preserve the streams found but do not cache the lookup as
+        // complete; otherwise a truncated page could be mistaken for an exhaustive empty result.
         var complete = true
+        for (query in queries) {
+            for (filter in listOf(TdApi.SearchMessagesFilterVideo(), TdApi.SearchMessagesFilterDocument())) {
+                val response = try {
+                    tdClient.sendRequest(TdApi.SearchChatMessages().also { request ->
+                        request.chatId = chatId
+                        request.query = query
+                        request.fromMessageId = 0L
+                        request.offset = 0
+                        request.limit = SEARCH_LIMIT
+                        request.filter = filter
+                    }, timeoutMs = 20_000L)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w(TAG, "Telegram search failed for chat $chatId and query '$query'", error)
+                    return ChatSearchResult(found.values.toList(), complete = false)
+                } ?: run {
+                    Log.w(TAG, "Telegram search timed out for chat $chatId and query '$query'")
+                    return ChatSearchResult(found.values.toList(), complete = false)
+                }
 
-        do {
-            val response = try {
-                tdClient.sendRequest(TdApi.SearchMessages().also { request ->
-                    request.chatList = null
-                    request.query = query
-                    request.offset = offset
-                    request.limit = SEARCH_LIMIT
-                    request.filter = null
-                }, timeoutMs = 20_000L)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Log.w(TAG, "Telegram global search failed for query '" + query + "' (page " + (page + 1) + ")", error)
-                return ChatSearchResult(found.values.toList(), complete = false)
-            } ?: run {
-                Log.w(TAG, "Telegram global search timed out for query '" + query + "' (page " + (page + 1) + ")")
-                return ChatSearchResult(found.values.toList(), complete = false)
-            }
-
-            val result = response as? TdApi.FoundMessages
-                ?: return ChatSearchResult(found.values.toList(), complete = false)
-
-            result.messages.forEach { message ->
-                if (message == null) return@forEach
-                // Global search spans all chats; never expose or stream a result outside the allowlist.
-                if (message.chatId !in selectedChatIds) return@forEach
-                extractCandidate(message)?.let { candidate ->
-                    found[candidate.chatId.toString() + ":" + candidate.messageId + ":" + candidate.fileId] = candidate
+                val result = response as? TdApi.FoundChatMessages
+                    ?: return ChatSearchResult(found.values.toList(), complete = false)
+                if (result.totalCount > result.messages.size) {
+                    complete = false
+                    Log.w(
+                        TAG,
+                        "Telegram search page is truncated for chat " + chatId + " and query '" + query +
+                            "' (" + result.messages.size + "/" + result.totalCount +
+                            "); results will not be cached as complete",
+                    )
+                }
+                result.messages.forEach { message ->
+                    extractCandidate(message)?.let { candidate ->
+                        found["\u0024{candidate.chatId}:\u0024{candidate.messageId}:\u0024{candidate.fileId}"] = candidate
+                    }
                 }
             }
-
-            offset = result.nextOffset
-            page += 1
-        } while (offset.isNotEmpty() && page < MAX_SEARCH_PAGES)
-
-        if (offset.isNotEmpty()) {
-            complete = false
-            Log.i(TAG, "Telegram search for '" + query + "' reached the " + MAX_SEARCH_PAGES + "-page safety limit; keeping partial results")
         }
-        Log.d(TAG, "Telegram search '" + query + "': " + found.size + " selected-channel files across " + page + " page(s)")
         return ChatSearchResult(found.values.toList(), complete = complete)
     }
 
