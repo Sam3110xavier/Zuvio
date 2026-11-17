@@ -90,7 +90,7 @@ internal fun LibrarySavedControls(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LibraryChip(
-                    label = stringResource(Res.string.library_filter_list),
+                    label = "Filters",
                     selected = showFilters,
                     onClick = { showFilters = true },
                 )
@@ -239,10 +239,10 @@ internal fun LibrarySavedControls(
 
                     NuvioDropdownChip(
                         title = stringResource(Res.string.library_filter_sort),
-                        label = librarySortOptionLabel(sortOption),
+                        label = librarySortOptionLabel(sortOption, sourceMode),
                         selectedKey = sortOption.name,
                         options = sortOptions.map { option ->
-                            NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option))
+                            NuvioDropdownOption(key = option.name, label = librarySortOptionLabel(option, sourceMode))
                         },
                         enabled = sortOptions.size > 1,
                         onSelected = { option ->
