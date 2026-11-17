@@ -1,6 +1,5 @@
 package com.nuvio.app.features.home
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1227,7 +1225,7 @@ fun HomeScreen(
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
                                     if (section.isMergedRow && section.sourceTabs.size > 1) {
-                                        stickyHeader(
+                                        item(
                                             key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
                                             contentType = "merged_row_tabs",
                                         ) {
@@ -1326,7 +1324,6 @@ private fun LazyListScope.homeContinueWatchingSections(
     }
 }
 
-private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val HOME_CONTINUE_WATCHING_SECTION_KEY = "home_continue_watching"
 private const val HOME_UPCOMING_SECTION_KEY = "home_upcoming"
 
