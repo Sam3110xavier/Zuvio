@@ -55,7 +55,6 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
-import com.nuvio.app.features.home.components.MergedHomeRowTabSelector
 import com.nuvio.app.features.home.components.HomeContinueWatchingSection
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import com.nuvio.app.features.home.components.HomeHeroReservedSpace
@@ -1225,20 +1224,6 @@ fun HomeScreen(
                             } else {
                                 val section = sectionsMap[settingsItem.key]
                                 if (section != null && section.items.isNotEmpty()) {
-                                    if (section.isMergedRow && section.sourceTabs.size > 1) {
-                                        item(
-                                            key = "${keyedSettingsItem.lazyKey}:merged-row-tabs",
-                                            contentType = "merged_row_tabs",
-                                        ) {
-                                            MergedHomeRowTabSelector(
-                                                tabs = section.sourceTabs,
-                                                selectedTabKey = mergedRowSelectedTabs[section.key]
-                                                    ?: section.sourceTabs.firstOrNull()?.key,
-                                                sectionPadding = homeSectionPadding,
-                                                onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                            )
-                                        }
-                                    }
                                     item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
                                         HomeCatalogRowSection(
                                             section = section,
@@ -1246,7 +1231,7 @@ fun HomeScreen(
                                             selectedTabKey = mergedRowSelectedTabs[section.key]
                                                 ?: section.sourceTabs.firstOrNull()?.key,
                                             onTabSelected = { key -> mergedRowSelectedTabs[section.key] = key },
-                                            showTabSelector = !section.isMergedRow,
+                                            showTabSelector = true,
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
                                             onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
