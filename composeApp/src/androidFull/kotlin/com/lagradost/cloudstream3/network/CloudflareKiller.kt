@@ -78,8 +78,8 @@ fun getHeaders(
 ): Headers {
     val cookieMap = if (cookie.isNotEmpty()) {
         mapOf(
-            "Cookie" to cookie.entries.joinToString(" ") {
-                it.key + "=" + it.value + ";"
+            "Cookie" to cookie.entries.joinToString("; ") {
+                it.key + "=" + it.value
             },
         )
     } else {
@@ -138,21 +138,21 @@ class CloudflareKiller : Interceptor {
             }.toMap()
     }
 
-    init {
-        safe { CookieManager.getInstance().removeAllCookies(null) }
-    }
-
-    val savedCookies: MutableMap<String, Map<String, String>> = mutableMapOf()
+    // Keep this cache for callers that inspect the last observed cookies, but never
+    // trust it as the source of request cookies: CookieManager applies the real
+    // domain/path/secure/expiry rules for each URL.
+    val savedCookies: MutableMap<String, Map<String, String>> = ConcurrentHashMap()
 
     fun getCookieHeaders(url: String): Headers {
         val userAgentHeaders = WebViewResolver.webViewUserAgent?.let { mapOf("user-agent" to it) }.orEmpty()
-        return getHeaders(userAgentHeaders, savedCookies[URI(url).host].orEmpty())
+        return getHeaders(userAgentHeaders, getApplicableWebViewCookies(url))
     }
 
     override fun intercept(chain: Interceptor.Chain): Response = runBlocking {
-        val request = chain.request()
-        savedCookies[request.url.host]?.let { return@runBlocking proceed(request, it) }
-
+        // Import cookies from the shared WebView store before the first network
+        // attempt. Waiting until Cloudflare has already returned 403/503 can cause
+        // an unnecessary challenge even when a valid clearance cookie exists.
+        val request = withWebViewCookies(chain.request())
         val response = chain.proceed(request)
         if (response.header("Server") !in cloudflareServers || response.code !in errorCodes) {
             return@runBlocking response
@@ -203,28 +203,64 @@ class CloudflareKiller : Interceptor {
             }
 
             debugWarning({ true }) { "Failed Cloudflare challenge at: ${request.url}" }
-            chain.proceed(request)
+            chain.proceed(withWebViewCookies(request))
         } finally {
             interactiveChallengeInProgress.set(false)
         }
     }
 
     private fun getWebViewCookie(url: String): String? = safe {
-        CookieManager.getInstance()?.getCookie(url)
+        CookieManager.getInstance().getCookie(url)
+    }
+
+    /**
+     * CookieManager returns only cookies applicable to [url], respecting the
+     * WebView cookie store's domain, path, secure and expiry rules. Do not use
+     * the per-interceptor cache as a substitute: it can outlive or out-scope a
+     * WebView cookie.
+     */
+    private fun getApplicableWebViewCookies(url: String): Map<String, String> {
+        val cookies = getWebViewCookie(url)?.let(::parseCookieMap).orEmpty()
+        val host = runCatching { URI(url).host }.getOrNull()
+        if (host != null && !cookies["cf_clearance"].isNullOrBlank()) {
+            savedCookies[host] = cookies
+            Log.d(TAG, "Found an applicable saved Cloudflare clearance cookie for host=$host")
+        }
+        return cookies
+    }
+
+    /**
+     * Merge applicable WebView cookies before the first request. WebView values
+     * take precedence over plugin-supplied values with the same cookie name, so
+     * refreshed cf_clearance tokens are not shadowed by stale request headers.
+     */
+    private fun withWebViewCookies(request: Request): Request {
+        val webViewCookies = getApplicableWebViewCookies(request.url.toString())
+        if (webViewCookies.isEmpty()) return request
+
+        val requestCookies = request.headers.values("Cookie")
+            .flatMap { parseCookieMap(it).entries }
+            .associate { it.key to it.value }
+        val mergedCookies = requestCookies + webViewCookies
+        val cookieHeader = mergedCookies.entries.joinToString("; ") { (name, value) ->
+            "$name=$value"
+        }
+        return request.newBuilder()
+            .header("Cookie", cookieHeader)
+            .build()
     }
 
     private fun trySolveWithSavedCookies(request: Request): Boolean =
-        getWebViewCookie(request.url.toString())?.let { cookie ->
-            cookie.contains("cf_clearance").also { solved ->
-                if (solved) savedCookies[request.url.host] = parseCookieMap(cookie)
-            }
-        } ?: false
+        !getApplicableWebViewCookies(request.url.toString())["cf_clearance"].isNullOrBlank()
 
     private suspend fun proceed(request: Request, cookies: Map<String, String>): Response {
         val userAgentHeaders = WebViewResolver.getWebViewUserAgent()?.let {
             mapOf("user-agent" to it)
         }.orEmpty()
-        val headers = getHeaders(request.headers.toMap() + userAgentHeaders, cookies + request.cookies)
+        // Prefer the live WebView cookie store over cached or caller-supplied
+        // values. CookieManager has already filtered these cookies for this URL.
+        val mergedCookies = request.cookies + cookies + getApplicableWebViewCookies(request.url.toString())
+        val headers = getHeaders(request.headers.toMap() + userAgentHeaders, mergedCookies)
         return app.baseClient.newCall(request.newBuilder().headers(headers).build()).await()
     }
 
@@ -239,6 +275,8 @@ class CloudflareKiller : Interceptor {
                 trySolveWithSavedCookies(request)
             }
         }
-        return savedCookies[request.url.host]?.let { proceed(request, it) }
+        val currentCookies = getApplicableWebViewCookies(request.url.toString())
+        if (currentCookies["cf_clearance"].isNullOrBlank()) return null
+        return proceed(request, currentCookies)
     }
 }
