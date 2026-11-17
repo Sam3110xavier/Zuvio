@@ -30,28 +30,34 @@ class CloudStreamApp {
         }
 
         @JvmStatic
-        fun <T : Any> getKey(path: String): T? = null
+        inline fun <reified T : Any> getKey(path: String): T? =
+            context?.let { currentContext ->
+                with(DataStore) { currentContext.getKey<T>(path) }
+            }
 
         @JvmStatic
-        fun <T : Any> getKey(folder: String, path: String): T? = null
+        inline fun <reified T : Any> getKey(folder: String, path: String): T? =
+            context?.let { currentContext ->
+                with(DataStore) { currentContext.getKey<T>(folder, path) }
+            }
 
         @JvmStatic
-        fun <T : Any> getKey(path: String, defVal: T?): T? {
-            if (defVal == null) return null
-            return defVal
-        }
+        inline fun <reified T : Any> getKey(path: String, defVal: T?): T? =
+            context?.let { currentContext ->
+                with(DataStore) { currentContext.getKey(path, defVal) }
+            } ?: defVal
 
         @JvmStatic
-        fun <T : Any> getKey(folder: String, path: String, defVal: T?): T? {
-            if (defVal == null) return null
-            return defVal
-        }
+        inline fun <reified T : Any> getKey(folder: String, path: String, defVal: T?): T? =
+            context?.let { currentContext ->
+                with(DataStore) { currentContext.getKey(folder, path, defVal) }
+            } ?: defVal
 
         @JvmStatic
-        fun <T : Any> getKeyClass(path: String, valueType: Class<T>): T? {
-            val json = sharedPreferences()?.getString(path, null) ?: return null
-            return runCatching { mapper.readValue(json, valueType) }.getOrNull()
-        }
+        fun <T : Any> getKeyClass(path: String, valueType: Class<T>): T? =
+            context?.let { currentContext ->
+                with(DataStore) { currentContext.getKey(path, valueType) }
+            }
 
         @JvmStatic
         fun <T : Any> setKeyClass(path: String, value: T) = setKey(path, value)
