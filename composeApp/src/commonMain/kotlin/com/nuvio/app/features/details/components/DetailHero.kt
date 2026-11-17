@@ -63,6 +63,7 @@ import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.LocalVerticalBarPadding
 import com.nuvio.app.core.ui.verticalBarWidth
 import com.nuvio.app.core.ui.platformPhysicalTopInset
+import com.nuvio.app.core.ui.platformNativeBarButtonAnchor
 import com.nuvio.app.navigation.LocalUseNativeNavigation
 
 @Composable
