@@ -177,6 +177,9 @@ internal fun AddonsSettingsPageContent(
                     onEnabledChange = { enabled ->
                         AddonRepository.setAddonEnabled(addon.manifestUrl, enabled)
                     },
+                    onHideCatalogsChange = { hide ->
+                        AddonRepository.setAddonHideCatalogs(addon.manifestUrl, hide)
+                    },
                     onConfigureClick = if (showConfigureAction && !configureUrl.isNullOrBlank()) {
                         {
                             runCatching {
@@ -443,6 +446,7 @@ private fun InstalledAddonCard(
     onMoveDownClick: (() -> Unit)?,
     onRefreshClick: () -> Unit,
     onEnabledChange: (Boolean) -> Unit,
+    onHideCatalogsChange: (Boolean) -> Unit,
     onConfigureClick: (() -> Unit)?,
     onDeleteClick: () -> Unit,
 ) {
@@ -486,6 +490,31 @@ private fun InstalledAddonCard(
                     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
                 ),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Hide catalogs",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Keep this add-on available for streams, but hide its catalogs from Discover and Search.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = addon.hideCatalogs,
+                onCheckedChange = onHideCatalogsChange,
+                enabled = addon.enabled,
             )
         }
 
