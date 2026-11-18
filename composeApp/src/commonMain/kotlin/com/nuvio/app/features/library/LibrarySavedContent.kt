@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -68,51 +67,6 @@ internal fun LibrarySavedControls(
     val sortOptions = availableLibrarySortOptions(sourceMode)
     val allTypesLabel = stringResource(Res.string.library_filter_all_types)
     val allLabel = stringResource(Res.string.library_type_all)
-    val facetChips: @Composable (Boolean) -> Unit = { fillWidth ->
-        if (verticalProjection.availableGenres.isNotEmpty()) {
-            val genreTitle = stringResource(Res.string.library_filter_genre)
-            FacetSlot(fillWidth) {
-                NuvioDropdownChip(
-                    title = genreTitle,
-                    label = "$genreTitle: ${verticalProjection.selectedGenre ?: allLabel}",
-                    selectedKey = verticalProjection.selectedGenre.orEmpty(),
-                    options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
-                    onSelected = { option -> onGenreSelected(option.key.ifBlank { null }) },
-                    fillWidth = fillWidth,
-                )
-            }
-        }
-        if (verticalProjection.availableYears.isNotEmpty()) {
-            val yearTitle = stringResource(Res.string.library_filter_year)
-            FacetSlot(fillWidth) {
-                NuvioDropdownChip(
-                    title = yearTitle,
-                    label = "$yearTitle: ${verticalProjection.selectedYear ?: allLabel}",
-                    selectedKey = verticalProjection.selectedYear.orEmpty(),
-                    options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
-                    onSelected = { option -> onYearSelected(option.key.ifBlank { null }) },
-                    fillWidth = fillWidth,
-                )
-            }
-        }
-        val watchedTitle = stringResource(Res.string.library_filter_watched)
-        FacetSlot(fillWidth) {
-            NuvioDropdownChip(
-                title = watchedTitle,
-                label = "$watchedTitle: ${libraryWatchedFilterLabel(watchedFilter)}",
-                selectedKey = watchedFilter.name,
-                options = LibraryWatchedFilter.entries.map { filter ->
-                    NuvioDropdownOption(key = filter.name, label = libraryWatchedFilterLabel(filter))
-                },
-                onSelected = { option ->
-                    LibraryWatchedFilter.entries
-                        .firstOrNull { it.name == option.key }
-                        ?.let(onWatchedFilterSelected)
-                },
-                fillWidth = fillWidth,
-            )
-        }
-    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -146,9 +100,7 @@ internal fun LibrarySavedControls(
             } else {
                 androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
             }
-        }
 
-        FacetSlot(fillWidth) {
             NuvioDropdownChip(
                 title = stringResource(Res.string.library_filter_sort),
                 label = librarySortOptionLabel(sortOption),
@@ -162,10 +114,8 @@ internal fun LibrarySavedControls(
                         .firstOrNull { it.name == option.key }
                         ?.let(onSortSelected)
                 },
-                fillWidth = fillWidth,
             )
         }
-    }
 
         if (
             layoutMode == LibraryLayoutMode.VERTICAL &&
@@ -203,34 +153,38 @@ internal fun LibrarySavedControls(
                         )
                     }
                 }
-            } else {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    leadingChips(false)
+                if (verticalProjection.availableYears.isNotEmpty()) {
+                    val yearTitle = stringResource(Res.string.library_filter_year)
+                    Box(propagateMinConstraints = true) {
+                        NuvioDropdownChip(
+                            title = yearTitle,
+                            label = "$yearTitle: ${verticalProjection.selectedYear ?: allLabel}",
+                            selectedKey = verticalProjection.selectedYear.orEmpty(),
+                            options = libraryFacetOptions(allLabel, verticalProjection.availableYears),
+                            onSelected = { option -> onYearSelected(option.key.ifBlank { null }) },
+                            fillWidth = true,
+                        )
+                    }
                 }
-            }
-
-            if (layoutMode == LibraryLayoutMode.VERTICAL && !singleRow) {
-                LibraryFilterRow {
-                    facetChips(true)
+                val watchedTitle = stringResource(Res.string.library_filter_watched)
+                Box(propagateMinConstraints = true) {
+                    NuvioDropdownChip(
+                        title = watchedTitle,
+                        label = "$watchedTitle: ${libraryWatchedFilterLabel(watchedFilter)}",
+                        selectedKey = watchedFilter.name,
+                        options = LibraryWatchedFilter.entries.map { filter ->
+                            NuvioDropdownOption(key = filter.name, label = libraryWatchedFilterLabel(filter))
+                        },
+                        onSelected = { option ->
+                            LibraryWatchedFilter.entries
+                                .firstOrNull { it.name == option.key }
+                                ?.let(onWatchedFilterSelected)
+                        },
+                        fillWidth = true,
+                    )
                 }
             }
         }
-    }
-}
-
-private val CompactFilterRowMaxWidth = 960.dp
-private val CompactFilterMinChipWidth = 112.dp
-private val FilterChipSpacing = 8.dp
-
-@Composable
-private fun FacetSlot(fillWidth: Boolean, content: @Composable () -> Unit) {
-    if (fillWidth) {
-        Box(propagateMinConstraints = true) { content() }
-    } else {
-        content()
     }
 }
 
@@ -336,7 +290,6 @@ private fun libraryFacetOptions(
 @Composable
 private fun LibraryFilterRow(
     modifier: Modifier = Modifier,
-    shrinkToFit: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -351,8 +304,6 @@ private fun LibraryFilterRow(
             val naturalWidths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
             val naturalTotal = naturalWidths.sum() + totalSpacing
             val equalShare = if (count > 0) (viewportWidth - totalSpacing) / count else 0
-            val minChip = CompactFilterMinChipWidth.roundToPx()
-            val available = viewportWidth - totalSpacing
             val widths = when {
                 count == 0 -> emptyList()
                 naturalWidths.all { it <= equalShare } -> List(count) { index ->
@@ -362,23 +313,6 @@ private fun LibraryFilterRow(
                     val extra = (viewportWidth - naturalTotal) / count
                     naturalWidths.mapIndexed { index, width ->
                         width + extra + if (index == count - 1) (viewportWidth - naturalTotal) - extra * count else 0
-                    }
-                }
-                shrinkToFit && minChip * count <= available -> {
-                    val shrunk = naturalWidths.map { width ->
-                        (width.toLong() * available / (naturalTotal - totalSpacing)).toInt().coerceAtLeast(minChip)
-                    }
-                    val overflow = shrunk.sum() - available
-                    if (overflow <= 0) {
-                        shrunk.mapIndexed { index, width -> if (index == count - 1) width - overflow else width }
-                    } else {
-                        val shrinkable = shrunk.sumOf { (it - minChip).coerceAtLeast(0) }.coerceAtLeast(1)
-                        val adjusted = shrunk.map { width ->
-                            width - ((width - minChip).coerceAtLeast(0).toLong() * overflow / shrinkable).toInt()
-                        }
-                        adjusted.mapIndexed { index, width ->
-                            if (index == count - 1) width + (available - adjusted.sum()) else width
-                        }
                     }
                 }
                 else -> naturalWidths
