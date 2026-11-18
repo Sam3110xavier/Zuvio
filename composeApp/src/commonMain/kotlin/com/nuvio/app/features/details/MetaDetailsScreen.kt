@@ -107,6 +107,7 @@ import com.nuvio.app.core.ui.TrackingListPickerDialog
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberArtworkBackdrop
 import com.nuvio.app.core.ui.rememberHeroStretchState
+import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.kyant.backdrop.Backdrop
 import com.nuvio.app.core.ui.glass.LocalLiquidGlassBackdrop
 import com.nuvio.app.core.ui.glass.nuvioBackdropSource
@@ -128,6 +129,7 @@ import com.nuvio.app.features.details.components.DetailFloatingHeader
 import com.nuvio.app.features.details.components.DetailHero
 import com.nuvio.app.features.details.components.DetailMetaInfo
 import com.nuvio.app.features.details.components.DetailPosterRailSection
+import com.nuvio.app.features.details.components.DetailPosterGridSection
 import com.nuvio.app.features.details.components.DetailProductionSection
 import com.nuvio.app.features.details.components.DetailSeriesContent
 import com.nuvio.app.features.details.components.EpisodeNavigatorState
@@ -232,10 +234,37 @@ fun MetaDetailsScreen(
     val uiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
     val displayedMeta = uiState.meta?.takeIf { it.type == type && it.id == id }
         ?: MetaDetailsRepository.peek(type, id)
-    val metaScreenSettingsUiState by remember {
+    val storedMetaScreenSettingsUiState by remember {
         MetaScreenSettingsRepository.ensureLoaded()
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    // Keep the Netflix-inspired preset scoped to Home for now; Details retains its saved layout.
+    val netflixStyleEnabled = false
+    val metaScreenSettingsUiState = remember(storedMetaScreenSettingsUiState, netflixStyleEnabled) {
+        if (!netflixStyleEnabled) {
+            storedMetaScreenSettingsUiState
+        } else {
+            storedMetaScreenSettingsUiState.copy(
+                items = storedMetaScreenSettingsUiState.items.map { item ->
+                    if (item.key in setOf(
+                            MetaScreenSectionKey.EPISODES,
+                            MetaScreenSectionKey.MORE_LIKE_THIS,
+                            MetaScreenSectionKey.TRAILERS,
+                        )
+                    ) {
+                        item.copy(tabGroup = 1)
+                    } else {
+                        item
+                    }
+                },
+                backgroundMode = MetaScreenBackgroundMode.Normal,
+                cinematicBackground = false,
+                iconActionRow = true,
+                tabLayout = true,
+                episodeCardStyle = MetaEpisodeCardStyle.Horizontal,
+            )
+        }
+    }
     val mdbListSettings by remember {
         MdbListSettingsRepository.ensureLoaded()
         MdbListSettingsRepository.uiState
@@ -1195,7 +1224,7 @@ fun MetaDetailsScreen(
                     }
 
                     val cinematicGlassEnabled = backgroundMode == MetaScreenBackgroundMode.Cinematic
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.fillMaxSize().background(if (netflixStyleEnabled) Color.Black else Color.Transparent)) {
                         Box(
                             Modifier
                                 .fillMaxSize()
@@ -1222,7 +1251,7 @@ fun MetaDetailsScreen(
                                             heroTrailerReady = heroTrailerReady,
                                             heroTrailerPlayWhenReady = heroTrailerPlayWhenReady,
                                             heroTrailerMuted = heroTrailerMuted,
-                                            heroGradientColor = heroGradientColor,
+                                            heroGradientColor = if (netflixStyleEnabled) Color.Black else heroGradientColor,
                                             onBackdropLoaded = onBackdropLoaded,
                                             onHeroTrailerReady = onHeroTrailerReady,
                                             onHeroTrailerFinished = onHeroTrailerFinished,
@@ -1291,6 +1320,7 @@ fun MetaDetailsScreen(
                                                 } else {
                                                     null
                                                 },
+                                                netflixStyleEnabled = netflixStyleEnabled,
                                             )
                                         } else {
                                             DetailHero(
@@ -1307,6 +1337,34 @@ fun MetaDetailsScreen(
                                                 heroTrailerMuted = heroTrailerMuted,
                                                 heroGradientColor = heroGradientColor,
                                                 cinematicBackground = cinematicBackground,
+                                                netflixStyleEnabled = netflixStyleEnabled,
+                                                viewportHeight = screenHeight,
+                                                actions = if (netflixStyleEnabled && isSectionEnabled(MetaScreenSectionKey.ACTIONS)) {
+                                                    {
+                                                        DetailActions(
+                                                            playLabel = playButtonLabel,
+                                                            playEnabled = isPrimaryPlayEnabled,
+                                                            isSaved = isSaved,
+                                                            isWatched = isWatched,
+                                                            isTablet = isTablet,
+                                                            shuffleEnabled = shuffleSettings.enabled,
+                                                            onPlayClick = onPrimaryPlayClick,
+                                                            onDownloadClick = onDownloadClick,
+                                                            onPlayLongClick = if (showManualPlayOption) onPrimaryPlayLongClick else null,
+                                                            onShuffleClick = onShuffleClick,
+                                                            onWatchedClick = toggleWatched,
+                                                            onSaveClick = toggleSaved,
+                                                            onSaveLongClick = openLibraryListPicker,
+                                                            onPlayFromStartClick = onPlayFromStartClick,
+                                                            onPlayExternallyClick = onPlayExternallyClick,
+                                                            iconActionRow = true,
+                                                            userRating = titleUserRating,
+                                                            onRateClick = openTitleRating,
+                                                        )
+                                                    }
+                                                } else {
+                                                    null
+                                                },
                                                 onBackdropLoaded = onBackdropLoaded,
                                                 onHeroTrailerMuteToggle = { HeroTrailerAudioState.toggleMuted(HeroTrailerSurface.Details) },
                                                 onHeroTrailerReady = onHeroTrailerReady,
@@ -1317,12 +1375,22 @@ fun MetaDetailsScreen(
                                     }
 
                                     configuredMetaSectionItems(
-                                        settings = if (useTabletLayout) {
-                                            metaScreenSettingsUiState.copy(
-                                                items = metaScreenSettingsUiState.items.filterNot { it.key in tabletHeroSectionKeys },
-                                            )
-                                        } else {
-                                            metaScreenSettingsUiState
+                                        netflixStyleEnabled = netflixStyleEnabled,
+                                        settings = run {
+                                            val baseSettings = if (useTabletLayout) {
+                                                metaScreenSettingsUiState.copy(
+                                                    items = metaScreenSettingsUiState.items.filterNot { it.key in tabletHeroSectionKeys },
+                                                )
+                                            } else {
+                                                metaScreenSettingsUiState
+                                            }
+                                            if (netflixStyleEnabled) {
+                                                baseSettings.copy(
+                                                    items = baseSettings.items.filterNot { it.key == MetaScreenSectionKey.ACTIONS },
+                                                )
+                                            } else {
+                                                baseSettings
+                                            }
                                         },
                                         isMdbListActive = mdbListSettings.isActive,
                                         meta = meta,
@@ -2138,6 +2206,7 @@ private fun MetaDetails.toMetaPreview(): MetaPreview =
     )
 
 private fun LazyListScope.configuredMetaSectionItems(
+    netflixStyleEnabled: Boolean = false,
     settings: MetaScreenSettingsUiState,
     isMdbListActive: Boolean,
     meta: MetaDetails,
@@ -2235,6 +2304,7 @@ private fun LazyListScope.configuredMetaSectionItems(
                         items = sectionItems,
                         tabLayout = forceTabLayout,
                     ),
+                    netflixStyleEnabled = netflixStyleEnabled,
                     isMdbListActive = isMdbListActive,
                     meta = meta,
                     episodeDownloadFor = episodeDownloadFor,
@@ -2425,6 +2495,7 @@ private fun metaSectionHasContent(
 @OptIn(ExperimentalSharedTransitionApi::class)
 private fun ConfiguredMetaSections(
     settings: MetaScreenSettingsUiState,
+    netflixStyleEnabled: Boolean,
     isMdbListActive: Boolean,
     meta: MetaDetails,
     episodeDownloadFor: (MetaVideo) -> DownloadItem?,
@@ -2622,19 +2693,32 @@ private fun ConfiguredMetaSections(
                         MoreLikeThisSource.SIMKL -> stringResource(Res.string.detail_more_like_this_powered_by_simkl)
                         null -> null
                     }
-                    DetailPosterRailSection(
-                        title = stringResource(Res.string.details_more_like_this),
-                        items = meta.moreLikeThis,
-                        watchedKeys = watchedKeys,
-                        fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
-                        showHeader = showHeader,
-                        horizontalScrollPadding = horizontalScrollPadding,
-                        sourceLabel = sourceLabel,
-                        onViewAllClick = onOpenMoreLikeThis
-                            ?.takeIf { meta.moreLikeThisHasMore && meta.moreLikeThisSource != null }
-                            ?.let { open -> { open(meta) } },
-                        onPosterClick = onOpenMeta,
-                    )
+                    val onViewAll = onOpenMoreLikeThis
+                        ?.takeIf { meta.moreLikeThisHasMore && meta.moreLikeThisSource != null }
+                        ?.let { open -> { open(meta) } }
+                    if (netflixStyleEnabled) {
+                        DetailPosterGridSection(
+                            title = stringResource(Res.string.details_more_like_this),
+                            items = meta.moreLikeThis,
+                            watchedKeys = watchedKeys,
+                            fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                            sourceLabel = sourceLabel,
+                            onViewAllClick = onViewAll,
+                            onPosterClick = onOpenMeta,
+                        )
+                    } else {
+                        DetailPosterRailSection(
+                            title = stringResource(Res.string.details_more_like_this),
+                            items = meta.moreLikeThis,
+                            watchedKeys = watchedKeys,
+                            fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                            showHeader = showHeader,
+                            horizontalScrollPadding = horizontalScrollPadding,
+                            sourceLabel = sourceLabel,
+                            onViewAllClick = onViewAll,
+                            onPosterClick = onOpenMeta,
+                        )
+                    }
                 }
             }
         }

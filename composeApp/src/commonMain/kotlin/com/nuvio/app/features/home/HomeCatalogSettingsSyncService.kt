@@ -34,6 +34,7 @@ data class SyncCatalogItem(
     @SerialName("custom_title") val customTitle: String = "",
     @SerialName("is_collection") val isCollection: Boolean = false,
     @SerialName("collection_id") val collectionId: String = "",
+    @SerialName("row_placement") val rowPlacement: String = HomeCatalogRowPlacement.NORMAL.storageValue,
     val key: String = "",
 )
 
@@ -41,6 +42,8 @@ data class SyncCatalogItem(
 data class SyncHomeCatalogPayload(
     @SerialName("show_catalog_type") val showCatalogType: Boolean = true,
     @SerialName("hide_unreleased_content") val hideUnreleasedContent: Boolean = false,
+    @SerialName("hide_merged_titles_without_posters") val hideMergedTitlesWithoutPosters: Boolean = false,
+    @SerialName("merged_rows") val mergedRows: List<MergedHomeRowDefinition> = emptyList(),
     val items: List<SyncCatalogItem> = emptyList(),
 )
 
@@ -64,7 +67,10 @@ internal fun mergeHomeCatalogSettingsJson(
     remoteJson: JsonObject?,
     localJson: JsonObject,
 ): JsonObject = buildJsonObject {
-    remoteJson?.forEach { (key, value) -> put(key, value) }
+    val removedAddonOrderKeys = setOf("addon_layouts", "addon_row_order_policy", "upcoming_row_keys")
+    remoteJson?.forEach { (key, value) ->
+        if (key !in removedAddonOrderKeys) put(key, value)
+    }
     localJson.forEach { (key, value) -> put(key, value) }
 }
 
@@ -77,6 +83,8 @@ object HomeCatalogSettingsSyncService {
     }
 
     private const val HIDE_UNRELEASED_CONTENT_KEY = "hide_unreleased_content"
+    private const val HIDE_MERGED_TITLES_WITHOUT_POSTERS_KEY = "hide_merged_titles_without_posters"
+    private const val MERGED_ROWS_KEY = "merged_rows"
     private const val SHOW_CATALOG_TYPE_KEY = "show_catalog_type"
 
     @Volatile
@@ -219,6 +227,12 @@ object HomeCatalogSettingsSyncService {
             } else {
                 localPayload.hideUnreleasedContent
             },
+            hideMergedTitlesWithoutPosters = if (settingsJson.containsKey(HIDE_MERGED_TITLES_WITHOUT_POSTERS_KEY)) {
+                decoded.hideMergedTitlesWithoutPosters
+            } else {
+                localPayload.hideMergedTitlesWithoutPosters
+            },
+            mergedRows = if (settingsJson.containsKey(MERGED_ROWS_KEY)) decoded.mergedRows else localPayload.mergedRows,
         )
     }.getOrNull()
 

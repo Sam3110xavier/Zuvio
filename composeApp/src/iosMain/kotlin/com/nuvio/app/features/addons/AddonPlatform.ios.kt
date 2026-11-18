@@ -26,6 +26,7 @@ import platform.Foundation.NSUserDefaults
 actual object AddonStorage {
     private const val addonUrlsKey = "installed_manifest_urls"
     private const val addonEnabledStatesKey = "installed_manifest_enabled_states"
+    private const val addonCatalogHiddenStatesKey = "installed_manifest_catalog_hidden_states"
 
     actual fun loadInstalledAddonUrls(profileId: Int): List<String> =
         NSUserDefaults.standardUserDefaults
@@ -60,6 +61,30 @@ actual object AddonStorage {
             forKey = "${addonEnabledStatesKey}_$profileId",
         )
     }
+
+    actual fun loadAddonCatalogHiddenStates(profileId: Int): Map<String, Boolean> =
+        NSUserDefaults.standardUserDefaults
+            .stringForKey("${addonCatalogHiddenStatesKey}_$profileId")
+            .orEmpty()
+            .lineSequence()
+            .mapNotNull(::parseCatalogHiddenStateLine)
+            .toMap()
+
+    actual fun saveAddonCatalogHiddenStates(profileId: Int, states: Map<String, Boolean>) {
+        val payload = states.entries.joinToString(separator = "\n") { (url, hidden) ->
+            "$url\t$hidden"
+        }
+        NSUserDefaults.standardUserDefaults.setObject(
+            payload,
+            forKey = "${addonCatalogHiddenStatesKey}_$profileId",
+        )
+    }
+}
+
+private fun parseCatalogHiddenStateLine(line: String): Pair<String, Boolean>? {
+    val url = line.substringBefore("\t").trim().takeIf { it.isNotEmpty() } ?: return null
+    val rawHidden = line.substringAfter("\t", "false").trim().lowercase()
+    return url to (rawHidden == "true")
 }
 
 private fun parseEnabledStateLine(line: String): Pair<String, Boolean>? {

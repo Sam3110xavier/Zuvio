@@ -43,7 +43,7 @@ fun buildAddonCatalogRefreshSignature(addons: List<ManagedAddon>): List<String> 
     }.sorted()
 
 fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDefinition> =
-    addons.enabledAddons().mapNotNull { addon ->
+    addons.enabledAddons().filterNot(ManagedAddon::hideCatalogs).mapNotNull { addon ->
         val manifest = addon.manifest ?: return@mapNotNull null
         addon to manifest
     }.flatMap { (addon, manifest) ->
@@ -102,6 +102,7 @@ private class CatalogDescriptorSignature {
     fun addAddon(addon: ManagedAddon) {
         add(addon.userSetName)
         add(addon.enabled)
+        add(addon.hideCatalogs)
         add(addon.isRefreshing)
         add(addon.errorMessage)
         add(addon.manifestUrl)
