@@ -262,6 +262,12 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
     var waitingForSharedSource by remember(partyId, key) { mutableStateOf(false) }
     val sharing = partyState.party?.let { it.isHost && it.sharing } == true
     val sharedStream = if (sharing) currentPartyStream() else null
+    // Use the complete fetched result set, not the selected add-on filter: different add-ons
+    // may resolve the exact same playable URL.
+    val availableStreamUrls = sourceStreamsState.groups
+        .flatMap { it.streams }
+        .mapNotNull { it.playableDirectUrl }
+        .toSet()
 
     DisposableEffect(playerController) {
         val source = playerController as? PlayerSystemControlSource
@@ -317,6 +323,7 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         hostUnavailable,
         remoteSharedStream,
         activeSourceUrl,
+        availableStreamUrls,
     ) {
         val party = PartyRepository.state.value.party ?: return@LaunchedEffect
         if (!party.isHost && hostSharingEnabled) hostSharingWasActive = true
@@ -404,6 +411,7 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
                 localMediaKey = key,
                 sharedStream = incoming,
                 activeSourceUrl = activeSourceUrl,
+                availableStreamUrls = availableStreamUrls,
             )
         ) return@LaunchedEffect
 
