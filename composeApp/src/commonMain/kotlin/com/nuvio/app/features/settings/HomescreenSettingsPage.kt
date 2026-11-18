@@ -22,12 +22,14 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -44,7 +46,6 @@ import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
-import com.nuvio.app.features.home.HomeCatalogRowPlacement
 import com.nuvio.app.features.home.HomeHeroStyle
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
 import nuvio.composeapp.generated.resources.Res
@@ -86,18 +87,27 @@ import nuvio.composeapp.generated.resources.settings_homescreen_show_hero
 import nuvio.composeapp.generated.resources.settings_homescreen_show_hero_description
 import nuvio.composeapp.generated.resources.settings_homescreen_summary
 import nuvio.composeapp.generated.resources.settings_homescreen_summary_hint
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import sh.calvin.reorderable.ReorderableCollectionItemScope
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import com.nuvio.app.features.home.HomeCatalogRowPlacement
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_message
 import nuvio.composeapp.generated.resources.settings_homescreen_no_visible_rows_title
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden_count
 import nuvio.composeapp.generated.resources.settings_homescreen_hide_hidden
 import nuvio.composeapp.generated.resources.settings_homescreen_show_hidden
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden_rows_title
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.jetbrains.compose.resources.stringResource
-import sh.calvin.reorderable.ReorderableCollectionItemScope
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 
 internal fun LazyListScope.homescreenSettingsContent(
     isTablet: Boolean,
@@ -111,10 +121,10 @@ internal fun LazyListScope.homescreenSettingsContent(
     isCatalogLoading: Boolean,
     catalogErrorMessage: String?,
 ) {
-    val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
-    val enabledCatalogCount = items.count { it.enabled }
     val visibleItems = items.filter { it.enabled }
     val hiddenItems = items.filterNot { it.enabled }
+    val selectedHeroSourceCount = items.count { it.heroSourceEnabled }
+    val enabledCatalogCount = visibleItems.size
     val showHeroTrailerPlaybackSetting = AppFeaturePolicy.heroTrailerPlaybackSupported &&
         AppFeaturePolicy.trailerPlaybackMode == TrailerPlaybackMode.IN_APP
     item {
@@ -124,6 +134,9 @@ internal fun LazyListScope.homescreenSettingsContent(
             totalCatalogCount = items.size,
             selectedHeroSourceCount = selectedHeroSourceCount,
         )
+    }
+    item(key = "merged_home_rows_settings") {
+        MergedHomeRowsSettingsSection(isTablet = isTablet)
     }
     item {
         SettingsSection(
@@ -183,6 +196,14 @@ internal fun LazyListScope.homescreenSettingsContent(
                     checked = showCatalogType,
                     isTablet = isTablet,
                     onCheckedChange = HomeCatalogSettingsRepository::setShowCatalogType,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Hide entries without posters",
+                    description = "Apply across all Home catalog rows, merged rows, source tabs, and the hero.",
+                    checked = HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle().value.hideMergedTitlesWithoutPosters,
+                    isTablet = isTablet,
+                    onCheckedChange = HomeCatalogSettingsRepository::setHideMergedTitlesWithoutPosters,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -381,7 +402,6 @@ private fun HeroStyleOptions(
     }
 }
 
-
 @Composable
 private fun HeroStyleOption(
     modifier: Modifier,
@@ -426,6 +446,7 @@ private fun HeroStyleOption(
         }
     }
 }
+
 
 @Composable
 private fun HeroSourcesDropdown(
@@ -551,7 +572,7 @@ private fun HomescreenSummaryCard(
 private fun HomescreenCatalogList(
     isTablet: Boolean,
     items: List<HomeCatalogSettingsItem>,
-    visibleRows: Boolean = true,
+    visibleRows: Boolean,
     onPinnedDragAttempt: () -> Unit,
 ) {
     var expandedKey by remember { mutableStateOf<String?>(null) }
@@ -562,14 +583,26 @@ private fun HomescreenCatalogList(
     ) { from, to ->
         val fromItem = items.getOrNull(from.index)
         val toItem = items.getOrNull(to.index)
-        fun section(item: HomeCatalogSettingsItem?) = when {
+        fun pinSection(item: HomeCatalogSettingsItem?): HomeCatalogRowPlacement? = when {
             item == null -> null
-            item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP || item.isPinnedToTop -> HomeCatalogRowPlacement.PINNED_TOP
+            item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP ||
+                (item.isCollection && item.isPinnedToTop) -> HomeCatalogRowPlacement.PINNED_TOP
             item.rowPlacement == HomeCatalogRowPlacement.PINNED_BOTTOM -> HomeCatalogRowPlacement.PINNED_BOTTOM
-            else -> HomeCatalogRowPlacement.NORMAL
+            item.rowPlacement == HomeCatalogRowPlacement.NORMAL && !item.isPinnedToTop -> HomeCatalogRowPlacement.NORMAL
+            else -> item.rowPlacement
         }
-        val fromSection = section(fromItem)
-        if (fromSection != section(toItem) || items.subList(minOf(from.index, to.index), maxOf(from.index, to.index) + 1).any { section(it) != fromSection }) {
+        val fromSection = pinSection(fromItem)
+        val toSection = pinSection(toItem)
+        if (fromSection != toSection) {
+            onPinnedDragAttempt()
+            return@rememberReorderableLazyListState
+        }
+        val rangeStart = minOf(from.index, to.index).coerceAtLeast(0)
+        val rangeEnd = maxOf(from.index, to.index).coerceAtMost(items.lastIndex)
+        val crossesPinnedSection = rangeStart <= rangeEnd && items
+            .subList(rangeStart, rangeEnd + 1)
+            .any { pinSection(it) != fromSection }
+        if (crossesPinnedSection) {
             onPinnedDragAttempt()
             return@rememberReorderableLazyListState
         }
@@ -588,11 +621,16 @@ private fun HomescreenCatalogList(
                 ReorderableItem(
                     reorderableLazyListState,
                     key = item.key,
-                    enabled = !item.isPinnedToTop,
+                    enabled = item.rowPlacement == HomeCatalogRowPlacement.NORMAL ||
+                        item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP ||
+                        item.rowPlacement == HomeCatalogRowPlacement.PINNED_BOTTOM,
                 ) { isDragging ->
                     val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
-                    Surface(shadowElevation = elevation) {
+                    Surface(
+                        modifier = Modifier,
+                        shadowElevation = elevation,
+                    ) {
                         Column {
                             if (index > 0) {
                                 SettingsGroupDivider(isTablet = isTablet)
