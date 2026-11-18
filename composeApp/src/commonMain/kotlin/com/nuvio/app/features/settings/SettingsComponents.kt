@@ -69,8 +69,9 @@ import nuvio.composeapp.generated.resources.settings_homescreen_hero_source
 import nuvio.composeapp.generated.resources.settings_homescreen_hidden
 import nuvio.composeapp.generated.resources.settings_homescreen_not_in_hero
 import nuvio.composeapp.generated.resources.settings_homescreen_pinned
-import nuvio.composeapp.generated.resources.settings_homescreen_pinned_to_top
+import nuvio.composeapp.generated.resources.settings_homescreen_pinned_at_position
 import nuvio.composeapp.generated.resources.settings_homescreen_pinned_to_bottom
+import nuvio.composeapp.generated.resources.settings_homescreen_pinned_to_top
 import nuvio.composeapp.generated.resources.settings_homescreen_home_placement
 import nuvio.composeapp.generated.resources.settings_homescreen_placement_default
 import nuvio.composeapp.generated.resources.settings_homescreen_pin_top
@@ -370,6 +371,7 @@ internal fun SettingsSwitchRow(
     enabled: Boolean = true,
     isTablet: Boolean,
     horizontalPadding: Dp = if (isTablet) 20.dp else 16.dp,
+    leadingContent: (@Composable RowScope.() -> Unit)? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -383,6 +385,8 @@ internal fun SettingsSwitchRow(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leadingContent?.invoke(this)
+        if (leadingContent != null) Spacer(modifier = Modifier.width(12.dp))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -549,6 +553,20 @@ internal fun HomescreenCatalogRow(
                                 },
                             )
                         }
+                        if (item.rowPlacement != HomeCatalogRowPlacement.NORMAL) {
+                            append(" • ")
+                            append(
+                                when (item.rowPlacement) {
+                                    HomeCatalogRowPlacement.NORMAL -> ""
+                                    HomeCatalogRowPlacement.PINNED_POSITION ->
+                                        stringResource(Res.string.settings_homescreen_pinned_at_position)
+                                    HomeCatalogRowPlacement.PINNED_TOP ->
+                                        stringResource(Res.string.settings_homescreen_pinned_to_top)
+                                    HomeCatalogRowPlacement.PINNED_BOTTOM ->
+                                        stringResource(Res.string.settings_homescreen_pinned_to_bottom)
+                                },
+                            )
+                        }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.colors.textMuted,
@@ -603,48 +621,48 @@ internal fun HomescreenCatalogRow(
         }
 
         AnimatedVisibility(visible = expanded) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (!item.isCollection) {
                     OutlinedTextField(
-                        value = item.customTitle, onValueChange = onTitleChange,
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        value = item.customTitle,
+                        onValueChange = onTitleChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
                         label = { Text(stringResource(Res.string.settings_homescreen_display_name)) },
                         placeholder = { Text(item.defaultTitle) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = tokens.colors.borderFocus.copy(alpha = tokens.opacity.strong),
                             unfocusedBorderColor = tokens.colors.borderDefault.copy(alpha = tokens.opacity.medium),
-                            focusedContainerColor = tokens.colors.surface, unfocusedContainerColor = tokens.colors.surface,
+                            focusedContainerColor = tokens.colors.surface,
+                            unfocusedContainerColor = tokens.colors.surface,
                             disabledContainerColor = tokens.colors.surface,
                         ),
                     )
                 }
                 Text(
-                    stringResource(Res.string.settings_homescreen_home_placement),
+                    text = "Home placement",
                     style = MaterialTheme.typography.labelLarge,
                     color = tokens.colors.textMuted,
                 )
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(
                         onClick = { onRowPlacementChange(HomeCatalogRowPlacement.NORMAL) },
                         enabled = item.rowPlacement != HomeCatalogRowPlacement.NORMAL,
-                    ) {
-                        Text(stringResource(Res.string.settings_homescreen_placement_default))
-                    }
+                    ) { Text("Default") }
                     TextButton(
                         onClick = { onRowPlacementChange(HomeCatalogRowPlacement.PINNED_TOP) },
                         enabled = item.rowPlacement != HomeCatalogRowPlacement.PINNED_TOP && !item.isPinnedToTop,
-                    ) {
-                        Text(stringResource(Res.string.settings_homescreen_pin_top))
-                    }
+                    ) { Text("Pin top") }
                     TextButton(
                         onClick = { onRowPlacementChange(HomeCatalogRowPlacement.PINNED_BOTTOM) },
                         enabled = item.rowPlacement != HomeCatalogRowPlacement.PINNED_BOTTOM && !item.isPinnedToTop,
-                    ) {
-                        Text(stringResource(Res.string.settings_homescreen_pin_bottom))
-                    }
+                    ) { Text("Pin bottom") }
                 }
             }
         }
