@@ -97,6 +97,7 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.party.PartyRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedRepository
@@ -808,6 +809,26 @@ internal fun StreamList(
     val checkingMoreAddonsText = stringResource(Res.string.streams_checking_more_addons)
     val formatStreamSize = rememberStreamSizeLabelFormat()
     val sharedStream = LocalSharedStream.current
+    val partyState by PartyRepository.state.collectAsStateWithLifecycle()
+    val sharedStreamUrl = sharedStream?.stream?.url
+    var lastAutoFollowedUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    val matchingSharedStream = remember(sharedStreamUrl, uiState.groups, partyState.party?.isHost) {
+        if (partyState.party?.isHost == false && !sharedStreamUrl.isNullOrBlank()) {
+            uiState.groups.asSequence()
+                .flatMap { it.streams.asSequence() }
+                .firstOrNull { it.url == sharedStreamUrl }
+        } else {
+            null
+        }
+    }
+    LaunchedEffect(sharedStreamUrl, matchingSharedStream?.url) {
+        if (sharedStreamUrl.isNullOrBlank()) {
+            lastAutoFollowedUrl = null
+        } else if (matchingSharedStream != null && lastAutoFollowedUrl != sharedStreamUrl) {
+            lastAutoFollowedUrl = sharedStreamUrl
+            onStreamSelected(matchingSharedStream, resumePositionMs, resumeProgressFraction)
+        }
+    }
     val streamBadgeSettings by remember {
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
@@ -844,7 +865,7 @@ internal fun StreamList(
         header?.let { listHeader ->
             item(key = "list_header", contentType = "list_header") { listHeader() }
         }
-        sharedStream?.let { shared ->
+        if (matchingSharedStream == null) sharedStream?.let { shared ->
             item(key = "shared_stream") {
                 Column {
                     StreamSectionHeader(
