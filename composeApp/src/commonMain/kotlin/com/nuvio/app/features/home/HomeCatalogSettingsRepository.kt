@@ -866,14 +866,6 @@ object HomeCatalogSettingsRepository {
                     true
                 }
                 else -> false
-            val heroSourceEnabled = if (entry.isCollection || entry.isMergedRow) {
-                false
-            } else {
-                (stored?.heroSourceEnabled ?: true) &&
-                    enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT
-            }
-            if (heroSourceEnabled) {
-                enabledHeroSourceCount += 1
             }
             normalized[entry.key] = StoredHomeCatalogPreference(
                 key = entry.key,
