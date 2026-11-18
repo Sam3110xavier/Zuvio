@@ -1,10 +1,20 @@
 package com.nuvio.app.features.library
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import nuvio.composeapp.generated.resources.library_filter_genre
+import nuvio.composeapp.generated.resources.library_filter_list
+import nuvio.composeapp.generated.resources.library_filter_type
+import nuvio.composeapp.generated.resources.library_filter_watched
+import nuvio.composeapp.generated.resources.library_filter_year
+import nuvio.composeapp.generated.resources.library_type_all
+import nuvio.composeapp.generated.resources.library_watched_filter_all
+import nuvio.composeapp.generated.resources.library_watched_filter_unwatched
+import nuvio.composeapp.generated.resources.library_watched_filter_watched
+
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
@@ -29,16 +40,7 @@ import com.nuvio.app.features.home.components.PosterGridRow
 import com.nuvio.app.features.home.components.PosterGridSkeletonRow
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.library_filter_all_types
-import nuvio.composeapp.generated.resources.library_filter_genre
-import nuvio.composeapp.generated.resources.library_filter_list
 import nuvio.composeapp.generated.resources.library_filter_sort
-import nuvio.composeapp.generated.resources.library_filter_type
-import nuvio.composeapp.generated.resources.library_filter_watched
-import nuvio.composeapp.generated.resources.library_filter_year
-import nuvio.composeapp.generated.resources.library_type_all
-import nuvio.composeapp.generated.resources.library_watched_filter_all
-import nuvio.composeapp.generated.resources.library_watched_filter_unwatched
-import nuvio.composeapp.generated.resources.library_watched_filter_watched
 import nuvio.composeapp.generated.resources.library_sort_added_asc
 import nuvio.composeapp.generated.resources.library_sort_added_desc
 import nuvio.composeapp.generated.resources.library_sort_title_asc
@@ -112,49 +114,37 @@ internal fun LibrarySavedControls(
         }
     }
 
-    val leadingChips: @Composable (Boolean) -> Unit = { fillWidth ->
-        if (layoutMode == LibraryLayoutMode.VERTICAL && sourceMode.isRemoteTrackingSource) {
-            val selectedSection = verticalProjection.availableSections
-                .firstOrNull { section -> section.type == verticalProjection.selectedSectionKey }
-            FacetSlot(fillWidth) {
-                NuvioDropdownChip(
-                    title = stringResource(Res.string.library_filter_list),
-                    label = selectedSection?.let { section -> localizedLibrarySectionTitle(section.type, section.displayTitle) }.orEmpty(),
-                    selectedKey = verticalProjection.selectedSectionKey,
-                    options = verticalProjection.availableSections.map { section ->
-                        NuvioDropdownOption(key = section.type, label = localizedLibrarySectionTitle(section.type, section.displayTitle))
-                    },
-                    enabled = verticalProjection.availableSections.size > 1,
-                    onSelected = { option -> onSectionSelected(option.key) },
-                    fillWidth = fillWidth,
-                )
-            }
-        }
-
-        if (layoutMode == LibraryLayoutMode.VERTICAL) {
-            val typeOptions = buildList {
-                add(NuvioDropdownOption(key = "", label = "$allTypesLabel (${verticalProjection.allTypesCount})"))
-                addAll(
-                    verticalProjection.availableTypes.map { type ->
-                        NuvioDropdownOption(
-                            key = type,
-                            label = "${localizedMediaTypeLabel(type)} (${verticalProjection.typeCounts[type] ?: 0})",
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (layoutMode == LibraryLayoutMode.VERTICAL) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LibraryChip(
+                        label = allTypesLabel,
+                        selected = verticalProjection.selectedType == null,
+                        onClick = { onTypeSelected(null) },
+                    )
+                    verticalProjection.availableTypes.forEach { type ->
+                        LibraryChip(
+                            label = localizedMediaTypeLabel(type),
+                            selected = verticalProjection.selectedType == type,
+                            onClick = { onTypeSelected(type) },
                         )
-                    },
-                )
-            }
-            FacetSlot(fillWidth) {
-                NuvioDropdownChip(
-                    title = stringResource(Res.string.library_filter_type),
-                    label = verticalProjection.selectedType
-                        ?.let(::localizedMediaTypeLabel)
-                        ?: allTypesLabel,
-                    selectedKey = verticalProjection.selectedType.orEmpty(),
-                    options = typeOptions,
-                    enabled = typeOptions.size > 1,
-                    onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
-                    fillWidth = fillWidth,
-                )
+                    }
+                }
+            } else {
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
             }
         }
 
@@ -177,21 +167,41 @@ internal fun LibrarySavedControls(
         }
     }
 
-    val chipCount = (if (sourceMode.isRemoteTrackingSource) 1 else 0) + 2 +
-        (if (verticalProjection.availableGenres.isNotEmpty()) 1 else 0) +
-        (if (verticalProjection.availableYears.isNotEmpty()) 1 else 0) + 1
-
-    BoxWithConstraints(modifier = modifier) {
-        val available = minOf(maxWidth, CompactFilterRowMaxWidth)
-        val singleRow = layoutMode == LibraryLayoutMode.VERTICAL &&
-            CompactFilterMinChipWidth * chipCount + FilterChipSpacing * (chipCount - 1) <= available
-        Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        if (
+            layoutMode == LibraryLayoutMode.VERTICAL &&
+            sourceMode.isRemoteTrackingSource &&
+            verticalProjection.availableSections.size > 1
         ) {
-            if (singleRow) {
-                LibraryFilterRow(modifier = Modifier.widthIn(max = CompactFilterRowMaxWidth), shrinkToFit = true) {
-                    leadingChips(true)
-                    facetChips(true)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                verticalProjection.availableSections.forEach { section ->
+                    LibraryChip(
+                        label = localizedLibrarySectionTitle(section.type, section.displayTitle),
+                        selected = section.type == verticalProjection.selectedSectionKey,
+                        onClick = { onSectionSelected(section.type) },
+                    )
+                }
+            }
+        }
+
+        if (layoutMode == LibraryLayoutMode.VERTICAL) {
+            LibraryFilterRow {
+                if (verticalProjection.availableGenres.isNotEmpty()) {
+                    val genreTitle = stringResource(Res.string.library_filter_genre)
+                    Box(propagateMinConstraints = true) {
+                        NuvioDropdownChip(
+                            title = genreTitle,
+                            label = "$genreTitle: ${verticalProjection.selectedGenre ?: allLabel}",
+                            selectedKey = verticalProjection.selectedGenre.orEmpty(),
+                            options = libraryFacetOptions(allLabel, verticalProjection.availableGenres),
+                            onSelected = { option -> onGenreSelected(option.key.ifBlank { null }) },
+                            fillWidth = true,
+                        )
+                    }
                 }
             } else {
                 Row(
