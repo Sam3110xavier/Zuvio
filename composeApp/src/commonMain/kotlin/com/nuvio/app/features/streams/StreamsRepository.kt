@@ -38,6 +38,8 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.getString
 
 object StreamsRepository {
     private val log = Logger.withTag("StreamsRepo")
@@ -485,26 +487,8 @@ object StreamsRepository {
             val debridAvailabilityJobs = mutableListOf<Job>()
             var autoSelectTriggered = false
             var timeoutElapsed = false
-            fun smartRanking(): SmartAutoPlayRanking? = smartDevice?.let { device ->
-                SmartStreamRanking.rankForAutoPlay(
-                    streams = _uiState.value.groups.flatMap { it.streams },
-                    settings = smartSettings,
-                    device = device,
-                    debridEnabled = debridSettings.canResolvePlayableLinks,
-                    isEpisode = season != null && episode != null,
-                    preferredBingeGroup = persistedBingeGroup,
-                )
-            }
-
-            fun smartEvaluation(ranking: SmartAutoPlayRanking): StreamAutoPlayEvaluation {
-                val ready = ranking.ranked.map { it.stream }
-                return StreamAutoPlayEvaluation(stream = ready.firstOrNull(), readyStreams = ready)
-            }
-
             fun evaluateAutoPlay(bingeGroupOnly: Boolean = false): StreamAutoPlayEvaluation =
-                if (smartAutoPlay && !bingeGroupOnly) {
-                    smartRanking()?.let(::smartEvaluation) ?: StreamAutoPlayEvaluation()
-                } else StreamAutoPlaySelector.evaluateAutoPlayStream(
+                StreamAutoPlaySelector.evaluateAutoPlayStream(
                     streams = _uiState.value.groups.flatMap { it.streams },
                     mode = autoPlayMode,
                     regexPattern = playerSettings.streamAutoPlayRegex,
@@ -575,26 +559,6 @@ object StreamsRepository {
                             return
                         }
                     }
-                }
-
-                if (smartAutoPlay) {
-                    val ranking = smartRanking() ?: return
-                    val groups = _uiState.value.groups.filterNot { it.isLocalDownload }
-                    _uiState.update { current ->
-                        current.copy(
-                            smartAutoPlaySearch = SmartAutoPlaySearch(
-                                loadedSources = groups.count { !it.isLoading },
-                                totalSources = groups.size,
-                                candidateSummary = ranking.ranked.firstOrNull()?.info?.summary(instantLabel = null),
-                            ),
-                        )
-                    }
-                    val allLoaded = groups.none { it.isLoading }
-                    when {
-                        allLoaded -> settleAutoPlay(smartEvaluation(ranking))
-                        timeoutElapsed && ranking.ranked.isNotEmpty() -> settleAutoPlay(smartEvaluation(ranking))
-                    }
-                    return
                 }
 
                 val earlyEvaluation = when {
@@ -686,19 +650,7 @@ object StreamsRepository {
 
             updateAutoPlayAfterStreamsChanged()
 
-            val timeoutJob = if (smartAutoPlay) {
-                val timeoutSeconds = playerSettings.streamAutoPlayTimeoutSeconds
-                val maxWaitMs = when {
-                    timeoutSeconds <= 0 -> 0L
-                    timeoutSeconds == Int.MAX_VALUE -> SMART_AUTOPLAY_UNLIMITED_WAIT_MS
-                    else -> timeoutSeconds * 1_000L
-                }
-                launch {
-                    delay(maxWaitMs)
-                    timeoutElapsed = true
-                    updateAutoPlayAfterStreamsChanged()
-                }
-            } else if (isDirectAutoPlayFlow) {
+            val timeoutJob = if (isDirectAutoPlayFlow) {
                 val timeoutSeconds = playerSettings.streamAutoPlayTimeoutSeconds
                 val isUnlimitedTimeout = timeoutSeconds == Int.MAX_VALUE
                 // Timeout semantics:
@@ -1267,5 +1219,3 @@ object StreamsRepository {
         )
     }
 }
-
-private const val SMART_AUTOPLAY_UNLIMITED_WAIT_MS = 60_000L
