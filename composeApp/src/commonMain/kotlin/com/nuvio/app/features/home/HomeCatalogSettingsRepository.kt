@@ -849,9 +849,23 @@ object HomeCatalogSettingsRepository {
         val normalized = current
             .filterKeys { it !in knownKeys || it.startsWith("cloudstream:") }
             .toMutableMap()
-        var enabledHeroSourceCount = 0
+        val hasHeroChoice = current.values.any { it.heroSourceEnabled && !it.key.startsWith("collection_") }
+        val chosenHeroKeys = orderedEntries
+            .filter { entry -> !entry.isCollection && current[entry.key]?.heroSourceEnabled == true }
+            .take(HERO_SOURCE_SELECTION_LIMIT)
+            .mapTo(mutableSetOf()) { it.key }
+        var enabledHeroSourceCount = chosenHeroKeys.size
         orderedEntries.forEach { entry ->
             val stored = current[entry.key]
+            val heroSourceEnabled = when {
+                entry.isCollection -> false
+                entry.key in chosenHeroKeys -> true
+                stored != null || hasHeroChoice -> false
+                enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT -> {
+                    enabledHeroSourceCount += 1
+                    true
+                }
+                else -> false
             val heroSourceEnabled = if (entry.isCollection || entry.isMergedRow) {
                 false
             } else {
@@ -1055,13 +1069,14 @@ object HomeCatalogSettingsRepository {
             .map { it.copy(sourceKeys = it.sourceKeys.distinct().take(MAX_MERGED_HOME_ROW_SOURCES)) }
         if (payload.items.isNotEmpty()) {
             val existingHeroState = preferences.mapValues { it.value.heroSourceEnabled }
+            val hasHeroChoice = existingHeroState.any { (key, enabled) -> enabled && !key.startsWith("collection_") }
             val remotePreferences = payload.items.associate { item ->
                 val key = item.preferenceKey()
                 key to StoredHomeCatalogPreference(
                     key = key,
                     customTitle = item.customTitle,
                     enabled = item.enabled,
-                    heroSourceEnabled = existingHeroState[key] ?: true,
+                    heroSourceEnabled = existingHeroState[key] ?: !hasHeroChoice,
                     order = item.order,
                     rowPlacement = HomeCatalogRowPlacement.fromStorage(item.rowPlacement).storageValue,
                 )
