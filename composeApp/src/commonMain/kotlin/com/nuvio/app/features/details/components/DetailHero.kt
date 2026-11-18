@@ -196,7 +196,7 @@ fun DetailHero(
                         HeroTrailerPlayerSurface(
                             sourceUrl = heroTrailerSourceUrl,
                             sourceAudioUrl = heroTrailerSourceAudioUrl,
-                            playWhenReady = heroTrailerPlayWhenReady(),
+                            playWhenReady = heroTrailerPlayWhenReady() && !MiniPlayerController.isActive,
                             muted = heroTrailerMuted,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
