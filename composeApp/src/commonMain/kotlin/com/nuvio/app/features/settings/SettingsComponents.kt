@@ -72,10 +72,6 @@ import nuvio.composeapp.generated.resources.settings_homescreen_pinned
 import nuvio.composeapp.generated.resources.settings_homescreen_pinned_at_position
 import nuvio.composeapp.generated.resources.settings_homescreen_pinned_to_bottom
 import nuvio.composeapp.generated.resources.settings_homescreen_pinned_to_top
-import nuvio.composeapp.generated.resources.settings_homescreen_home_placement
-import nuvio.composeapp.generated.resources.settings_homescreen_placement_default
-import nuvio.composeapp.generated.resources.settings_homescreen_pin_top
-import nuvio.composeapp.generated.resources.settings_homescreen_pin_bottom
 import nuvio.composeapp.generated.resources.settings_homescreen_reorder
 import nuvio.composeapp.generated.resources.settings_homescreen_visible
 import org.jetbrains.compose.resources.stringResource
@@ -533,17 +529,12 @@ internal fun HomescreenCatalogRow(
                                 stringResource(Res.string.settings_homescreen_hidden)
                             },
                         )
-                        when {
-                            item.isPinnedToTop || item.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP -> {
+                        if (item.isCollection) {
+                            if (item.isPinnedToTop) {
                                 append(" • ")
                                 append(stringResource(Res.string.settings_homescreen_pinned_to_top))
                             }
-                            item.rowPlacement == HomeCatalogRowPlacement.PINNED_BOTTOM -> {
-                                append(" • ")
-                                append(stringResource(Res.string.settings_homescreen_pinned_to_bottom))
-                            }
-                        }
-                        if (!item.isCollection) {
+                        } else {
                             append(" • ")
                             append(
                                 if (item.heroSourceEnabled) {
