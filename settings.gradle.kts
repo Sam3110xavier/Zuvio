@@ -10,8 +10,11 @@ pluginManagement {
                 includeGroupAndSubgroups("com.google")
             }
         }
-        mavenCentral()
+        // Resolve Gradle plugins from the Plugin Portal before falling back to Maven Central.
+        // This avoids making plugin resolution depend on Maven Central availability when the
+        // plugin artifact is already published to the Plugin Portal.
         gradlePluginPortal()
+        mavenCentral()
     }
 }
 
