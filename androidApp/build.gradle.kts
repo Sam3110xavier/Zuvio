@@ -35,6 +35,12 @@ fun envOrLocalProperty(key: String): String? =
     providers.environmentVariable(key).orNull?.trim()?.takeIf { it.isNotBlank() }
         ?: localProps.getProperty(key)?.trim()?.takeIf { it.isNotBlank() }
 
+val androidDistribution = (
+    providers.gradleProperty("nuvio.android.distribution").orNull
+        ?: envOrLocalProperty("NUVIO_ANDROID_DISTRIBUTION")
+        ?: "playstore"
+    ).trim().lowercase()
+
 val sentryAuthToken = envOrLocalProperty("SENTRY_AUTH_TOKEN")
 val sentryOrg = envOrLocalProperty("SENTRY_ORG")
 val sentryProject = envOrLocalProperty("SENTRY_PROJECT")
@@ -68,7 +74,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nuvio.media"
+        applicationId = "com.zuvio.app"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = releaseAppVersionCode
@@ -80,6 +86,7 @@ android {
     productFlavors {
         create("full") {
             dimension = "distribution"
+            proguardFiles("../composeApp/proguard-cloudstream-full.pro")
         }
         create("playstore") {
             dimension = "distribution"
@@ -135,7 +142,10 @@ android {
                 .map(String::toBooleanStrict)
                 .getOrElse(true)
             isMinifyEnabled = minifyRelease
-            isShrinkResources = minifyRelease
+            val shrinkResourcesRelease = providers.gradleProperty("releaseShrinkResourcesEnabled")
+                .map(String::toBooleanStrict)
+                .getOrElse(minifyRelease)
+            isShrinkResources = shrinkResourcesRelease
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "../composeApp/proguard-rules.pro",
@@ -218,6 +228,15 @@ val rust = tasks.register<CargoNdkBuild>("buildRust") {
 }
 
 androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        // Full loads third-party CloudStream .cs3 DEX at runtime. R8/AAPT2 cannot
+        // see resource references inside those external DEX archives, so resource
+        // shrinking can remove layouts/styles/drawables that plugin settings need.
+        // Keep R8 code minification enabled; disable only resource shrinking for Full.
+        if (variant.productFlavors.contains("distribution" to "full")) {
+            variant.shrinkResources = false
+        }
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.applicationId.set("com.nuviodebug.com")
     }
