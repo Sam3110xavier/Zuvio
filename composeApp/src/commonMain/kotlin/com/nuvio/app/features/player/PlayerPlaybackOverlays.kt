@@ -3,28 +3,17 @@ package com.nuvio.app.features.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import coil3.compose.AsyncImage
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -36,7 +25,6 @@ import com.nuvio.app.features.player.skip.NextEpisodeCard
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
 import com.nuvio.app.features.player.skip.SkipIntroButton
 import com.nuvio.app.features.player.skip.SkipInterval
-import com.nuvio.app.core.ui.PlatformBackHandler
 
 @Composable
 internal fun BoxScope.PlayerPlaybackOverlays(
@@ -90,6 +78,17 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     errorMessage: String?,
     onDismissError: () -> Unit,
 ) {
+    var skipHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val anchorBottom = with(density) { PlayerEndTimeAnchor.topFromBottomPx.toDp() }
+    val anchorEnd = with(density) { PlayerEndTimeAnchor.endFromRightPx.toDp() }
+    val stackEnd = if (anchorEnd > 0.dp) anchorEnd else sliderEdgePadding
+    val stackBottom = (if (anchorBottom > 0.dp) anchorBottom else overlayBottomPadding) + PlayerSkipButtonGap
+    val cardBottom = if (skipHeightPx > 0) {
+        stackBottom + with(density) { skipHeightPx.toDp() } + PlayerSkipButtonGap
+    } else {
+        stackBottom
+    }
     AnimatedVisibility(
         visible = playerControlsLocked && lockedOverlayVisible,
         enter = fadeIn(),
@@ -142,21 +141,6 @@ internal fun BoxScope.PlayerPlaybackOverlays(
         horizontalPadding = metrics.horizontalPadding,
     )
 
-    if (!playerControlsLocked) {
-        SkipIntroButton(
-            interval = if (!initialLoadCompleted || pausedOverlayVisible) null else activeSkipInterval,
-            skipsToPostCredits = skipsToPostCredits,
-            dismissed = skipIntervalDismissed,
-            controlsVisible = controlsVisible,
-            onSkip = {
-                activeSkipInterval?.let(onSkipInterval)
-            },
-            onDismiss = onDismissSkipInterval,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = sliderEdgePadding, bottom = overlayBottomPadding),
-        )
-    }
 
     if (isSeries && !playerControlsLocked) {
         NextEpisodeCard(
@@ -170,7 +154,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             onDismiss = onDismissNextEpisode,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = sliderEdgePadding, bottom = overlayBottomPadding),
+                .padding(end = stackEnd, bottom = cardBottom),
         )
     }
 
@@ -184,12 +168,30 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             onDismiss = onDismissMovieRecommendations,
             onShow = onShowMovieRecommendations,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(bottom = overlayBottomPadding),
+                .align(Alignment.BottomEnd)
+                .padding(end = stackEnd, bottom = cardBottom),
         )
     }
 
+    if (!playerControlsLocked) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = stackEnd, bottom = stackBottom)
+                .onSizeChanged { skipHeightPx = it.height },
+        ) {
+            SkipIntroButton(
+                interval = if (!initialLoadCompleted || pausedOverlayVisible) null else activeSkipInterval,
+                skipsToPostCredits = skipsToPostCredits,
+                dismissed = skipIntervalDismissed,
+                controlsVisible = controlsVisible,
+                onSkip = {
+                    activeSkipInterval?.let(onSkipInterval)
+                },
+                onDismiss = onDismissSkipInterval,
+            )
+        }
+    }
 
     if (errorMessage != null) {
         ErrorModal(
@@ -199,3 +201,4 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     }
 }
 
+private val PlayerSkipButtonGap = 8.dp
