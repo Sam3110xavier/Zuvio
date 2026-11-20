@@ -634,6 +634,7 @@ kotlin {
             }
             implementation(libs.kyant.backdrop)
             implementation(libs.compose.runtime)
+            implementation("org.jetbrains.compose.runtime:runtime-saveable:${libs.versions.composeMultiplatform.get()}")
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
             implementation(libs.compose.materialRipple)

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,7 @@ private fun TelegramSettingsContent(isTablet: Boolean) {
     var password by remember { mutableStateOf("") }
     var botToken by remember { mutableStateOf("") }
     var channelInput by rememberSaveable { mutableStateOf("") }
+    var sourcesExpanded by rememberSaveable { mutableStateOf(true) }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
@@ -210,8 +212,36 @@ private fun TelegramSettingsContent(isTablet: Boolean) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Channel and group sources", style = MaterialTheme.typography.titleMedium)
+                    OutlinedButton(
+                        onClick = { scope.launch { TelegramIntegrationBridge.indexSelectedChats() } },
+                        enabled = state.selectedChatIds.isNotEmpty() && !state.isBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (state.indexedFileCount > 0) "Build / update media index" else "Build media index") }
                     Text(
-                        "Add a public @username or a chat ID. You must already have access to the channel in Telegram. Select the sources Nuvio is allowed to search.",
+                        "${state.indexedFileCount} media files indexed · ${state.indexStatus}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { sourcesExpanded = !sourcesExpanded }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${state.selectedChatIds.size} source(s) selected",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            Text(
+                                if (sourcesExpanded) "Hide channel and group list" else "Show channel and group list",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(if (sourcesExpanded) "⌃" else "⌄", style = MaterialTheme.typography.titleLarge)
+                    }
+                    if (sourcesExpanded) {
+                    Text(
+                        "Add a public @username or a chat ID. You must already have access to the channel in Telegram. Select the sources Zuvio is allowed to search.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -266,10 +296,7 @@ private fun TelegramSettingsContent(isTablet: Boolean) {
                             }
                         }
                     }
-                    Text(
-                        "${state.selectedChatIds.size} source(s) selected",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    }
                 }
             }
 

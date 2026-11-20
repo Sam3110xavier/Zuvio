@@ -333,6 +333,7 @@ class LibraryDisplaySettingsTest {
         val state = LibraryDisplaySettingsUiState(
             layoutMode = LibraryLayoutMode.VERTICAL,
             sortOption = LibrarySortOption.TITLE_DESC,
+            viewMode = LibraryViewMode.Telegram,
             selectedSectionKey = "personal:1",
             selectedType = "series",
         )
