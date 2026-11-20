@@ -180,18 +180,15 @@ object StreamsRepository {
         )
         val autoPlayMode = playerSettings.streamAutoPlayMode
         val smartSettings = SmartStreamSettingsRepository.state.value
-        val smartAutoPlay = !manualSelection && smartSettings.autoPlay
+        val smartAutoPlay = !qualitySelectionMode && !manualSelection && smartSettings.autoPlay
         val smartDevice = if (smartAutoPlay) currentSmartDeviceProfile() else null
-        val isAutoPlayEnabled = smartAutoPlay || (
-            !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
-                !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
-                    !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
+        val isAutoPlayEnabled = !qualitySelectionMode && (
+            smartAutoPlay || (
+                !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
+                    !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
+                        !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
             )
-        val isAutoPlayEnabled = !qualitySelectionMode && !manualSelection &&
-            autoPlayMode != StreamAutoPlayMode.MANUAL &&
-            autoPlayMode != StreamAutoPlayMode.SEMI_AUTOMATIC &&
-            !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
-                !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
+        )
 
         // Look up persisted binge group when both settings are enabled
         val persistedBingeGroup = if (
