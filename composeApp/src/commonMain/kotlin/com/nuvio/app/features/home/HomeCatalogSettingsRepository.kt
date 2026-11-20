@@ -215,23 +215,6 @@ object HomeCatalogSettingsRepository {
     private var hideUnreleasedContent = false
     private var heroSourcesChosen = false
 
-    fun onProfileChanged() {
-        hasLoaded = false
-        preferences = emptyMap()
-        heroEnabled = true
-        heroStyle = HomeHeroStyle.FULL_BLEED
-        heroTrailerPlaybackEnabled = false
-        heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
-        heroTrailerStartUnmuted = false
-        showCatalogType = true
-        hideUnreleasedContent = false
-        heroSourcesChosen = false
-        definitions = emptyList()
-        collectionDefinitions = emptyList()
-        lastCatalogSync = null
-        lastCollectionSync = null
-        _uiState.value = HomeCatalogSettingsUiState()
-    }
     fun onProfileChanged() = clearLocalState()
 
     fun clearLocalState() {
@@ -880,8 +863,6 @@ object HomeCatalogSettingsRepository {
         val normalized = current
             .filterKeys { it !in knownKeys || it.startsWith("cloudstream:") }
             .toMutableMap()
-        val hasHeroChoice = !heroSourcesChosen ||
-            current.values.any { it.heroSourceEnabled && !it.key.startsWith("collection_") }
         val chosenHeroKeys = if (heroSourcesChosen) {
             orderedEntries
                 .filter { entry -> !entry.isCollection && current[entry.key]?.heroSourceEnabled == true }
@@ -894,14 +875,13 @@ object HomeCatalogSettingsRepository {
                 .take(HERO_SOURCE_SELECTION_LIMIT)
                 .mapTo(mutableSetOf()) { it.key }
         }
-        var enabledHeroSourceCount = chosenHeroKeys.size
         var enabledHeroSourceCount = 0
         orderedEntries.forEach { entry ->
             val stored = current[entry.key]
             val heroSourceEnabled = if (entry.isCollection || entry.isMergedRow) {
                 false
             } else {
-                (stored?.heroSourceEnabled ?: true) &&
+                entry.key in chosenHeroKeys &&
                     enabledHeroSourceCount < HERO_SOURCE_SELECTION_LIMIT
             }
             if (heroSourceEnabled) {
