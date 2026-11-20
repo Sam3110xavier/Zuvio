@@ -159,6 +159,45 @@ class PlayerSourceFallbackTest {
         assertFalse(runtime.tryFallbackToNextSourceAfterError("failed"))
     }
 
+    @Test
+    fun startupTimeoutStartsForLoadingOrOpeningSnapshots() {
+        assertTrue(startupTimer(isLoading = true))
+        assertTrue(startupTimer(isOpening = true))
+    }
+
+    @Test
+    fun startupTimeoutDoesNotStartForAnIdleReadyOrStaleSnapshot() {
+        assertFalse(startupTimer())
+        assertFalse(startupTimer(snapshotMatchesPlayback = false))
+    }
+
+    @Test
+    fun startupTimeoutDoesNotRunWhenPlaybackIsPausedOrAlreadyStarted() {
+        assertFalse(startupTimer(shouldPlay = false, isLoading = true))
+        assertFalse(startupTimer(initialLoadCompleted = true, isLoading = true))
+    }
+
+    @Test
+    fun startupTimeoutDoesNotRunAfterAnError() {
+        assertFalse(startupTimer(hasError = true, isLoading = true))
+    }
+
+    private fun startupTimer(
+        isLoading: Boolean = false,
+        isOpening: Boolean = false,
+        shouldPlay: Boolean = true,
+        initialLoadCompleted: Boolean = false,
+        hasError: Boolean = false,
+        snapshotMatchesPlayback: Boolean = true,
+    ) = shouldStartStartupFallbackTimer(
+        isLoading = isLoading,
+        isOpening = isOpening,
+        shouldPlay = shouldPlay,
+        initialLoadCompleted = initialLoadCompleted,
+        hasError = hasError,
+        snapshotMatchesPlayback = snapshotMatchesPlayback,
+    )
+
     private fun settings() = PlayerSettingsUiState(
         streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
         streamAutoPlayFallbackOnFailure = true,

@@ -358,7 +358,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi(
                         if (!active.value || !updatePlaybackSnapshot(snapshot, playbackKey)) return@PlatformPlayerSurface
                         checkAutoSubtitleRewindWatermark(snapshot.positionMs)
                         refreshAudioTracksIfChanged()
-                        if (!snapshot.isLoading) initialLoadCompleted = true
+                        if (!snapshot.isLoading && !snapshot.isOpening) initialLoadCompleted = true
                         if (snapshot.isEnded) {
                             shouldPlay = false
                             controlsVisible = !playerControlsLocked

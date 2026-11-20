@@ -2061,7 +2061,7 @@ private fun LibmpvPlayerSurface(
                         )
                         coroutineScope.launch(Dispatchers.Main.immediate) {
                             latestOnError.value(null)
-                            val snapshot = PlayerPlaybackSnapshot()
+                            val snapshot = PlayerPlaybackSnapshot(isLoading = true, isOpening = true)
                             latestOnSnapshot.value(snapshot)
                             nowPlayingController?.syncPlayback(snapshot)
                         }
@@ -2183,7 +2183,7 @@ private fun LibmpvPlayerSurface(
             "mpv_prepare_begin attempt=${playbackDiagnostics.attempt} " +
                 "source=${diagnosticPlaybackSource(sourceUrl)} audioSource=${!sourceAudioUrl.isNullOrBlank()}",
         )
-        val snapshot = PlayerPlaybackSnapshot()
+        val snapshot = PlayerPlaybackSnapshot(isLoading = true, isOpening = true)
         latestOnSnapshot.value(snapshot)
         nowPlayingController?.syncPlayback(snapshot)
         view.loadSource(

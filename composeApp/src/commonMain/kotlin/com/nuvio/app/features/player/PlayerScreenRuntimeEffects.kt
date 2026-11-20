@@ -163,15 +163,59 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         resetAddonSubtitlesIfSourceChanged()
         WatchProgressRepository.ensureLoaded()
 
-        // A source that does not finish loading within the configured time counts as failed when
-        // falling back to the next source. It has an effect only where that fallback applies.
+    }
+
+    // Time out only while the active player is continuously opening/buffering the
+    // current auto-selected source. Source discovery, HLS inspection and P2P URL setup
+    // happen before a controller/snapshot exists and must not consume this timeout.
+    LaunchedEffect(
+        activePlaybackKey,
+        activeSourceUrl,
+        playerController,
+        playerControllerSourceUrl,
+        playbackSnapshotKey,
+        playbackSnapshot.isLoading,
+        playbackSnapshot.isOpening,
+        shouldPlay,
+        initialLoadCompleted,
+        errorMessage,
+        playerSettingsUiState.streamAutoPlayFallbackStartupTimeoutSeconds,
+    ) {
+        val controllerSourceUrl = playerControllerSourceUrl ?: return@LaunchedEffect
+        if (playerController == null || !isControllerOnActivePlayback(controllerSourceUrl)) {
+            return@LaunchedEffect
+        }
+        if (playbackSnapshotKey != activePlaybackKey) return@LaunchedEffect
+
         val startupTimeoutSeconds = playerSettingsUiState.streamAutoPlayFallbackStartupTimeoutSeconds
-        delay(startupTimeoutSeconds * 1_000L)
-        if (!initialLoadCompleted && errorMessage == null) {
-            tryFallbackToNextSourceAfterError(
-                getString(Res.string.player_error_source_startup_timeout, startupTimeoutSeconds),
+        val shouldTimeOut = {
+            shouldStartStartupFallbackTimer(
+                isLoading = playbackSnapshot.isLoading,
+                isOpening = playbackSnapshot.isOpening,
+                shouldPlay = shouldPlay,
+                initialLoadCompleted = initialLoadCompleted,
+                hasError = errorMessage != null,
+                snapshotMatchesPlayback = playbackSnapshotKey == activePlaybackKey,
             )
         }
+        if (!shouldTimeOut()) return@LaunchedEffect
+
+        delay(startupTimeoutSeconds * 1_000L)
+
+        // Revalidate after the delay: a ready frame, pause, source replacement, player
+        // recreation, stale snapshot or an error must cancel the fallback decision.
+        if (
+            playerController == null ||
+            playerControllerSourceUrl != controllerSourceUrl ||
+            !isControllerOnActivePlayback(controllerSourceUrl) ||
+            !shouldTimeOut()
+        ) {
+            return@LaunchedEffect
+        }
+
+        tryFallbackToNextSourceAfterError(
+            getString(Res.string.player_error_source_startup_timeout, startupTimeoutSeconds),
+        )
     }
 
     LaunchedEffect(

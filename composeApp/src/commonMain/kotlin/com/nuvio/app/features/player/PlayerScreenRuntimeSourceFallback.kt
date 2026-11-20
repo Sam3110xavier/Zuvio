@@ -18,6 +18,23 @@ import kotlinx.coroutines.launch
 private const val SOURCE_FALLBACK_POLL_COUNT = 30
 private const val SOURCE_FALLBACK_POLL_INTERVAL_MS = 500L
 
+/**
+ * The startup timeout is armed only for a live snapshot from the current player while playback
+ * is intended to run. MPV can report an opening phase before its loading flag becomes true.
+ */
+internal fun shouldStartStartupFallbackTimer(
+    isLoading: Boolean,
+    isOpening: Boolean,
+    shouldPlay: Boolean,
+    initialLoadCompleted: Boolean,
+    hasError: Boolean,
+    snapshotMatchesPlayback: Boolean,
+): Boolean = shouldPlay &&
+    (isLoading || isOpening) &&
+    !initialLoadCompleted &&
+    !hasError &&
+    snapshotMatchesPlayback
+
 private val log = Logger.withTag("PlayerSourceFallback")
 
 /**
