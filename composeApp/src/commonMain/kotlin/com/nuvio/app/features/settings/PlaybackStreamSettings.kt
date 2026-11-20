@@ -135,7 +135,8 @@ internal fun PlaybackStreamSettings(
                         onClick = { showAutoPlayRegexDialog = true },
                     )
                 }
-                if (smartAutoPlay || settings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL) {
+                // Keep fallback settings discoverable even in Manual mode so they can be
+                // configured in advance. Runtime fallback still requires automatic selection.
                     // Excludes the engine switch on error (Android only): both react to the same failure.
                     // Only the switch that is off is locked, so both stay reachable if both ended up on.
                     val blockedByEngineSwitch = !isIos && settings.autoSwitchPlaybackEngineOnError &&
@@ -179,7 +180,6 @@ internal fun PlaybackStreamSettings(
                             onValueChange = PlayerSettingsRepository::setStreamAutoPlayFallbackStartupTimeoutSeconds,
                         )
                     }
-                }
                 SettingsGroupDivider(isTablet = isTablet)
                 val timeoutSec = settings.streamAutoPlayTimeoutSeconds
                 val timeoutLabel = when (timeoutSec) {
