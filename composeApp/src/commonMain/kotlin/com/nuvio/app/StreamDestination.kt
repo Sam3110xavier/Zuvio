@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -38,6 +39,7 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.MetaLookupOutcome
 import com.nuvio.app.features.streams.isLocalDownload
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
@@ -52,6 +54,7 @@ import com.nuvio.app.features.servers.ServerPlayback
 import com.nuvio.app.features.servers.serverPlaybackMessage
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamLaunch
 import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsRepository
@@ -190,6 +193,24 @@ internal fun StreamDestination(
         addonUiState.addons.enabledAddons().mapNotNull { it.manifest?.name }.toSet()
     }
 
+    val launchLogo by produceState(
+        initialValue = launch.logo?.takeIf { it.isNotBlank() }
+            ?: MetaDetailsRepository.peek(
+                type = launch.parentMetaType ?: launch.type,
+                id = launch.parentMetaId ?: effectiveVideoId,
+            )?.logo?.takeIf { it.isNotBlank() },
+        launch.launchKeyForLogo(),
+    ) {
+        if (value != null) return@produceState
+        val lookup = runCatching {
+            MetaDetailsRepository.fetchLightweight(
+                type = launch.parentMetaType ?: launch.type,
+                id = launch.parentMetaId ?: effectiveVideoId,
+            )
+        }.getOrNull()
+        value = (lookup as? MetaLookupOutcome.Loaded)?.meta?.logo?.takeIf { it.isNotBlank() }
+    }
+
     fun p2pSentinelUrl(infoHash: String, fileIdx: Int?): String =
         "torrent://$infoHash${fileIdx?.let { "?index=$it" }.orEmpty()}"
 
@@ -258,7 +279,7 @@ internal fun StreamDestination(
             sourceHeaders = emptyMap(),
             sourceResponseHeaders = emptyMap(),
             streamType = stream.streamType,
-            logo = launch.logo,
+            logo = launchLogo,
             poster = launch.poster,
             background = launch.background,
             seasonNumber = launch.seasonNumber,
@@ -389,7 +410,7 @@ internal fun StreamDestination(
                 sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
                 externalSubtitles = emptyList(),
                 streamType = cached.streamType,
-                logo = launch.logo,
+                logo = launchLogo,
                 poster = launch.poster,
                 background = launch.background,
                 seasonNumber = launch.seasonNumber,
@@ -700,7 +721,7 @@ internal fun StreamDestination(
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,
-            logo = launch.logo,
+            logo = launchLogo,
             poster = launch.poster,
             background = launch.background,
             seasonNumber = launch.seasonNumber,
@@ -754,7 +775,7 @@ internal fun StreamDestination(
     if (!hasResolvedVideoId) {
         if (showLoadingScreen) {
             StreamLoadingScreen(
-                launch = launch,
+                launch = launch.copy(logo = launchLogo),
                 state = StreamsUiState(),
                 showStatus = playerSettings.showPlayerLoadingStatus,
                 resolvingDebridStream = false,
@@ -914,7 +935,7 @@ internal fun StreamDestination(
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,
-            logo = launch.logo,
+            logo = launchLogo,
             poster = launch.poster,
             background = launch.background,
             seasonNumber = launch.seasonNumber,
@@ -997,7 +1018,7 @@ internal fun StreamDestination(
                 parentMetaId = launch.parentMetaId ?: effectiveVideoId,
                 parentMetaType = launch.parentMetaType ?: launch.type,
                 title = launch.title,
-                logo = launch.logo,
+                logo = launchLogo,
                 poster = launch.poster,
                 background = launch.background,
                 seasonNumber = launch.seasonNumber,
@@ -1057,7 +1078,7 @@ internal fun StreamDestination(
         }
         if (showLoadingScreen) {
             StreamLoadingScreen(
-                launch = launch,
+                launch = launch.copy(logo = launchLogo),
                 state = streamsUiState.takeIf { it.requestToken == expectedStreamsRequestToken } ?: StreamsUiState(),
                 showStatus = playerSettings.showPlayerLoadingStatus,
                 resolvingDebridStream = resolvingDebridStream,
@@ -1175,3 +1196,6 @@ internal fun StreamDestination(
         }
     }
 }
+
+private fun StreamLaunch.launchKeyForLogo(): String =
+    "${parentMetaType ?: type}:${parentMetaId ?: videoId}"

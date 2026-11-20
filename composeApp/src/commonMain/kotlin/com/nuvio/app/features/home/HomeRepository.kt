@@ -576,8 +576,7 @@ object HomeRepository {
             return
         }
 
-        val catalogHeroItems = if (snapshot.heroEnabled) {
-            val heroRandom = Random((requestKey?.hashCode() ?: 0).absoluteValue + 1)
+        val heroSourceItems = if (snapshot.heroEnabled) {
             currentDefinitions
                 .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
                 .mapNotNull { definition -> cachedSections[definition.cacheKey] }
@@ -594,13 +593,17 @@ object HomeRepository {
         } else {
             emptyList()
         }
+        val catalogHeroItems = heroSourceItems
+            .shuffled(Random((requestKey?.hashCode() ?: 0).absoluteValue + 1))
+            .take(HOME_HERO_ITEM_LIMIT)
         lastPublishedCatalogHeroEmpty = snapshot.heroEnabled && catalogHeroItems.isEmpty()
         val visibleHeroItems = _uiState.value.heroItems
         val selectedHeroItems = if (snapshot.heroEnabled) {
             if (
                 keepVisibleHeroWhilePending &&
                 visibleHeroItems.isNotEmpty() &&
-                isHeroResolutionPending(isLoading)
+                isHeroResolutionPending(isLoading) &&
+                (catalogHeroItems.isEmpty() || visibleHeroItems.allComeFrom(heroSourceItems))
             ) {
                 visibleHeroItems
             } else {
@@ -890,4 +893,9 @@ private fun prioritizeDefinitions(
         }
     }
     return priority + remainder
+}
+
+private fun List<MetaPreview>.allComeFrom(sourceItems: List<MetaPreview>): Boolean {
+    val sourceKeys = sourceItems.mapTo(HashSet()) { item -> "${item.type}:${item.id}" }
+    return all { item -> "${item.type}:${item.id}" in sourceKeys }
 }

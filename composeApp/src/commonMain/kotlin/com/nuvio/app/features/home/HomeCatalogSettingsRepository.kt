@@ -171,6 +171,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val showCatalogType: Boolean = true,
     val hideUnreleasedContent: Boolean = false,
     val items: List<StoredHomeCatalogPreference> = emptyList(),
+    val heroSourcesChosen: Boolean? = null,
     val hideMergedTitlesWithoutPosters: Boolean = false,
     val mergedRows: List<MergedHomeRowDefinition> = emptyList(),
 )
@@ -212,7 +213,25 @@ object HomeCatalogSettingsRepository {
     private var heroTrailerStartUnmuted = false
     private var showCatalogType = true
     private var hideUnreleasedContent = false
+    private var heroSourcesChosen = false
 
+    fun onProfileChanged() {
+        hasLoaded = false
+        preferences = emptyMap()
+        heroEnabled = true
+        heroStyle = HomeHeroStyle.FULL_BLEED
+        heroTrailerPlaybackEnabled = false
+        heroTrailerStartDelaySeconds = DEFAULT_HERO_TRAILER_START_DELAY_SECONDS
+        heroTrailerStartUnmuted = false
+        showCatalogType = true
+        hideUnreleasedContent = false
+        heroSourcesChosen = false
+        definitions = emptyList()
+        collectionDefinitions = emptyList()
+        lastCatalogSync = null
+        lastCollectionSync = null
+        _uiState.value = HomeCatalogSettingsUiState()
+    }
     fun onProfileChanged() = clearLocalState()
 
     fun clearLocalState() {
@@ -232,6 +251,7 @@ object HomeCatalogSettingsRepository {
         heroTrailerStartUnmuted = false
         showCatalogType = true
         hideUnreleasedContent = false
+        heroSourcesChosen = false
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -460,6 +480,11 @@ object HomeCatalogSettingsRepository {
     }
 
     fun setHeroSourceEnabled(key: String, enabled: Boolean) {
+        ensureLoaded()
+        if (!heroSourcesChosen) {
+            heroSourcesChosen = true
+            persist()
+        }
         updatePreference(key, pushRemote = false, heroSourcesChanged = true) { preference ->
             if (!enabled) {
                 preference.copy(heroSourceEnabled = false)
@@ -684,6 +709,7 @@ object HomeCatalogSettingsRepository {
         heroTrailerStartUnmuted = false
         showCatalogType = true
         hideUnreleasedContent = false
+        heroSourcesChosen = false
         hideMergedTitlesWithoutPosters = false
         mergedRows = emptyList()
         preferences = emptyMap()
@@ -811,6 +837,7 @@ object HomeCatalogSettingsRepository {
             mergedRows = parsedPayload.mergedRows.filter { it.id.isNotBlank() }
                 .map { it.copy(sourceKeys = it.sourceKeys.distinct().take(MAX_MERGED_HOME_ROW_SOURCES)) }
             preferences = parsedPayload.items.associateBy { it.key }
+            heroSourcesChosen = parsedPayload.heroSourcesChosen ?: hasStoredHeroChoice(parsedPayload.items)
             publish()
             return
         }
@@ -820,8 +847,12 @@ object HomeCatalogSettingsRepository {
         }.getOrDefault(emptyList())
 
         preferences = legacyItems.associateBy { it.key }
+        heroSourcesChosen = hasStoredHeroChoice(legacyItems)
         publish()
     }
+
+    private fun hasStoredHeroChoice(items: List<StoredHomeCatalogPreference>): Boolean =
+        items.any { it.heroSourceEnabled && !it.key.startsWith("collection_") }
 
     private fun normalizePreferences() {
         val current = preferences
@@ -849,6 +880,21 @@ object HomeCatalogSettingsRepository {
         val normalized = current
             .filterKeys { it !in knownKeys || it.startsWith("cloudstream:") }
             .toMutableMap()
+        val hasHeroChoice = !heroSourcesChosen ||
+            current.values.any { it.heroSourceEnabled && !it.key.startsWith("collection_") }
+        val chosenHeroKeys = if (heroSourcesChosen) {
+            orderedEntries
+                .filter { entry -> !entry.isCollection && current[entry.key]?.heroSourceEnabled == true }
+                .take(HERO_SOURCE_SELECTION_LIMIT)
+                .mapTo(mutableSetOf()) { it.key }
+        } else {
+            val catalogs = orderedEntries.filter { !it.isCollection }
+            catalogs.filter { current[it.key]?.enabled ?: true }
+                .ifEmpty { catalogs }
+                .take(HERO_SOURCE_SELECTION_LIMIT)
+                .mapTo(mutableSetOf()) { it.key }
+        }
+        var enabledHeroSourceCount = chosenHeroKeys.size
         var enabledHeroSourceCount = 0
         orderedEntries.forEach { entry ->
             val stored = current[entry.key]
@@ -962,6 +1008,7 @@ object HomeCatalogSettingsRepository {
                     hideMergedTitlesWithoutPosters = hideMergedTitlesWithoutPosters,
                     mergedRows = mergedRows.sortedBy { it.order },
                     items = preferences.values.sortedBy { it.order },
+                    heroSourcesChosen = heroSourcesChosen,
                 ),
             ),
         )
