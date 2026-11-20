@@ -576,6 +576,7 @@ object HomeRepository {
             return
         }
 
+        val heroRandom = Random((requestKey?.hashCode() ?: 0).absoluteValue + 1)
         val heroSourceItems = if (snapshot.heroEnabled) {
             currentDefinitions
                 .filter { definition -> preferences[definition.key]?.heroSourceEnabled != false }
@@ -594,7 +595,7 @@ object HomeRepository {
             emptyList()
         }
         val catalogHeroItems = heroSourceItems
-            .shuffled(Random((requestKey?.hashCode() ?: 0).absoluteValue + 1))
+            .shuffled(heroRandom)
             .take(HOME_HERO_ITEM_LIMIT)
         lastPublishedCatalogHeroEmpty = snapshot.heroEnabled && catalogHeroItems.isEmpty()
         val visibleHeroItems = _uiState.value.heroItems
