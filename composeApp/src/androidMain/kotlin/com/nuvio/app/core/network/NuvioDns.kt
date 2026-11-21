@@ -44,7 +44,8 @@ internal object NuvioDns : Dns {
             return Dns.SYSTEM.lookup(hostname)
         }
         if (answer.addresses.isEmpty()) {
-            throw UnknownHostException("$hostname has no address (DNS over HTTPS via ${current.displayName})")
+            log.w { "DoH lookup via ${current.displayName} returned no addresses for $hostname, using system DNS" }
+            return Dns.SYSTEM.lookup(hostname)
         }
         cache[key] = CachedLookup(answer.addresses, now + answer.ttlSeconds.coerceIn(60L, 3_600L) * 1_000L)
         return answer.addresses
