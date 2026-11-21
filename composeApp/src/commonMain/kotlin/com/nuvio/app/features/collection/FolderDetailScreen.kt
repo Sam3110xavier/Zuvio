@@ -344,7 +344,12 @@ private fun RowsContent(
     }
 
     if (sections.isEmpty() && !uiState.isLoading) {
-        EmptyMessage()
+        val sourceError = uiState.tabs.firstOrNull { !it.isAllTab && it.error != null }?.error
+        if (sourceError != null) {
+            ErrorMessage(sourceError)
+        } else {
+            EmptyMessage()
+        }
         return
     }
 
