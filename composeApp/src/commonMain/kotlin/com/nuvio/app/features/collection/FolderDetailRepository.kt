@@ -335,7 +335,7 @@ object FolderDetailRepository {
         val job = scope.launch {
             runCatching {
                 val source = currentTab.source
-                when {
+                val resolvedPage = when {
                     source?.isTmdb == true -> TmdbCollectionSourceResolver.resolve(
                         source = source,
                         page = if (reset) 1 else requestedSkip,
@@ -353,7 +353,14 @@ object FolderDetailRepository {
                         genre = currentTab.genre,
                         skip = requestedSkip.takeIf { it > 0 },
                     )
-                }.withUnreleasedFilter()
+                }
+                val filteredPage = resolvedPage.withUnreleasedFilter()
+                log.i {
+                    "Loaded collection source catalogId=${currentTab.catalogId} " +
+                        "type=${currentTab.type} raw=${resolvedPage.rawItemCount} " +
+                        "parsed=${resolvedPage.items.size} filtered=${filteredPage.items.size}"
+                }
+                filteredPage
             }.onSuccess { page ->
                 val posterPattern = com.nuvio.app.core.poster.CustomPosterUrlRepository.let { repo ->
                     repo.ensureLoaded()
