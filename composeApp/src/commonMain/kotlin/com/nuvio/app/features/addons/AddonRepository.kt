@@ -272,6 +272,20 @@ object AddonRepository {
         }
     }
 
+    /**
+     * Wait until every enabled add-on has either loaded its manifest or finished
+     * refreshing with an error. Folder source resolution needs the complete set:
+     * resolving after only the first manifest arrives can incorrectly mark
+     * sources belonging to slower add-ons as missing.
+     */
+    suspend fun awaitEnabledManifestsLoaded() {
+        uiState.first { state ->
+            state.addons.filter { it.enabled }.all { addon ->
+                addon.manifest != null || !addon.isRefreshing
+            }
+        }
+    }
+
     private val _pendingTrackingConsent = MutableStateFlow<AddonManifest?>(null)
     val pendingTrackingConsent: StateFlow<AddonManifest?> = _pendingTrackingConsent.asStateFlow()
 
