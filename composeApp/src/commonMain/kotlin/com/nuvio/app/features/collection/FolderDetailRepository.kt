@@ -103,7 +103,7 @@ object FolderDetailRepository {
     private var activeFolderId: String? = null
     private var activeShowCatalogType: Boolean? = null
 
-    suspend fun initialize(collectionId: String, folderId: String) {
+    fun initialize(collectionId: String, folderId: String) {
         val current = _uiState.value
         val showCatalogType = HomeCatalogSettingsRepository.snapshot().showCatalogType
         if (
@@ -115,11 +115,6 @@ object FolderDetailRepository {
         ) {
             return
         }
-
-        // Ensure source-to-addon matching sees every enabled manifest, not just
-        // whichever manifests happened to finish loading first.
-        AddonRepository.initialize()
-        AddonRepository.awaitEnabledManifestsLoaded()
 
         clear()
         activeCollectionId = collectionId
