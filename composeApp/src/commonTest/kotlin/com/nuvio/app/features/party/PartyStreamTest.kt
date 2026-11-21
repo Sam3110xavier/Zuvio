@@ -70,6 +70,7 @@ class PartyStreamTest {
                 localMediaKey = stream.mediaKey,
                 sharedStream = stream,
                 activeSourceUrl = "https://cdn.example.com/other.mkv",
+                availableStreamUrls = setOf(stream.url),
             ),
         )
     }
@@ -174,6 +175,37 @@ class PartyStreamTest {
                 localMediaKey = stream.mediaKey,
                 sharedStream = stream.copy(url = "http://localhost:8096/video"),
                 activeSourceUrl = "https://cdn.example.com/other.mkv",
+            ),
+        )
+    }
+
+    @Test
+    fun guestFollowsTheExactSharedUrlAcrossDifferentAddons() {
+        val guestStream = stream.copy(addonName = "Different addon", addonId = "addon:other")
+        assertTrue(
+            shouldFollowSharedPartyStream(
+                isHost = false,
+                sharingEnabled = true,
+                partyMediaKey = stream.mediaKey,
+                localMediaKey = stream.mediaKey,
+                sharedStream = stream,
+                activeSourceUrl = "https://cdn.example.com/other.mkv",
+                availableStreamUrls = setOf(guestStream.url),
+            ),
+        )
+    }
+
+    @Test
+    fun guestDoesNotFollowAUrlMissingFromItsFetchedStreams() {
+        assertFalse(
+            shouldFollowSharedPartyStream(
+                isHost = false,
+                sharingEnabled = true,
+                partyMediaKey = stream.mediaKey,
+                localMediaKey = stream.mediaKey,
+                sharedStream = stream,
+                activeSourceUrl = "https://cdn.example.com/other.mkv",
+                availableStreamUrls = setOf("https://another-cdn.example/movie.mkv"),
             ),
         )
     }
