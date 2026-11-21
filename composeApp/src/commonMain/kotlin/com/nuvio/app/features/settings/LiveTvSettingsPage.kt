@@ -98,17 +98,19 @@ internal fun LazyListScope.liveTvSettingsContent(
     isTablet: Boolean,
     uiState: LiveTvUiState,
 ) {
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.live_tv_settings_section_navigation),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                LiveTvNavigationVisibilityRow(
-                    isTablet = isTablet,
-                    enabled = uiState.isNavigationEnabled,
-                    onEnabledChanged = LiveTvRepository::setNavigationEnabled,
-                )
+    if (uiState.hasPlaylist) {
+        item {
+            SettingsSection(
+                title = stringResource(Res.string.live_tv_settings_section_navigation),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    LiveTvNavigationVisibilityRow(
+                        isTablet = isTablet,
+                        enabled = uiState.isNavigationEnabled,
+                        onEnabledChanged = LiveTvRepository::setNavigationEnabled,
+                    )
+                }
             }
         }
     }

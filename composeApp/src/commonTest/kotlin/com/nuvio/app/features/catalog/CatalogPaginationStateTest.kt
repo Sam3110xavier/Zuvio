@@ -10,16 +10,6 @@ import kotlin.test.assertTrue
 
 class CatalogPaginationStateTest {
     @Test
-    fun cloudStreamPaginationUsesOneBasedPagesAndStopsOnEmptyPage() {
-        assertEquals(1, cloudStreamPageNumber(0))
-        assertEquals(2, cloudStreamPageNumber(1))
-        assertEquals(3, cloudStreamPageNumber(2))
-        assertEquals(1, cloudStreamNextPageSkip(0, 8))
-        assertEquals(2, cloudStreamNextPageSkip(1, 12))
-        assertNull(cloudStreamNextPageSkip(2, 0))
-    }
-
-    @Test
     fun `pagination advances by returned raw item count`() {
         val state = nextCatalogPaginationState(
             supportsPagination = true,

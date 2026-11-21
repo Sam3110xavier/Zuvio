@@ -8,19 +8,6 @@ import kotlin.test.assertTrue
 
 class SettingsNavigationTest {
     @Test
-    fun contentDiscoveryChildrenIncludeCloudStreamAndReturnToContentDiscovery() {
-        listOf(
-            SettingsPage.Addons,
-            SettingsPage.Plugins,
-            SettingsPage.CloudStream,
-            SettingsPage.MediaServers,
-        ).forEach { page ->
-            assertEquals(SettingsPage.ContentDiscovery, page.previousPage())
-            assertEquals(SettingsCategory.Watch, page.category)
-        }
-    }
-
-    @Test
     fun layoutChildrenReturnToLayout() {
         listOf(
             SettingsPage.Homescreen,

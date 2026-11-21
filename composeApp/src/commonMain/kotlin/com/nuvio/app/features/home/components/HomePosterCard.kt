@@ -20,9 +20,8 @@ fun HomePosterCard(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     showLandscapeOverlay: Boolean = true,
-    posterCardStyleOverride: PosterCardStyleUiState? = null,
 ) {
-    val posterCardStyle = posterCardStyleOverride ?: rememberPosterCardStyleUiState()
+    val posterCardStyle = rememberPosterCardStyleUiState()
     val isLandscapeMode = useLandscapeBackdropMode || posterCardStyle.catalogLandscapeModeEnabled
     val effectiveLandscapePoster = if (posterCardStyle.alwaysShowLandscapeClearlogo) null else item.landscapePoster
     val images = item.homePosterImages(posterCardStyle, useLandscapeBackdropMode)
@@ -32,13 +31,12 @@ fun HomePosterCard(
         imageUrl = images.imageUrl,
         modifier = modifier,
         fallbackImageUrl = images.fallbackImageUrl,
-        shape = if (posterCardStyle.netflixStyleEnabled && !isLandscapeMode) NuvioPosterShape.Poster else images.shape,
-        detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled || posterCardStyle.netflixStyleEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
+        shape = images.shape,
+        detailLine = if (isLandscapeMode || posterCardStyle.hideLabelsEnabled) null else item.releaseInfo?.let { formatReleaseDateForDisplay(it) },
         showTitleBelow = !posterCardStyle.hideLabelsEnabled,
         bottomLeftLogoUrl = if (isLandscapeMode && showLandscapeOverlay && effectiveLandscapePoster.isNullOrBlank()) item.logo else null,
         bottomLeftText = if (isLandscapeMode && showLandscapeOverlay && effectiveLandscapePoster.isNullOrBlank() && item.logo.isNullOrBlank() && !posterCardStyle.hideLabelsEnabled) item.name else null,
         isWatched = isWatched,
-        posterCardStyleOverride = posterCardStyle,
         onClick = onClick,
         onLongClick = onLongClick,
     )

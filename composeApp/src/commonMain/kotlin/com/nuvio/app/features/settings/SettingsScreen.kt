@@ -123,7 +123,6 @@ private fun watchPartyRow(onClick: () -> Unit): (() -> Unit)? {
 private fun SettingsPage.isEnabledByPolicy(): Boolean =
     when (this) {
         SettingsPage.SupportersContributors -> AppFeaturePolicy.supportersContributorsPageEnabled
-        SettingsPage.CloudStream -> AppFeaturePolicy.pluginsEnabled
         SettingsPage.PlaybackP2p -> P2pSettingsRepository.isVisible
         SettingsPage.PlaybackBuffer -> !isIos
         else -> true
@@ -158,7 +157,6 @@ fun SettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
-    onCloudStreamClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -348,7 +346,6 @@ fun SettingsScreen(
         } else {
             onPluginsClick
         }
-        val openCloudStream = { openPage(SettingsPage.CloudStream) }
         val openAccount = if (onNavigatePage != null) {
             { openPage(SettingsPage.Account) }
         } else {
@@ -508,7 +505,6 @@ fun SettingsScreen(
                         onContinueWatchingClick = openContinueWatching,
                         onAddonsClick = openAddons,
                         onPluginsClick = openPlugins,
-                        onCloudStreamClick = openCloudStream,
                         onAccountClick = openAccount,
                         onSupportersContributorsClick = openSupportersContributors,
                         onLicensesAttributionsClick = openLicensesAttributions,
@@ -573,7 +569,6 @@ private fun MobileSettingsScreen(
     onContinueWatchingClick: () -> Unit = {},
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
-    onCloudStreamClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -626,11 +621,6 @@ private fun MobileSettingsScreen(
                     SettingsPage.Plugins -> {
                         if (AppFeaturePolicy.pluginsEnabled) {
                             onPluginsClick()
-                        }
-                    }
-                    SettingsPage.CloudStream -> {
-                        if (AppFeaturePolicy.pluginsEnabled) {
-                            onCloudStreamClick()
                         }
                     }
                     SettingsPage.Homescreen -> onHomescreenClick()
@@ -816,10 +806,8 @@ private fun MobileSettingsScreen(
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = false,
                     showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
-                    showCloudStreamEntry = AppFeaturePolicy.pluginsEnabled,
                     onAddonsClick = onAddonsClick,
                     onPluginsClick = onPluginsClick,
-                    onCloudStreamClick = onCloudStreamClick,
                     onMediaServersClick = { onPageChange(SettingsPage.MediaServers) },
                 )
                 SettingsPage.Addons -> addonsSettingsContent()
@@ -832,7 +820,6 @@ private fun MobileSettingsScreen(
                     onBack = onNavigateBack,
                 )
                 SettingsPage.Plugins -> if (AppFeaturePolicy.pluginsEnabled) pluginsSettingsContent() else addonsSettingsContent()
-                SettingsPage.CloudStream -> if (AppFeaturePolicy.pluginsEnabled) cloudStreamSettingsContent() else addonsSettingsContent()
                 SettingsPage.Homescreen -> homescreenSettingsContent(
                     isTablet = false,
                     heroEnabled = homescreenHeroEnabled,
@@ -857,7 +844,6 @@ private fun MobileSettingsScreen(
                     onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                     onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
-                    onTelegramClick = { onPageChange(SettingsPage.Telegram) },
                 )
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
@@ -891,7 +877,6 @@ private fun MobileSettingsScreen(
                 SettingsPage.DiscordRpc -> discordRpcSettingsContent(
                     isTablet = false,
                 )
-                SettingsPage.Telegram -> telegramSettingsContent(isTablet = false)
             }
         }
         }
@@ -1280,10 +1265,8 @@ private fun TabletSettingsScreen(
                     SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                         isTablet = true,
                         showPluginsEntry = AppFeaturePolicy.pluginsEnabled,
-                        showCloudStreamEntry = AppFeaturePolicy.pluginsEnabled,
                         onAddonsClick = { openInlinePage(SettingsPage.Addons) },
                         onPluginsClick = { openInlinePage(SettingsPage.Plugins) },
-                        onCloudStreamClick = { openInlinePage(SettingsPage.CloudStream) },
                         onMediaServersClick = { openInlinePage(SettingsPage.MediaServers) },
                     )
                     SettingsPage.Addons -> addonsSettingsContent()
@@ -1296,7 +1279,6 @@ private fun TabletSettingsScreen(
                         onBack = onNavigateBack,
                     )
                     SettingsPage.Plugins -> if (AppFeaturePolicy.pluginsEnabled) pluginsSettingsContent() else addonsSettingsContent()
-                    SettingsPage.CloudStream -> if (AppFeaturePolicy.pluginsEnabled) cloudStreamSettingsContent() else addonsSettingsContent()
                     SettingsPage.Homescreen -> homescreenSettingsContent(
                         isTablet = true,
                         heroEnabled = homescreenHeroEnabled,
@@ -1321,7 +1303,6 @@ private fun TabletSettingsScreen(
                         onOmdbClick = { onPageChange(SettingsPage.Omdb) },
                         onLiveTvClick = { onPageChange(SettingsPage.LiveTv) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordRpc) },
-                    onTelegramClick = { onPageChange(SettingsPage.Telegram) },
                     )
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
@@ -1355,7 +1336,6 @@ private fun TabletSettingsScreen(
                     SettingsPage.DiscordRpc -> discordRpcSettingsContent(
                         isTablet = true,
                     )
-                    SettingsPage.Telegram -> telegramSettingsContent(isTablet = true)
                 }
             }
             }

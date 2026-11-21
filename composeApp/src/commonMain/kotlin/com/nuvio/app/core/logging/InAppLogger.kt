@@ -5,10 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-private const val DEFAULT_MAX_LOG_LINES = 10_000
-private const val MAX_LOG_MESSAGE_CHARS = 1_024
-
-const val CATEGORY_CLOUDSTREAM = "CloudStream"
+private const val DEFAULT_MAX_LOG_LINES = 3_000
 
 internal expect fun currentInAppLogTimestamp(): String
 
@@ -53,19 +50,9 @@ object InAppLogger {
     fun warn(tag: String, message: String) = log(InAppLogLevel.Warn, tag, message)
     fun error(tag: String, message: String) = log(InAppLogLevel.Error, tag, message)
 
-    fun cloudStreamDebug(tag: String, message: String) = log(InAppLogLevel.Debug, tag, message, CATEGORY_CLOUDSTREAM)
-    fun cloudStreamInfo(tag: String, message: String) = log(InAppLogLevel.Info, tag, message, CATEGORY_CLOUDSTREAM)
-    fun cloudStreamWarn(tag: String, message: String) = log(InAppLogLevel.Warn, tag, message, CATEGORY_CLOUDSTREAM)
-    fun cloudStreamError(tag: String, message: String) = log(InAppLogLevel.Error, tag, message, CATEGORY_CLOUDSTREAM)
-
-    fun log(level: InAppLogLevel, tag: String, message: String, category: String? = null) {
-        val rawMessage = message.trim()
-        if (rawMessage.isEmpty()) return
-        val trimmedMessage = if (rawMessage.length > MAX_LOG_MESSAGE_CHARS) {
-            rawMessage.take(MAX_LOG_MESSAGE_CHARS) + "… [truncated]"
-        } else {
-            rawMessage
-        }
+    fun log(level: InAppLogLevel, tag: String, message: String) {
+        val trimmedMessage = message.trim()
+        if (trimmedMessage.isEmpty()) return
 
         val timestamp = currentInAppLogTimestamp()
         val safeTag = tag.trim().ifEmpty { "App" }
@@ -83,7 +70,7 @@ object InAppLogger {
                 timestamp = timestamp,
                 level = level,
                 tag = safeTag,
-                category = category?.trim()?.takeIf(String::isNotEmpty) ?: deriveCategory(safeTag),
+                category = deriveCategory(safeTag),
                 message = trimmedMessage,
                 line = line,
             ),
@@ -152,23 +139,6 @@ object InAppLogger {
 
     fun dump(): String = entries.value.joinToString(separator = "\n") { it.line }
 
-    /** Export only after removing common credentials and URL query parameters. */
-    fun exportDump(selectedEntries: List<InAppLogEntry> = entries.value): String =
-        selectedEntries.joinToString(separator = "\n") { entry ->
-            sanitizeForExport(entry.line)
-        }
-
-    fun sanitizeForExport(value: String): String {
-        val sensitiveValues = Regex(
-            """(?i)["']?\b(authorization|proxy-authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|password|passwd|secret|cookie|set-cookie)\b["']?(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^,;&}\r\n]+)""",
-        )
-        val withoutSecrets = sensitiveValues.replace(value) { match ->
-            match.groupValues[1] + match.groupValues[2] + "<redacted>"
-        }
-        val urls = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
-        return urls.replace(withoutSecrets) { match -> redactUrl(match.value, maxLength = 240) }
-    }
-
     fun clear() {
         _entries.value = emptyList()
         syncLines(emptyList())
@@ -198,7 +168,6 @@ object InAppLogger {
             "streams", "stream", "debrid" -> "Streams"
             "addons", "addon" -> "Addon"
             "plugins", "plugin", "pluginruntime" -> "Plugin"
-            "cloudstream", "cloudstreamdex", "cloudstreamprovider", "cs3", "lagradost" -> CATEGORY_CLOUDSTREAM
             "metadata", "tmdb", "mdblist", "trakt" -> "Metadata"
             "network", "http", "datasource", "supabase" -> "Network"
             "app", "application", "deeplink", "sync", "auth", "profile" -> "App"

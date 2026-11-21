@@ -51,9 +51,7 @@ internal fun LazyListScope.settingsRootContent(
             SettingsProfileCard(isTablet = isTablet, onClick = onSwitchProfileClick)
         }
     }
-    SettingsCategory.entries.filter {
-        category == null || it == category
-    }.forEach { group ->
+    SettingsCategory.entries.filter { category == null || it == category }.forEach { group ->
         item(key = group.name) {
             SettingsGroup(isTablet = isTablet) {
                 when (group) {

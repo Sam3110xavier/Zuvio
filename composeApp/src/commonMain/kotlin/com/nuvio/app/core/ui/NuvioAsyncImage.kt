@@ -11,5 +11,4 @@ internal expect fun NuvioAsyncImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     animateIfPossible: Boolean = false,
-    fallbackImageUrl: String? = null,
 )

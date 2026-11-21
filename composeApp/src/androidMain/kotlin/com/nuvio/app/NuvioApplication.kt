@@ -11,7 +11,6 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.CachePolicy
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
-import com.nuvio.app.core.diagnostics.CrashReportStore
 import com.nuvio.app.core.network.DnsPlatform
 import com.nuvio.app.core.network.SharedOkHttpClient
 import com.nuvio.app.core.network.NetworkErrorInterceptor
@@ -31,24 +30,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        CrashReportStore.initialize(this)
-        // CloudStream compatibility classes exist only in Android Full. Initialize
-        // their application context reflectively so Play Store builds remain independent.
-        runCatching {
-            Class.forName("com.lagradost.cloudstream3.AcraApplication")
-                .getMethod("setContext", android.content.Context::class.java)
-                .invoke(null, this)
-        }.onFailure { error ->
-            android.util.Log.d("NuvioApplication", "Optional CloudStream host ABI is not installed: ${error.message}")
-        }
         DnsPlatform.initialize(this)
-        runCatching {
-            Class.forName("com.nuvio.app.features.telegram.TelegramAndroidBootstrap")
-                .getMethod("install", Application::class.java)
-                .invoke(null, this)
-        }.onFailure { error ->
-            android.util.Log.d("NuvioApplication", "Optional Telegram runtime is not installed: ${error.message}")
-        }
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader {

@@ -12,7 +12,6 @@ data class TraktAuthState(
     val username: String? = null,
     val userSlug: String? = null,
     val pendingAuthorizationState: String? = null,
-    val pendingAuthorizationCodeVerifier: String? = null,
     val pendingAuthorizationStartedAtMillis: Long? = null,
 ) {
     val isAuthenticated: Boolean

@@ -2,7 +2,6 @@ package com.nuvio.app.features.player
 
 import androidx.compose.ui.Modifier
 import com.nuvio.app.features.party.PartyMedia
-import com.nuvio.app.features.streams.StreamAutoPlayPreferredQuality
 
 internal data class PlayerScreenArgs(
     val profileId: Int,
@@ -46,9 +45,7 @@ internal data class PlayerScreenArgs(
     val launchId: Long? = null,
     val sourceFilename: String? = null,
     val onOpenPartyMedia: (PartyMedia) -> Unit = {},
-    val onFollowPartyMedia: (PartyMedia) -> Unit = onOpenPartyMedia,
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
-    val semiAutoSelectedQuality: StreamAutoPlayPreferredQuality? = null,
     val sourceFromLinkCache: Boolean = false,
     val sourceAutoSelected: Boolean = false,
 )

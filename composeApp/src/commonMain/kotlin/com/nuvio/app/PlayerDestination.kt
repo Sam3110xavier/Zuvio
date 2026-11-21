@@ -29,7 +29,6 @@ internal fun PlayerDestination(
     launchExternalPlayer: (ExternalPlayerIntentResult.Success) -> Boolean,
     openExternalStreamUrl: (String) -> Boolean,
     onOpenPartyMedia: (PartyMedia) -> Unit,
-    onFollowPartyMedia: (PartyMedia) -> Unit = onOpenPartyMedia,
     onBackOverride: (() -> Unit)? = null,
 ) {
     val guardedOnBack = rememberGuardedPopBackStack(navController, route)
@@ -82,7 +81,6 @@ internal fun PlayerDestination(
         launchId = route.launchId,
         sourceFilename = launch.sourceFilename,
         stream = launch.stream,
-        semiAutoSelectedQuality = launch.semiAutoSelectedQuality,
         sourceFromLinkCache = launch.sourceFromLinkCache,
         sourceAutoSelected = launch.sourceAutoSelected,
         onBack = onBack,
@@ -148,7 +146,6 @@ internal fun PlayerDestination(
             )
         },
         onOpenPartyMedia = onOpenPartyMedia,
-        onFollowPartyMedia = onFollowPartyMedia,
         modifier = Modifier.fillMaxSize(),
     )
 }

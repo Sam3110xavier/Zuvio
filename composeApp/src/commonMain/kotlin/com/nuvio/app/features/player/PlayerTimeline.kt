@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +40,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.accentBrush
 import com.nuvio.app.core.ui.themePalette
@@ -72,17 +70,9 @@ internal fun PlayerTimelineDetails(
     titleLogo: String? = null,
     showTitleLogo: Boolean = false,
     animeEnhancement: AnimeEnhancementStatus? = null,
-    titleMaxLines: Int = 1,
-    titleFontWeight: FontWeight = FontWeight.SemiBold,
-    horizontalContentPadding: Dp = PlayerTimelineContentInset,
-    titleLogoMaxHeight: Dp = metrics.timelineLogoMaxHeight,
-    contentSpacing: Dp = 0.dp,
 ) {
     val typeScale = MaterialTheme.nuvioTypeScale
-    Column(
-        modifier = modifier.padding(horizontal = horizontalContentPadding),
-        verticalArrangement = Arrangement.spacedBy(contentSpacing),
-    ) {
+    Column(modifier.padding(horizontal = PlayerTimelineContentInset)) {
         PlayerTitleArtwork(
             title = title,
             logoUrl = titleLogo,
@@ -90,11 +80,11 @@ internal fun PlayerTimelineDetails(
             textStyle = typeScale.titleLg.copy(
                 fontSize = metrics.titleSize,
                 lineHeight = metrics.titleSize * 1.16f,
-                fontWeight = titleFontWeight,
+                fontWeight = FontWeight.SemiBold,
             ),
             textColor = Color.White,
-            maxLines = titleMaxLines,
-            maxLogoHeight = titleLogoMaxHeight,
+            maxLines = 1,
+            maxLogoHeight = metrics.timelineLogoMaxHeight,
             maxLogoWidth = metrics.logoMaxWidth,
         )
         if (seasonNumber != null && episodeNumber != null) {

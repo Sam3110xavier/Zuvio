@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,15 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.logging.InAppLogLevel
 import com.nuvio.app.core.logging.InAppLogger
-import com.nuvio.app.core.diagnostics.DebugDiagnosticsPlatform
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_clear_logs
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_clear_logs_description
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_copy_logs
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_copy_logs_description
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_empty
-import nuvio.composeapp.generated.resources.settings_debug_logs_export_title
-import nuvio.composeapp.generated.resources.settings_debug_logs_export_description
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_all
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_category
 import nuvio.composeapp.generated.resources.settings_advanced_debugging_filter_level
@@ -69,8 +65,6 @@ internal fun LazyListScope.debugLogsSettingsContent(
 private fun DebugLogsSection(isTablet: Boolean) {
     val clipboardManager = LocalClipboardManager.current
     val logEntries by InAppLogger.entries.collectAsState()
-    var savedCrashReports by remember { mutableStateOf(DebugDiagnosticsPlatform.loadCrashReports()) }
-    val savedCrashReportCount = savedCrashReports.split("Crash timestamp:").size - 1
     var selectedCategory by rememberSaveable { mutableStateOf(ALL_FILTER_VALUE) }
     var selectedLevel by rememberSaveable { mutableStateOf(ALL_FILTER_VALUE) }
 
@@ -91,22 +85,10 @@ private fun DebugLogsSection(isTablet: Boolean) {
     }
     val displayedEntries = filteredEntries.takeLast(MAX_DISPLAYED_LOG_LINES)
     val logText = displayedEntries.joinToString(separator = "\n") { it.line }
-    val crashReportPreview = remember(savedCrashReports) {
-        InAppLogger.sanitizeForExport(savedCrashReports.takeLast(50_000))
-    }
-    val viewerText = buildString {
-        when {
-            logEntries.isEmpty() && savedCrashReports.isBlank() ->
-                append(stringResource(Res.string.settings_advanced_debugging_empty))
-            filteredEntries.isEmpty() && savedCrashReports.isBlank() ->
-                append(stringResource(Res.string.settings_advanced_debugging_no_filter_matches))
-            filteredEntries.isNotEmpty() -> append(logText)
-        }
-        if (savedCrashReports.isNotBlank()) {
-            if (isNotEmpty()) appendLine().appendLine()
-            appendLine("========== SAVED CRASH REPORTS ==========")
-            append(crashReportPreview)
-        }
+    val viewerText = when {
+        logEntries.isEmpty() -> stringResource(Res.string.settings_advanced_debugging_empty)
+        filteredEntries.isEmpty() -> stringResource(Res.string.settings_advanced_debugging_no_filter_matches)
+        else -> logText
     }
 
     SettingsSection(
@@ -138,45 +120,16 @@ private fun DebugLogsSection(isTablet: Boolean) {
             )
             SettingsGroupDivider(isTablet = isTablet)
             SettingsNavigationRow(
-                title = stringResource(Res.string.settings_debug_logs_export_title),
-                description = stringResource(
-                    Res.string.settings_debug_logs_export_description,
-                    filteredEntries.size,
-                    savedCrashReportCount,
-                ),
-                enabled = filteredEntries.isNotEmpty() || savedCrashReports.isNotBlank(),
-                isTablet = isTablet,
-                onClick = {
-                    val exportText = buildString {
-                        appendLine("Zuvio diagnostics export")
-                        appendLine("Retained log entries: ${filteredEntries.size}")
-                        appendLine()
-                        appendLine(InAppLogger.exportDump(filteredEntries))
-                        if (savedCrashReports.isNotBlank()) {
-                            appendLine()
-                            appendLine("========== SAVED CRASH REPORTS ==========")
-                            append(InAppLogger.sanitizeForExport(savedCrashReports))
-                        }
-                    }
-                    DebugDiagnosticsPlatform.export(exportText)
-                },
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsNavigationRow(
                 title = stringResource(Res.string.settings_advanced_debugging_clear_logs),
                 description = stringResource(Res.string.settings_advanced_debugging_clear_logs_description),
-                enabled = logEntries.isNotEmpty() || savedCrashReports.isNotBlank(),
+                enabled = logEntries.isNotEmpty(),
                 isTablet = isTablet,
-                onClick = {
-                    InAppLogger.clear()
-                    DebugDiagnosticsPlatform.clearCrashReports()
-                    savedCrashReports = ""
-                },
+                onClick = InAppLogger::clear,
             )
             SettingsGroupDivider(isTablet = isTablet)
             DebugLogTextPanel(
                 text = viewerText,
-                isEmpty = filteredEntries.isEmpty() && savedCrashReports.isBlank(),
+                isEmpty = logEntries.isEmpty() || filteredEntries.isEmpty(),
                 displayedCount = displayedEntries.size,
                 filteredCount = filteredEntries.size,
                 retainedCount = logEntries.size,

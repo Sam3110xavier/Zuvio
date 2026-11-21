@@ -14,12 +14,4 @@ class NavigationSavedStateConfigurationTest {
 
         assertNotNull(serializer)
     }
-
-    @Test
-    fun cloudStreamRouteIsRegisteredForSavedStateSerialization() {
-        val serializer = navigationSavedStateConfiguration.serializersModule
-            .getPolymorphic(NavKey::class, CloudStreamSettingsRoute("CloudStream"))
-
-        assertNotNull(serializer)
-    }
 }

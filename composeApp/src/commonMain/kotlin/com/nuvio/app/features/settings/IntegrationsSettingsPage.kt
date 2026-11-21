@@ -2,6 +2,7 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudQueue
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.foundation.lazy.LazyListScope
@@ -19,8 +20,6 @@ import nuvio.composeapp.generated.resources.settings_integrations_live_tv_descri
 import nuvio.composeapp.generated.resources.settings_integrations_mdblist_description
 import nuvio.composeapp.generated.resources.settings_integrations_omdb_description
 import nuvio.composeapp.generated.resources.settings_integrations_section_title
-import nuvio.composeapp.generated.resources.settings_telegram_title
-import nuvio.composeapp.generated.resources.settings_telegram_description
 import nuvio.composeapp.generated.resources.settings_integrations_tmdb_description
 import org.jetbrains.compose.resources.stringResource
 
@@ -32,7 +31,6 @@ internal fun LazyListScope.integrationsContent(
     onOmdbClick: () -> Unit,
     onLiveTvClick: () -> Unit,
     onDiscordClick: () -> Unit,
-    onTelegramClick: (() -> Unit)? = null,
 ) {
     item {
         SettingsSection(
@@ -84,19 +82,9 @@ internal fun LazyListScope.integrationsContent(
                     SettingsNavigationRow(
                         title = stringResource(Res.string.compose_settings_page_discord_rpc),
                         description = stringResource(Res.string.settings_integrations_discord_description),
-                        iconPainter = integrationLogoPainter(IntegrationLogo.Discord),
+                        icon = Icons.Rounded.Forum,
                         isTablet = isTablet,
                         onClick = onDiscordClick,
-                    )
-                }
-                if (onTelegramClick != null) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_telegram_title),
-                        description = stringResource(Res.string.settings_telegram_description),
-                        iconPainter = integrationLogoPainter(IntegrationLogo.Telegram),
-                        isTablet = isTablet,
-                        onClick = onTelegramClick,
                     )
                 }
             }

@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import com.nuvio.app.features.addons.AddonCatalog
-import com.nuvio.app.features.catalog.CatalogTarget
 import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.AddonStorage
@@ -21,6 +20,8 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.runner.RunWith
@@ -32,7 +33,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -68,174 +68,83 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
-    fun cloudStreamCatalogRowsAreExposedAndKeepTheirHomeVisibilityPreference() {
-        val providerId = "https://example.com/repo.json#Provider"
-        val section = HomeCatalogSection(
-            key = "cloudstream:$providerId:Anime",
-            title = "Anime",
-            subtitle = "Example Provider",
-            addonName = "Example Provider",
-            target = CatalogTarget.CloudStream(providerId, "Anime", "series"),
-            items = listOf(MetaPreview(id = "show-1", type = "series", name = "Example Show")),
-        )
-
-        HomeCatalogSettingsRepository.syncCloudStreamCatalogs(listOf(section))
-        val initial = HomeCatalogSettingsRepository.uiState.value.items.single()
-        assertEquals(section.key, initial.key)
-        assertEquals("Example Provider", initial.addonName)
-        assertFalse(initial.heroSourceEnabled)
-
-        HomeCatalogSettingsRepository.setEnabled(section.key, false)
-        HomeCatalogSettingsRepository.syncCloudStreamCatalogs(listOf(section.copy(title = "Anime Updated")))
-
-        val updated = HomeCatalogSettingsRepository.uiState.value.items.single()
-        assertFalse(updated.enabled)
-        assertEquals("Anime Updated", updated.defaultTitle)
+    fun pinTopAndBottomPlacementPersistsAndControlsHomeOrder() {
+        val addons = listOf(addon(listOf("popular", "latest", "trending")))
+        HomeCatalogSettingsRepository.syncCatalogs(addons)
+        val topKey = "test:movie:latest"
+        val bottomKey = "test:movie:trending"
+        HomeCatalogSettingsRepository.setRowPlacement(topKey, HomeCatalogRowPlacement.PINNED_TOP)
+        HomeCatalogSettingsRepository.setRowPlacement(bottomKey, HomeCatalogRowPlacement.PINNED_BOTTOM)
+        assertEquals(listOf(topKey, "test:movie:popular", bottomKey), HomeCatalogSettingsRepository.uiState.value.items.map { it.key })
+        HomeCatalogSettingsRepository.clearLocalState()
+        HomeCatalogSettingsRepository.syncCatalogs(addons)
+        assertEquals(listOf(topKey, "test:movie:popular", bottomKey), HomeCatalogSettingsRepository.uiState.value.items.map { it.key })
     }
 
     @Test
-    fun mergedRowBlendSelectionPersistsAcrossCreateEditAndReload() {
-        val catalogs = listOf(addon(listOf("popular", "latest")))
-        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
-
-        val eligibleKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys()
-        assertEquals(setOf("test:movie:popular", "test:movie:latest"), eligibleKeys)
-
-        val createdId = HomeCatalogSettingsRepository.createMergedRow(
-            title = "Combined",
-            sourceKeys = eligibleKeys.toList(),
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-            blendMode = MergedHomeRowBlendMode.RATING_WEIGHTED,
+    fun hiddenRowsCanBeReorderedWithoutChangingVisibleRowsOrVisibility() {
+        HomeCatalogSettingsRepository.syncCatalogs(
+            listOf(addon(listOf("popular", "latest", "trending"))),
         )
-        assertNotNull(createdId)
-        val rowId = requireNotNull(createdId)
-        assertEquals(
-            MergedHomeRowBlendMode.RATING_WEIGHTED,
-            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
+        val initialKeys = HomeCatalogSettingsRepository.uiState.value.items.map { it.key }
+        val firstHiddenKey = initialKeys[0]
+        val secondHiddenKey = initialKeys[1]
+        HomeCatalogSettingsRepository.setEnabled(firstHiddenKey, false)
+        HomeCatalogSettingsRepository.setEnabled(secondHiddenKey, false)
+
+        val visibleBefore = HomeCatalogSettingsRepository.uiState.value.items
+            .filter { it.enabled }
+            .map { it.key }
+        val hiddenBefore = HomeCatalogSettingsRepository.uiState.value.items
+            .filterNot { it.enabled }
+            .map { it.key }
+
+        HomeCatalogSettingsRepository.moveByVisibilityIndex(
+            fromIndex = 0,
+            toIndex = 1,
+            visible = false,
         )
 
-        assertTrue(
-            HomeCatalogSettingsRepository.updateMergedRow(
-                id = rowId,
-                title = "Combined edited",
-                sourceKeys = eligibleKeys.toList(),
-                displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
-                deduplicate = true,
-                blendMode = MergedHomeRowBlendMode.PROVIDER_PRIORITY,
+        val after = HomeCatalogSettingsRepository.uiState.value.items
+        assertEquals(visibleBefore, after.filter { it.enabled }.map { it.key })
+        assertEquals(hiddenBefore.reversed(), after.filterNot { it.enabled }.map { it.key })
+        assertTrue(after.filter { it.key == firstHiddenKey || it.key == secondHiddenKey }.all { !it.enabled })
+    }
+
+    @Test
+    fun rowPlacementIsExcludedFromProfileSyncPayload() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon()))
+        HomeCatalogSettingsRepository.setRowPlacement("test:movie:popular", HomeCatalogRowPlacement.PINNED_BOTTOM)
+
+        val payload = HomeCatalogSettingsRepository.exportToSyncPayload()
+        val serialized = Json.encodeToString(SyncHomeCatalogPayload.serializer(), payload)
+
+        assertTrue("\\"row_placement\\"" !in serialized)
+    }
+
+    @Test
+    fun applyingRemoteSettingsPreservesLocalRowPlacement() {
+        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon()))
+        HomeCatalogSettingsRepository.setRowPlacement("test:movie:popular", HomeCatalogRowPlacement.PINNED_BOTTOM)
+
+        HomeCatalogSettingsRepository.applyFromRemote(
+            SyncHomeCatalogPayload(
+                items = listOf(
+                    SyncCatalogItem(
+                        addonId = "test",
+                        type = "movie",
+                        catalogId = "popular",
+                        enabled = false,
+                        order = 0,
+                        key = "test:movie:popular",
+                    ),
+                ),
             ),
         )
-        assertEquals(
-            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
-            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
-        )
 
-        HomeCatalogSettingsRepository.clearLocalState()
-        HomeCatalogSettingsRepository.syncCatalogs(catalogs)
-        assertEquals(
-            MergedHomeRowBlendMode.PROVIDER_PRIORITY,
-            HomeCatalogSettingsRepository.uiState.value.mergedRows.single().resolvedBlendMode(),
-        )
-    }
-
-    @Test
-    fun hideIncludedMergedRowSourcesMovesThemToHiddenRowsAndRestoresPreviousVisibility() {
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
-        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
-        val sourceKey = sourceKeys.first()
-
-        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
-            .filter { it.key in sourceKeys }
-            .all { it.enabled })
-
-        val rowId = requireNotNull(HomeCatalogSettingsRepository.createMergedRow(
-            title = "Combined",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-            hideIncludedRows = true,
-        ))
-
-        val afterCreate = HomeCatalogSettingsRepository.uiState.value.items
-        assertTrue(afterCreate.single { it.key == mergedHomeRowKey(rowId) }.enabled)
-        assertTrue(afterCreate.filter { it.key in sourceKeys }.all { !it.enabled })
-
-        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
-            id = rowId,
-            title = "Combined",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-            deduplicate = true,
-            hideIncludedRows = false,
-        ))
-        val afterDisable = HomeCatalogSettingsRepository.uiState.value.items
-        assertTrue(afterDisable.filter { it.key in sourceKeys }.all { it.enabled })
-
-        HomeCatalogSettingsRepository.setEnabled(sourceKey, false)
-        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
-            id = rowId,
-            title = "Combined",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-            deduplicate = true,
-            hideIncludedRows = true,
-        ))
-        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
-            .filter { it.key in sourceKeys }
-            .all { !it.enabled })
-
-        assertTrue(HomeCatalogSettingsRepository.updateMergedRow(
-            id = rowId,
-            title = "Combined",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-            deduplicate = true,
-            hideIncludedRows = false,
-        ))
-        assertFalse(HomeCatalogSettingsRepository.uiState.value.items.single { it.key == sourceKey }.enabled)
-        assertTrue(HomeCatalogSettingsRepository.uiState.value.items
-            .filter { it.key in sourceKeys && it.key != sourceKey }
-            .all { it.enabled })
-    }
-
-    @Test
-    fun mergedRowsRejectMoreThanTheMaximumSourcesInsteadOfSilentlyTruncating() {
-        val catalogIds = (1..14).map { "catalog-$it" }
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(catalogIds)))
-        val sourceKeys = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
-
-        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
-            title = "Too many",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-        ))
-
-        val allowedKeys = sourceKeys.take(MAX_MERGED_HOME_ROW_SOURCES)
-        val createdId = HomeCatalogSettingsRepository.createMergedRow(
-            title = "Within limit",
-            sourceKeys = allowedKeys,
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-        )
-        assertNotNull(createdId)
-        val before = HomeCatalogSettingsRepository.uiState.value.mergedRows.single()
-
-        assertTrue(!HomeCatalogSettingsRepository.updateMergedRow(
-            id = requireNotNull(createdId),
-            title = "Should not update",
-            sourceKeys = sourceKeys,
-            displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL,
-            deduplicate = true,
-        ))
-        assertEquals(before, HomeCatalogSettingsRepository.uiState.value.mergedRows.single())
-    }
-
-    @Test
-    fun mergedRowsRejectUnavailableSourcesWithoutDroppingThemSilently() {
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "latest"))))
-        val available = HomeCatalogSettingsRepository.mergedRowSourceKeys().sorted()
-        assertEquals(null, HomeCatalogSettingsRepository.createMergedRow(
-            title = "Missing source",
-            sourceKeys = available + "missing:catalog",
-            displayMode = MergedHomeRowDisplayMode.SOURCE_TABS,
-        ))
+        val item = HomeCatalogSettingsRepository.uiState.value.items.single()
+        assertEquals(HomeCatalogRowPlacement.PINNED_BOTTOM, item.rowPlacement)
+        assertEquals(false, item.enabled)
     }
 
     @Test
@@ -249,72 +158,6 @@ class HomeCatalogSettingsRepositoryTest {
         assertEquals(editCount, preferences.editCount)
         assertEquals("test:movie:popular", HomeCatalogSettingsRepository.uiState.value.items.single().key)
     }
-
-    @Test
-    fun rowPlacementSurvivesCatalogRefreshAndLocalReload() {
-        val initial = listOf(addon(listOf("popular", "latest")))
-        HomeCatalogSettingsRepository.syncCatalogs(initial)
-        val positionKey = "test:movie:popular"
-        val bottomKey = "test:movie:latest"
-
-        HomeCatalogSettingsRepository.setRowPlacement(positionKey, HomeCatalogRowPlacement.PINNED_POSITION)
-        HomeCatalogSettingsRepository.setRowPlacement(bottomKey, HomeCatalogRowPlacement.PINNED_BOTTOM)
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_POSITION,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == positionKey }.rowPlacement,
-        )
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_BOTTOM,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == bottomKey }.rowPlacement,
-        )
-
-        val refreshed = listOf(addon(listOf("popular", "latest", "new")))
-        HomeCatalogSettingsRepository.syncCatalogs(refreshed)
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_POSITION,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == positionKey }.rowPlacement,
-        )
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_BOTTOM,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == bottomKey }.rowPlacement,
-        )
-
-        HomeCatalogSettingsRepository.clearLocalState()
-        HomeCatalogSettingsRepository.syncCatalogs(refreshed)
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_POSITION,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == positionKey }.rowPlacement,
-        )
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_BOTTOM,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == bottomKey }.rowPlacement,
-        )
-    }
-
-    @Test
-    fun movingAnotherRowAcrossPositionPinnedRowDoesNotDisplaceTheAnchor() {
-        HomeCatalogSettingsRepository.syncCatalogs(listOf(addon(listOf("popular", "middle", "latest"))))
-        val pinnedKey = "test:movie:middle"
-        HomeCatalogSettingsRepository.setRowPlacement(
-            pinnedKey,
-            HomeCatalogRowPlacement.PINNED_POSITION,
-        )
-
-        val before = HomeCatalogSettingsRepository.uiState.value.items.map { it.key }
-        val pinnedIndex = before.indexOf(pinnedKey)
-        assertTrue(pinnedIndex > 0)
-
-        HomeCatalogSettingsRepository.moveByIndex(fromIndex = 0, toIndex = pinnedIndex)
-
-        assertEquals(before, HomeCatalogSettingsRepository.uiState.value.items.map { it.key })
-        assertEquals(
-            HomeCatalogRowPlacement.PINNED_POSITION,
-            HomeCatalogSettingsRepository.uiState.value.items.single { it.key == pinnedKey }.rowPlacement,
-        )
-    }
-
-    @Test
-    
 
     @Test
     fun unchangedCollectionsDoNotRewriteSettings() {
@@ -476,9 +319,7 @@ class HomeCatalogSettingsRepositoryTest {
             version = "1",
             resources = emptyList(),
             types = listOf("movie"),
-            catalogs = catalogIds.map { catalogId ->
-                AddonCatalog(type = "movie", id = catalogId, name = catalogId)
-            },
+            catalogs = catalogIds.map { id -> AddonCatalog(type = "movie", id = id, name = id) },
             transportUrl = "https://example.com",
         ),
     )

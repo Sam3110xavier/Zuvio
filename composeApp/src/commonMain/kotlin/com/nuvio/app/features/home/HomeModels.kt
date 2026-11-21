@@ -37,21 +37,6 @@ enum class PosterShape {
     Landscape,
 }
 
-data class HomeCatalogTab(
-    val key: String,
-    val title: String,
-    val items: List<MetaPreview>,
-    val availableItemCount: Int = items.size,
-    val hasMore: Boolean = false,
-)
-
-const val HOME_CATALOG_PREVIEW_LIMIT = 18
-
-internal fun homeCatalogPreviewItems(
-    selectedTab: HomeCatalogTab?,
-    fallbackItems: List<MetaPreview>,
-): List<MetaPreview> = (selectedTab?.items ?: fallbackItems).take(HOME_CATALOG_PREVIEW_LIMIT)
-
 data class HomeCatalogSection(
     val key: String,
     val title: String,
@@ -61,14 +46,10 @@ data class HomeCatalogSection(
     val items: List<MetaPreview>,
     val availableItemCount: Int = items.size,
     val hasMore: Boolean = false,
-    val isMergedRow: Boolean = false,
-    val displayMode: String? = null,
-    val sourceTabs: List<HomeCatalogTab> = emptyList(),
-    val supportsViewAll: Boolean = true,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =
-    supportsViewAll && (isMergedRow || availableItemCount > previewLimit || hasMore)
+    availableItemCount > previewLimit || hasMore
 
 data class HomeUiState(
     val isLoading: Boolean = false,

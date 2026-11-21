@@ -6,9 +6,6 @@
     <cache-path
         name="nuvio_subtitles"
         path="subtitles/" />
-    <cache-path
-        name="nuvio_debug_exports"
-        path="debug-exports/" />
     <files-path
         name="nuvio_downloads"
         path="downloads/" />

@@ -27,7 +27,6 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.LocalScreenActive
 import com.nuvio.app.core.ui.NuvioShelfSection
-import com.nuvio.app.core.ui.NETFLIX_HOME_POSTER_WIDTH_DP
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.landscapePosterWidth
 import com.nuvio.app.core.ui.nuvioCardDepth
@@ -100,27 +99,22 @@ private fun CollectionFolderCard(
     onClick: (() -> Unit)? = null,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
-    val netflixStyleEnabled = posterCardStyle.netflixStyleEnabled
-    val effectivePosterCardStyle = if (netflixStyleEnabled) {
-        val width = maxOf(posterCardStyle.widthDp, NETFLIX_HOME_POSTER_WIDTH_DP)
-        posterCardStyle.copy(widthDp = width, heightDp = (width * 3) / 2, cornerRadiusDp = minOf(posterCardStyle.cornerRadiusDp, 8), catalogLandscapeModeEnabled = false)
-    } else posterCardStyle
-    val isLandscapeMode = effectivePosterCardStyle.catalogLandscapeModeEnabled
+    val isLandscapeMode = posterCardStyle.catalogLandscapeModeEnabled
     val shape = if (isLandscapeMode) PosterShape.Landscape else folder.posterShape
     val cardWidth: Dp
     val aspectRatio: Float
 
     when (shape) {
         PosterShape.Poster -> {
-            cardWidth = effectivePosterCardStyle.widthDp.dp
+            cardWidth = posterCardStyle.widthDp.dp
             aspectRatio = 0.675f
         }
         PosterShape.Landscape -> {
-            cardWidth = landscapePosterWidth(effectivePosterCardStyle.widthDp)
+            cardWidth = landscapePosterWidth(posterCardStyle.widthDp)
             aspectRatio = PosterLandscapeAspectRatio
         }
         PosterShape.Square -> {
-            cardWidth = effectivePosterCardStyle.widthDp.dp
+            cardWidth = posterCardStyle.widthDp.dp
             aspectRatio = 1f
         }
     }
@@ -129,7 +123,7 @@ private fun CollectionFolderCard(
         modifier = modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val shapeCorner = RoundedCornerShape(effectivePosterCardStyle.cornerRadiusDp.dp)
+        val shapeCorner = RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp)
         val imageUrl = collectionFolderCardImageUrl(folder)
         Card(
             modifier = Modifier
@@ -161,7 +155,6 @@ private fun CollectionFolderCard(
                             animateIfPossible = animateGifs &&
                                 isAnimatedCollectionFolderImage(folder, imageUrl) &&
                                 LocalScreenActive.current,
-                            fallbackImageUrl = firstNonBlank(folder.coverImageUrl),
                         )
                     }
                     !folder.coverEmoji.isNullOrBlank() -> {
@@ -204,16 +197,10 @@ private fun CollectionFolderCard(
 
 private fun collectionFolderCardImageUrl(folder: CollectionFolder): String? {
     return if (folder.mobileFocusGifEnabled) {
-        firstNonBlank(folder.focusGifUrl?.withPlayableGifExtension(), folder.coverImageUrl)
+        firstNonBlank(folder.focusGifUrl, folder.coverImageUrl)
     } else {
         firstNonBlank(folder.coverImageUrl)
     }
-}
-
-private fun String.withPlayableGifExtension(): String {
-    val path = substringBefore('?').substringBefore('#')
-    if (!path.endsWith(".gifv", ignoreCase = true)) return this
-    return path.dropLast(1) + removePrefix(path)
 }
 
 private fun firstNonBlank(vararg candidates: String?): String? {
@@ -224,6 +211,6 @@ private fun isAnimatedCollectionFolderImage(
     folder: CollectionFolder,
     imageUrl: String,
 ): Boolean {
-    val gifUrl = firstNonBlank(folder.focusGifUrl?.withPlayableGifExtension()) ?: return false
+    val gifUrl = firstNonBlank(folder.focusGifUrl) ?: return false
     return folder.mobileFocusGifEnabled && imageUrl == gifUrl
 }

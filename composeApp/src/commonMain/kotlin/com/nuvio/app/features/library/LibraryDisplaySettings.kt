@@ -43,7 +43,6 @@ enum class LibraryViewMode {
     Saved,
     Downloaded,
     Cloud,
-    Telegram,
     Servers;
 
     /** Saved and Downloaded both show titles in library sections, with the same layout and sorting. */
@@ -176,20 +175,25 @@ internal fun sortLibraryItems(
                 .thenBy { it.id },
         )
         LibrarySortOption.ADDED_DESC -> items.sortedWith(
-            providerOrder?.let { ranks -> libraryProviderOrderComparator(ranks, compareByDescending<LibraryItem> { it.savedAtEpochMs }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id }) }
-                ?: compareByDescending<LibraryItem> { it.savedAtEpochMs }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id },
+            providerOrder?.let(::libraryProviderOrderComparator) ?: compareByDescending<LibraryItem> { it.savedAtEpochMs }
+                .thenBy { libraryTitleTieBreakKey(it) }
+                .thenBy { it.id },
         )
         LibrarySortOption.ADDED_ASC -> items.sortedWith(
-            providerOrder?.let { ranks -> libraryProviderOrderComparator(ranks, compareBy<LibraryItem> { it.savedAtEpochMs }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id }) }
-                ?: compareBy<LibraryItem> { it.savedAtEpochMs }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id },
+            providerOrder?.let(::libraryProviderOrderComparator) ?: compareBy<LibraryItem> { it.savedAtEpochMs }
+                .thenBy { libraryTitleTieBreakKey(it) }
+                .thenBy { it.id },
         )
         LibrarySortOption.RELEASED_DESC -> items.sortedWith(
-            providerOrder?.let { ranks -> libraryProviderOrderComparator(ranks, compareByDescending<LibraryItem> { libraryReleaseYear(it) }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id }) }
-                ?: compareByDescending<LibraryItem> { libraryReleaseYear(it) }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id },
+            providerOrder?.let(::libraryProviderOrderComparator) ?: compareByDescending<LibraryItem> { libraryReleaseYear(it) }
+                .thenBy { libraryTitleTieBreakKey(it) }
+                .thenBy { it.id },
         )
         LibrarySortOption.RELEASED_ASC -> items.sortedWith(
-            providerOrder?.let { ranks -> libraryProviderOrderComparator(ranks, compareBy<LibraryItem, Int?>(nullsLast()) { libraryReleaseYear(it) }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id }) }
-                ?: compareBy<LibraryItem, Int?>(nullsLast()) { libraryReleaseYear(it) }.thenBy { libraryTitleTieBreakKey(it) }.thenBy { it.id },
+            providerOrder?.let(::libraryProviderOrderComparator)
+                ?: compareBy<LibraryItem, Int?>(nullsLast()) { libraryReleaseYear(it) }
+                    .thenBy { libraryTitleTieBreakKey(it) }
+                    .thenBy { it.id },
         )
         LibrarySortOption.TITLE_ASC -> items.sortedWith(
             compareBy<LibraryItem> { libraryTitleSortKey(it) }
@@ -222,17 +226,10 @@ internal fun buildLibraryVerticalProjection(
     selectedYear: String? = null,
     watchedFilter: LibraryWatchedFilter = LibraryWatchedFilter.ALL,
     isWatched: (LibraryItem) -> Boolean = { false },
-    selectSection: Boolean = true,
 ): LibraryVerticalProjection {
-    // Local status sections are a navigation projection: hide statuses with no
-    // saved items, while remote providers may intentionally expose empty destinations.
-    val availableSections = if (sourceMode == LibrarySourceMode.LOCAL) {
-        sections.filter { it.items.isNotEmpty() }
-    } else {
-        sections
-    }
-    val selectedSection = if (sourceMode != LibrarySourceMode.LOCAL && selectSection) {
-        availableSections.firstOrNull { it.type == selectedSectionKey } ?: availableSections.firstOrNull()
+    val availableSections = if (sourceMode.isRemoteTrackingSource) sections else emptyList()
+    val selectedSection = if (sourceMode.isRemoteTrackingSource) {
+        sections.firstOrNull { it.type == selectedSectionKey } ?: sections.firstOrNull()
     } else {
         null
     }
@@ -250,16 +247,11 @@ internal fun buildLibraryVerticalProjection(
             deduplicatedEntries[key] = entry
         }
     }
-    val availableTypes = if (sourceMode == LibrarySourceMode.WETRAKR) listOf("movie", "series") else {
-        deduplicatedEntries.values
-            .map { entry -> (entry.item.mediaCategory ?: entry.item.type).normalizedLibraryType() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sortedWith(
-                compareBy<String> { type -> LibraryTypeOrder.indexOf(type).takeIf { it >= 0 } ?: LibraryTypeOrder.size }
-                    .thenBy { it },
-            )
-    }
+    val availableTypes = deduplicatedEntries.values
+        .map { entry -> (entry.item.mediaCategory ?: entry.item.type).normalizedLibraryType() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .sortedWith(compareBy<String> { type -> LibraryTypeOrder.indexOf(type).takeIf { it >= 0 } ?: LibraryTypeOrder.size }.thenBy { it })
     val effectiveType = selectedType
         ?.normalizedLibraryType()
         ?.takeIf { it in availableTypes }
@@ -392,12 +384,7 @@ private fun libraryTitleTieBreakKey(item: LibraryItem): String =
 internal fun libraryDisplayItemKey(item: LibraryItem): String =
     "${item.type.normalizedLibraryType()}:${item.id.trim()}"
 
-internal fun normalizeLibraryMediaType(value: String): String = when (value.trim().lowercase()) {
-    "movie", "movies", "film", "films" -> "movie"
-    "series", "tv", "show", "shows" -> "series"
-    else -> value.trim().lowercase()
-}
-private fun String.normalizedLibraryType(): String = normalizeLibraryMediaType(this)
+private fun String.normalizedLibraryType(): String = trim().lowercase()
 
 internal val LibrarySourceMode.isRemoteTrackingSource: Boolean
     get() = this != LibrarySourceMode.LOCAL
@@ -411,7 +398,5 @@ private data class StoredLibraryDisplaySettings(
     @SerialName("selected_type") val selectedType: String? = null,
 )
 
-private fun libraryProviderOrderComparator(ranks: Map<String, Int>, fallback: Comparator<LibraryItem>): Comparator<LibraryItem> =
-    compareBy<LibraryItem> { libraryDisplayItemKey(it) !in ranks }
-        .thenBy { ranks[libraryDisplayItemKey(it)] ?: Int.MAX_VALUE }
-        .then(fallback)
+private fun libraryProviderOrderComparator(ranks: Map<String, Int>): Comparator<LibraryItem> =
+    compareBy<LibraryItem> { ranks[libraryDisplayItemKey(it)] ?: Int.MAX_VALUE }.thenBy { it.id }

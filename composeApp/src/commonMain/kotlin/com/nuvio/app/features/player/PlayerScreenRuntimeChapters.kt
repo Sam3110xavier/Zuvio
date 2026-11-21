@@ -62,7 +62,7 @@ internal fun PlayerScreenRuntime.adoptSnapshotChaptersIfNeeded() {
 private fun PlayerScreenRuntime.onChaptersLoaded(chapters: List<PlayerChapter>) {
     skipDetectionChapters = chapters
     skipChaptersComputedForDuration = 0L
-    if (playerSettingsUiState.skipIntroEnabled || playerSettingsUiState.movieRecommendationsEnabled) {
+    if (playerSettingsUiState.skipIntroEnabled) {
         tryComputeChapterSkipIntervals()
     }
 }
@@ -81,7 +81,7 @@ private fun PlayerScreenRuntime.tryComputeChapterSkipIntervals(): Boolean {
  * Called from the playback tick. Retries once duration is known, then stops.
  */
 internal fun PlayerScreenRuntime.recomputeChapterSkipIntervalsIfNeeded() {
-    if (!playerSettingsUiState.skipIntroEnabled && !playerSettingsUiState.movieRecommendationsEnabled) return
+    if (!playerSettingsUiState.skipIntroEnabled) return
     if (skipChaptersComputedForDuration > 0L) return
     tryComputeChapterSkipIntervals()
 }
