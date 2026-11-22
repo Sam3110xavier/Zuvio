@@ -149,6 +149,14 @@ object FolderDetailRepository {
         )
         if (sources.isEmpty()) return
 
+        val requiresAddonManifests = sources.any { source ->
+            !source.isTmdb && !source.isTrakt && source.addonCatalogSource() != null
+        }
+        if (!requiresAddonManifests) {
+            initializeResolvedFolder(collection, folder, showCatalogType)
+            return
+        }
+
         log.i { "Waiting for addon manifests before resolving folder collection=${collectionId} folder=${folderId}" }
         initializeJob = scope.launch {
             AddonRepository.awaitManifestsLoaded()
