@@ -148,7 +148,7 @@ object AddonRepository {
         val requestProfileId = resolveEffectiveProfileId(profileId)
         activateProfile(requestProfileId).forEach(Job::cancel)
         val requestGeneration = synchronized(activeRefreshJobsLock) {
-            if (requestProfileId != requestProfileId) return
+            if (currentProfileId != requestProfileId) return
             profileGeneration
         }
         log.i { "pullFromServer() — profileId=$requestProfileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
