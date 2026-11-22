@@ -26,6 +26,25 @@ class CollectionCatalogResolverTest {
     }
 
     @Test
+    fun declaredAddonWithoutCatalogDoesNotFallBackToUnrelatedAddon() {
+        val declaredAddon = addon(
+            manifestId = "target.addon",
+            manifestUrl = "https://target.example/manifest.json",
+        ).copy(
+            manifest = addon(
+                manifestId = "target.addon",
+                manifestUrl = "https://target.example/manifest.json",
+            ).manifest?.copy(catalogs = emptyList()),
+        )
+        val unrelatedAddon = addon(
+            manifestId = "other.addon",
+            manifestUrl = "https://other.example/manifest.json",
+        )
+
+        assertNull(listOf(declaredAddon, unrelatedAddon).findCollectionCatalog(source()))
+    }
+
+    @Test
     fun legacyAddonIdFallsBackWhenThereIsExactlyOneCatalogMatch() {
         val onlyMatchingAddon = addon(
             manifestId = "renamed.addon",
