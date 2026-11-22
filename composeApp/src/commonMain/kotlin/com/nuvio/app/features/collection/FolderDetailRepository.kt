@@ -99,6 +99,7 @@ object FolderDetailRepository {
     val uiState: StateFlow<FolderDetailUiState> = _uiState.asStateFlow()
 
     private val loadJobs = mutableMapOf<Int, Job>()
+    private var initializeJob: Job? = null
     private var activeCollectionId: String? = null
     private var activeFolderId: String? = null
     private var activeShowCatalogType: Boolean? = null
@@ -149,7 +150,7 @@ object FolderDetailRepository {
         if (sources.isEmpty()) return
 
         log.i { "Waiting for addon manifests before resolving folder collection=${collectionId} folder=${folderId}" }
-        scope.launch {
+        initializeJob = scope.launch {
             AddonRepository.awaitManifestsLoaded()
             if (
                 initializeGeneration != generation ||
@@ -317,6 +318,8 @@ object FolderDetailRepository {
 
     fun clear() {
         initializeGeneration++
+        initializeJob?.cancel()
+        initializeJob = null
         loadJobs.values.forEach { it.cancel() }
         loadJobs.clear()
         activeCollectionId = null
@@ -385,6 +388,7 @@ object FolderDetailRepository {
         }
 
         loadJobs.remove(index)?.cancel()
+        val generation = initializeGeneration
         val job = scope.launch {
             runCatching {
                 val source = currentTab.source
@@ -408,6 +412,7 @@ object FolderDetailRepository {
                     )
                 }.withUnreleasedFilter()
             }.onSuccess { page ->
+                if (generation != initializeGeneration) return@onSuccess
                 log.i {
                     "Collection catalog loaded catalogId=${currentTab.catalogId} type=${currentTab.type} " +
                         "rawItems=${page.rawItemCount} parsedItems=${page.items.size} skip=${requestedSkip}"
@@ -443,6 +448,8 @@ object FolderDetailRepository {
                 }
                 rebuildAllTab()
             }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                if (generation != initializeGeneration) return@onFailure
                 log.e(error) { "Failed to load source ${currentTab.catalogId}" }
                 updateTab(index) { tab ->
                     tab.copy(
