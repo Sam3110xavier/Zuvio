@@ -346,7 +346,7 @@ object AddonRepository {
 
     suspend fun awaitManifestsLoaded() {
         uiState.first { state ->
-            state.addons.none { addon -> addon.enabled && addon.isRefreshing }
+            !state.addons.hasPendingEnabledManifests()
         }
     }
 
