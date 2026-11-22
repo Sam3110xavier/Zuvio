@@ -30,11 +30,7 @@ class CollectionCatalogResolverTest {
         val declaredAddon = addon(
             manifestId = "target.addon",
             manifestUrl = "https://target.example/manifest.json",
-        ).copy(
-            manifest = addon(
-                manifestId = "target.addon",
-                manifestUrl = "https://target.example/manifest.json",
-            ).manifest?.copy(catalogs = emptyList()),
+            catalogs = emptyList(),
         )
         val unrelatedAddon = addon(
             manifestId = "other.addon",
@@ -79,6 +75,13 @@ class CollectionCatalogResolverTest {
     private fun addon(
         manifestId: String,
         manifestUrl: String,
+        catalogs: List<AddonCatalog> = listOf(
+            AddonCatalog(
+                type = "movie",
+                id = "popular",
+                name = "Popular",
+            ),
+        ),
     ) = ManagedAddon(
         manifestUrl = manifestUrl,
         manifest = AddonManifest(
@@ -88,13 +91,7 @@ class CollectionCatalogResolverTest {
             version = "1.0.0",
             resources = emptyList(),
             types = listOf("movie"),
-            catalogs = listOf(
-                AddonCatalog(
-                    type = "movie",
-                    id = "popular",
-                    name = "Popular",
-                ),
-            ),
+            catalogs = catalogs,
             transportUrl = manifestUrl,
         ),
     )
