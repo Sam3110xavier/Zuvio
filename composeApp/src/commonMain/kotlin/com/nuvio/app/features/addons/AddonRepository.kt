@@ -151,9 +151,11 @@ object AddonRepository {
         }
 
         val effectiveProfileId = resolveEffectiveProfileId(profileId)
-        activateProfile(effectiveProfileId).forEach(Job::cancel)
         val expectedGeneration = synchronized(activeRefreshJobsLock) {
-            if (!isProfileGenerationCurrentLocked(effectiveProfileId, profileGeneration)) return
+            if (!isProfileGenerationCurrentLocked(effectiveProfileId, profileGeneration)) {
+                log.w { "pullFromServer() — profile generation is not active profileId=$effectiveProfileId current=$currentProfileId" }
+                return
+            }
             profileGeneration
         }
 
@@ -196,8 +198,12 @@ object AddonRepository {
             InAppLogger.info("Addons/Repository", "pullFromServer serverRows=${rows.size} uniqueUrls=${urls.size}")
             urls.forEachIndexed { index, url -> log.d { "  server[$index]: $url" } }
 
+            val activeProfileMatches = ProfileRepository.activeProfileId == profileId
             val alreadyPulled = synchronized(activeRefreshJobsLock) {
-                if (isCurrentProfile()) pulledFromServer else null
+                if (
+                    activeProfileMatches &&
+                    isProfileGenerationCurrentLocked(effectiveProfileId, expectedGeneration)
+                ) pulledFromServer else null
             } ?: return@runCatching
 
             if (urls.isEmpty() && !alreadyPulled) {
@@ -218,7 +224,10 @@ object AddonRepository {
                     ) return@runCatching
 
                     val addonsToPush = synchronized(activeRefreshJobsLock) {
-                        if (!isCurrentProfile()) null
+                        if (
+                            ProfileRepository.activeProfileId != profileId ||
+                            !isProfileGenerationCurrentLocked(effectiveProfileId, expectedGeneration)
+                        ) null
                         else _uiState.value.addons.mapIndexed { index, addon ->
                             AddonPushItem(
                                 url = addon.manifestUrl,
