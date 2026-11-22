@@ -2090,7 +2090,7 @@
     <string name="addon_already_installed">That addon is already installed.</string>
     <string name="addon_invalid_url">Enter a valid addon URL</string>
     <string name="addon_load_manifest_failed">Unable to load manifest</string>
-    <string name="app_brand_name">Nuvio</string>
+    <string name="app_brand_name">Zuvio</string>
     <string name="auth_account_deletion_failed">Account deletion failed</string>
     <string name="auth_sign_in_failed">Sign-in failed</string>
     <string name="auth_sign_out_failed">Sign-out failed</string>
@@ -3210,7 +3210,7 @@
     <string name="downloads_storage_title">Device Storage</string>
     <string name="downloads_storage_free_of_total">%1$s free of %2$s</string>
     <string name="downloads_storage_legend_value">%1$s: %2$s</string>
-    <string name="downloads_storage_app">Nuvio Downloads</string>
+    <string name="downloads_storage_app">Zuvio Downloads</string>
     <string name="downloads_storage_other">Other Apps &amp; System</string>
     <string name="downloads_storage_free">Free Space</string>
     <string name="downloads_episode_fallback_title">Episode %1$d</string>
