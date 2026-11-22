@@ -68,6 +68,7 @@ data class ManagedAddon(
     val enabled: Boolean = true,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val hideCatalogs: Boolean = false,
 ) {
     val isActive: Boolean
         get() = enabled && manifest != null
