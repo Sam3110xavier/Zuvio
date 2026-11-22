@@ -19,12 +19,14 @@ internal fun List<ManagedAddon>.findCollectionCatalog(
         return ResolvedCollectionCatalog(addon = declaredAddon, catalog = declaredCatalog)
     }
 
-    return activeAddons.firstNotNullOfOrNull { addon ->
-        val catalog = addon.manifest?.catalogs?.find {
-            it.id == source.catalogId && it.type == source.type
-        } ?: return@firstNotNullOfOrNull null
+    // Imported/legacy collections may refer to an old addon ID. A fallback is safe only
+    // when exactly one enabled addon declares this catalog; choosing the first match can send
+    // the request to an unrelated addon and silently produce an empty catalog.
+    val fallbackMatches = activeAddons.mapNotNull { addon ->
+        val catalog = addon.manifest?.catalogs?.findSourceCatalog(source) ?: return@mapNotNull null
         ResolvedCollectionCatalog(addon = addon, catalog = catalog)
     }
+    return fallbackMatches.singleOrNull()
 }
 
 internal fun List<AvailableCatalog>.findAvailableCatalog(
