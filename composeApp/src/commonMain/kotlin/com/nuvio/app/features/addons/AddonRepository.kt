@@ -258,6 +258,7 @@ object AddonRepository {
             log.i { "pullFromServer() — applied ${urls.size} addons to state" }
             InAppLogger.info("Addons/Repository", "pullFromServer applied=${urls.size}")
         }.onFailure { e ->
+            if (e is CancellationException) throw e
             log.e(e) { "pullFromServer() — FAILED" }
             InAppLogger.error("Addons/Repository", "pullFromServer failed: ${InAppLogger.throwableSummary(e)}")
         }
