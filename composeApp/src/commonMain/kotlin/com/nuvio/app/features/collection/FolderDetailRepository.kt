@@ -141,7 +141,7 @@ object FolderDetailRepository {
             folder = folder,
             collectionTitle = collection.title,
             viewMode = collection.folderViewMode,
-            tabs = if (sources.isEmpty()) emptyList() else listOf(FolderTab(isLoading = true)),
+            tabs = if (sources.isEmpty()) emptyList() else listOf(FolderTab(label = "", isLoading = true)),
             selectedTabIndex = 0,
             isLoading = sources.isNotEmpty(),
             showAllTab = showAll,
