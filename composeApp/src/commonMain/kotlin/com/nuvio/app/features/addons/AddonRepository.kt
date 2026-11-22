@@ -198,7 +198,7 @@ object AddonRepository {
                     SupabaseProvider.client.postgrest.rpc("sync_push_addons", params)
                     log.i { "pullFromServer() — migration push done (${addons.size} addons)" }
                     InAppLogger.info("Addons/Repository", "migrated local addons to server count=${addons.size}")
-                    return
+                    return@runCatching
                 }
             }
 
@@ -228,7 +228,7 @@ object AddonRepository {
                     }
                     pulledFromServer = true
                     initialized = true
-                    return
+                    return@runCatching
                 }
             }
 
@@ -261,14 +261,12 @@ object AddonRepository {
             log.e(e) { "pullFromServer() — FAILED" }
             InAppLogger.error("Addons/Repository", "pullFromServer failed: ${InAppLogger.throwableSummary(e)}")
         }
+        awaitManifestsLoaded()
     }
 
     suspend fun awaitManifestsLoaded() {
-        if (_uiState.value.addons.isEmpty()) return
         uiState.first { state ->
-            state.addons.isEmpty() ||
-                state.addons.any { it.manifest != null } ||
-                state.addons.none { it.isRefreshing }
+            state.addons.none { addon -> addon.enabled && addon.isRefreshing }
         }
     }
 
