@@ -102,6 +102,7 @@ object FolderDetailRepository {
     private var activeCollectionId: String? = null
     private var activeFolderId: String? = null
     private var activeShowCatalogType: Boolean? = null
+    private var initializeGeneration: Long = 0L
 
     fun initialize(collectionId: String, folderId: String) {
         val current = _uiState.value
@@ -120,6 +121,7 @@ object FolderDetailRepository {
         activeCollectionId = collectionId
         activeFolderId = folderId
         activeShowCatalogType = showCatalogType
+        val generation = initializeGeneration
 
         val collection = CollectionRepository.getCollection(collectionId)
         if (collection == null) {
@@ -148,7 +150,12 @@ object FolderDetailRepository {
 
         scope.launch {
             AddonRepository.awaitManifestsLoaded()
-            if (activeCollectionId != collectionId || activeFolderId != folderId) return@launch
+            if (
+                initializeGeneration != generation ||
+                activeCollectionId != collectionId ||
+                activeFolderId != folderId ||
+                activeShowCatalogType != showCatalogType
+            ) return@launch
             initializeResolvedFolder(collection, folder, showCatalogType)
         }
     }
@@ -302,6 +309,7 @@ object FolderDetailRepository {
     }
 
     fun clear() {
+        initializeGeneration++
         loadJobs.values.forEach { it.cancel() }
         loadJobs.clear()
         activeCollectionId = null
