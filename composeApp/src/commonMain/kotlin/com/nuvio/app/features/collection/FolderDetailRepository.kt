@@ -135,130 +135,168 @@ object FolderDetailRepository {
 
         val sources = folder.resolvedSources
         val showAll = collection.showAllTab && sources.size > 1
-        val addons = AddonRepository.uiState.value.addons
-
-        val tabs = buildList {
-            if (showAll) {
-                add(
-                    FolderTab(
-                        label = runBlocking { getString(Res.string.collections_tab_all) },
-                        isAllTab = true,
-                        isLoading = true,
-                    ),
-                )
-            }
-            sources.forEachIndexed { sourceIndex, source ->
-                if (source.isTmdb) {
-                    val mediaType = TmdbCollectionMediaType.fromString(source.mediaType)
-                    val type = if (mediaType == TmdbCollectionMediaType.TV) "series" else "movie"
-                    add(
-                        FolderTab(
-                            label = source.title?.takeIf { it.isNotBlank() } ?: "TMDB",
-                            typeLabel = "TMDB",
-                            source = source,
-                            sourceKey = source.catalogRouteKey(),
-                            type = type,
-                            catalogId = tmdbCatalogId(source),
-                            supportsPagination = source.tmdbSourceType !in setOf(
-                                TmdbCollectionSourceType.COLLECTION.name,
-                                TmdbCollectionSourceType.PERSON.name,
-                                TmdbCollectionSourceType.DIRECTOR.name,
-                            ),
-                            isLoading = true,
-                        ),
-                    )
-                } else if (source.isTrakt) {
-                    val mediaType = TmdbCollectionMediaType.fromString(source.mediaType)
-                    val type = if (mediaType == TmdbCollectionMediaType.TV) "series" else "movie"
-                    val typeLabel = runBlocking {
-                        getString(
-                            if (mediaType == TmdbCollectionMediaType.TV) {
-                                Res.string.collections_folder_trakt_series_list
-                            } else {
-                                Res.string.collections_folder_trakt_movie_list
-                            },
-                        )
-                    }
-                    add(
-                        FolderTab(
-                            label = source.title?.takeIf { it.isNotBlank() } ?: "Trakt",
-                            typeLabel = typeLabel,
-                            source = source,
-                            sourceKey = source.catalogRouteKey(),
-                            type = type,
-                            catalogId = traktCatalogId(source),
-                            supportsPagination = true,
-                            isLoading = true,
-                        ),
-                    )
-                } else {
-                    val catalogSource = source.addonCatalogSource() ?: return@forEachIndexed
-                    val resolvedCatalog = addons.findCollectionCatalog(catalogSource)
-                    val addon = resolvedCatalog?.addon
-                    val catalog = resolvedCatalog?.catalog
-                    val typeLabel = localizedMediaTypeLabel(catalogSource.type)
-                    add(
-                        FolderTab(
-                            label = folderCatalogTabLabel(
-                                catalogName = catalog?.name ?: catalogSource.catalogId,
-                                typeLabel = typeLabel,
-                                genre = catalogSource.genre,
-                                showCatalogType = showCatalogType,
-                                withType = { name, type ->
-                                    runBlocking { getString(Res.string.home_catalog_default_title, name, type) }
-                                },
-                            ),
-                            typeLabel = typeLabel,
-                            source = source,
-                            sourceKey = source.catalogRouteKey(),
-                            manifestUrl = addon?.manifestUrl,
-                            type = catalogSource.type,
-                            catalogId = catalogSource.catalogId,
-                            genre = catalogSource.genre,
-                            supportsPagination = catalog?.supportsPagination() == true,
-                            isLoading = true,
-                        ),
-                    )
-                }
-            }
-        }
-
         _uiState.value = FolderDetailUiState(
             folder = folder,
             collectionTitle = collection.title,
             viewMode = collection.folderViewMode,
-            tabs = tabs,
+            tabs = if (sources.isEmpty()) emptyList() else listOf(FolderTab(isLoading = true)),
             selectedTabIndex = 0,
-            isLoading = true,
+            isLoading = sources.isNotEmpty(),
             showAllTab = showAll,
         )
+        if (sources.isEmpty()) return
 
-        // Load catalog data for each source
-        sources.forEachIndexed { sourceIndex, source ->
-            val tabIndex = if (showAll) sourceIndex + 1 else sourceIndex
-            val catalogSource = source.addonCatalogSource()
-            val resolvedCatalog = catalogSource?.let { addons.findCollectionCatalog(it) }
-            if (!source.isTmdb && !source.isTrakt && resolvedCatalog == null) {
-                updateTab(tabIndex) {
-                    it.copy(
-                        isLoading = false,
-                        error = runBlocking {
-                            getString(Res.string.collections_folder_addon_not_found, catalogSource?.addonId.orEmpty())
-                        },
-                    )
-                }
-                return@forEachIndexed
-            }
-
-            loadTabPage(tabIndex, reset = true)
-        }
-
-        // If no sources, mark as done
-        if (sources.isEmpty()) {
-            _uiState.value = _uiState.value.copy(isLoading = false)
+        scope.launch {
+            AddonRepository.awaitManifestsLoaded()
+            if (activeCollectionId != collectionId || activeFolderId != folderId) return@launch
+            initializeResolvedFolder(collection, folder, showCatalogType)
         }
     }
 
+
+    private fun initializeResolvedFolder(
+        collection: Collection,
+        folder: CollectionFolder,
+        showCatalogType: Boolean,
+    ) {
+    val sources = folder.resolvedSources
+    val showAll = collection.showAllTab && sources.size > 1
+    val addons = AddonRepository.uiState.value.addons
+
+    val sourceTabs = buildList {
+        sources.forEach { source ->
+            if (source.isTmdb) {
+                val mediaType = TmdbCollectionMediaType.fromString(source.mediaType)
+                val type = if (mediaType == TmdbCollectionMediaType.TV) "series" else "movie"
+                add(
+                    FolderTab(
+                        label = source.title?.takeIf { it.isNotBlank() } ?: "TMDB",
+                        typeLabel = "TMDB",
+                        source = source,
+                        sourceKey = source.catalogRouteKey(),
+                        type = type,
+                        catalogId = tmdbCatalogId(source),
+                        supportsPagination = source.tmdbSourceType !in setOf(
+                            TmdbCollectionSourceType.COLLECTION.name,
+                            TmdbCollectionSourceType.PERSON.name,
+                            TmdbCollectionSourceType.DIRECTOR.name,
+                        ),
+                        isLoading = true,
+                    ),
+                )
+            } else if (source.isTrakt) {
+                val mediaType = TmdbCollectionMediaType.fromString(source.mediaType)
+                val type = if (mediaType == TmdbCollectionMediaType.TV) "series" else "movie"
+                val typeLabel = runBlocking {
+                    getString(
+                        if (mediaType == TmdbCollectionMediaType.TV) {
+                            Res.string.collections_folder_trakt_series_list
+                        } else {
+                            Res.string.collections_folder_trakt_movie_list
+                        },
+                    )
+                }
+                add(
+                    FolderTab(
+                        label = source.title?.takeIf { it.isNotBlank() } ?: "Trakt",
+                        typeLabel = typeLabel,
+                        source = source,
+                        sourceKey = source.catalogRouteKey(),
+                        type = type,
+                        catalogId = traktCatalogId(source),
+                        supportsPagination = true,
+                        isLoading = true,
+                    ),
+                )
+            } else {
+                val catalogSource = source.addonCatalogSource()
+                val resolvedCatalog = catalogSource?.let(addons::findCollectionCatalog)
+                val addon = resolvedCatalog?.addon
+                val catalog = resolvedCatalog?.catalog
+                val type = catalogSource?.type ?: source.type.orEmpty()
+                val catalogId = catalogSource?.catalogId ?: source.catalogId.orEmpty()
+                val genre = catalogSource?.genre
+                val typeLabel = localizedMediaTypeLabel(type)
+                add(
+                    FolderTab(
+                        label = folderCatalogTabLabel(
+                            catalogName = catalog?.name
+                                ?: catalogId.ifBlank { source.title?.takeIf(String::isNotBlank) ?: "Add-on" },
+                            typeLabel = typeLabel,
+                            genre = genre,
+                            showCatalogType = showCatalogType,
+                            withType = { name, type ->
+                                runBlocking { getString(Res.string.home_catalog_default_title, name, type) }
+                            },
+                        ),
+                        typeLabel = typeLabel,
+                        source = source,
+                        sourceKey = source.catalogRouteKey(),
+                        manifestUrl = addon?.manifestUrl,
+                        type = type,
+                        catalogId = catalogId,
+                        genre = genre,
+                        supportsPagination = catalog?.supportsPagination() == true,
+                        isLoading = true,
+                    ),
+                )
+            }
+        }
+    }
+
+    val tabs = buildList {
+        if (showAll) {
+            add(
+                FolderTab(
+                    label = runBlocking { getString(Res.string.collections_tab_all) },
+                    isAllTab = true,
+                    isLoading = true,
+                ),
+            )
+        }
+        addAll(sourceTabs)
+    }
+
+    _uiState.value = FolderDetailUiState(
+        folder = folder,
+        collectionTitle = collection.title,
+        viewMode = collection.folderViewMode,
+        tabs = tabs,
+        selectedTabIndex = 0,
+        isLoading = true,
+        showAllTab = showAll,
+    )
+
+    // Load tabs by their actual tab positions. Sources with invalid addon fields still get
+    // an error tab, so one skipped source cannot shift every subsequent tab index.
+    sourceTabs.forEachIndexed { sourceIndex, tab ->
+        val tabIndex = if (showAll) sourceIndex + 1 else sourceIndex
+        val source = tab.source ?: return@forEachIndexed
+        val catalogSource = source.addonCatalogSource()
+        val resolvedCatalog = catalogSource?.let { addons.findCollectionCatalog(it) }
+        if (!source.isTmdb && !source.isTrakt && resolvedCatalog == null) {
+            updateTab(tabIndex) {
+                it.copy(
+                    isLoading = false,
+                    error = runBlocking {
+                        getString(
+                            Res.string.collections_folder_addon_not_found,
+                            catalogSource?.addonId ?: source.addonId.orEmpty(),
+                        )
+                    },
+                )
+            }
+            return@forEachIndexed
+        }
+
+        loadTabPage(tabIndex, reset = true)
+    }
+
+    // If no sources, mark as done
+    if (sources.isEmpty()) {
+        _uiState.value = _uiState.value.copy(isLoading = false)
+    }
+    }
     fun selectTab(index: Int) {
         _uiState.value = _uiState.value.copy(selectedTabIndex = index)
     }
