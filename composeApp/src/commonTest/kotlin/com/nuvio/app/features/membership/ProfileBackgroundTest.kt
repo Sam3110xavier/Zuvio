@@ -7,23 +7,45 @@ import kotlin.test.assertNull
 
 class ProfileBackgroundTest {
     @Test
-    fun backgroundDoesNotRenderWithoutEntitlement() {
+    fun catalogBackgroundResolvesWithoutSupporterEntitlement() {
         val profile = NuvioProfile(profileBackgroundId = "aurora")
-
-        assertNull(resolveProfileBackground(profile, CosmeticEntitlements.None))
+        assertEquals(ProfileBackgroundSelection.Catalog("aurora"), resolveProfileBackground(profile))
     }
 
     @Test
-    fun customBackgroundTakesPriorityWhenEntitled() {
+    fun customBackgroundTakesPriorityOverCatalogBackground() {
         val profile = NuvioProfile(
             profileBackgroundId = "aurora",
             profileBackgroundUrl = "https://example.com/background.png",
         )
-        val entitlements = CosmeticEntitlements(setOf(CosmeticEntitlement.PROFILE_BACKGROUNDS))
-
         assertEquals(
             ProfileBackgroundSelection.Custom("https://example.com/background.png"),
-            resolveProfileBackground(profile, entitlements),
+            resolveProfileBackground(profile),
         )
+    }
+
+    @Test
+    fun blankCustomBackgroundFallsBackToCatalogBackground() {
+        val profile = NuvioProfile(
+            profileBackgroundId = "aurora",
+            profileBackgroundUrl = "  ",
+        )
+        assertEquals(ProfileBackgroundSelection.Catalog("aurora"), resolveProfileBackground(profile))
+    }
+
+    @Test
+    fun customBackgroundUrlIsTrimmed() {
+        val profile = NuvioProfile(
+            profileBackgroundUrl = "  https://example.com/background.png  ",
+        )
+        assertEquals(
+            ProfileBackgroundSelection.Custom("https://example.com/background.png"),
+            resolveProfileBackground(profile),
+        )
+    }
+
+    @Test
+    fun noBackgroundSelectionReturnsNull() {
+        assertNull(resolveProfileBackground(NuvioProfile()))
     }
 }

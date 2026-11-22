@@ -14,7 +14,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.ProfileMeshBackground
-import com.nuvio.app.features.membership.MemberAccessRepository
 import com.nuvio.app.features.membership.ProfileBackgroundRepository
 import com.nuvio.app.features.membership.ProfileBackgroundSelection
 import com.nuvio.app.features.membership.resolveProfileBackground
@@ -24,10 +23,6 @@ fun ProfileBackgroundBackdrop(
     profile: NuvioProfile?,
     modifier: Modifier = Modifier,
 ) {
-    val memberAccess by remember {
-        MemberAccessRepository.ensureStarted()
-        MemberAccessRepository.access
-    }.collectAsStateWithLifecycle()
     val backgroundCatalog by ProfileBackgroundRepository.catalog.collectAsStateWithLifecycle()
     val profileColor = remember(profile?.avatarColorHex) {
         profile?.avatarColorHex?.let(::parseHexColor) ?: Color(0xFF1E88E5)
@@ -35,9 +30,8 @@ fun ProfileBackgroundBackdrop(
     val backgroundSelection = remember(
         profile?.profileBackgroundId,
         profile?.profileBackgroundUrl,
-        memberAccess.entitlements,
     ) {
-        profile?.let { resolveProfileBackground(it, memberAccess.entitlements) }
+        profile?.let(::resolveProfileBackground)
     }
 
     BoxWithConstraints(modifier = modifier) {
