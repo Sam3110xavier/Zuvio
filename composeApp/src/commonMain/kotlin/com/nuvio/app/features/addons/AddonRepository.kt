@@ -145,17 +145,29 @@ object AddonRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
-        currentProfileId = resolveEffectiveProfileId(profileId)
-        log.i { "pullFromServer() — profileId=$profileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
-        InAppLogger.info("Addons/Repository", "pullFromServer profile=$currentProfileId initialized=$initialized pulled=$pulledFromServer")
+        val requestProfileId = resolveEffectiveProfileId(profileId)
+        activateProfile(requestProfileId).forEach(Job::cancel)
+        val requestGeneration = synchronized(activeRefreshJobsLock) {
+            if (requestProfileId != requestProfileId) return
+            profileGeneration
+        }
+        log.i { "pullFromServer() — profileId=$requestProfileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
+        InAppLogger.info("Addons/Repository", "pullFromServer profile=$requestProfileId initialized=$initialized pulled=$pulledFromServer")
         runCatching {
             val rows = SupabaseProvider.client.postgrest
                 .from("addons")
                 .select {
-                    filter { eq("profile_id", currentProfileId) }
+                    filter { eq("profile_id", requestProfileId) }
                     order("sort_order", Order.ASCENDING)
                 }
                 .decodeList<AddonRow>()
+
+            // A profile switch may happen while the Supabase request is suspended.
+            // Never apply the old profile's response to the newly active profile.
+            if (!synchronized(activeRefreshJobsLock) {
+                    isProfileGenerationCurrentLocked(requestProfileId, requestGeneration)
+                }
+            ) return@runCatching
 
             val rowsByUrl = linkedMapOf<String, AddonRow>()
             rows.forEach { row ->
@@ -171,13 +183,13 @@ object AddonRepository {
             urls.forEachIndexed { i, u -> log.d { "  server[$i]: $u" } }
 
             if (urls.isEmpty() && !pulledFromServer) {
-                val localUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
+                val localUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(requestProfileId))
                 log.i { "pullFromServer() — server empty, local has ${localUrls.size} addons" }
                 if (localUrls.isNotEmpty()) {
-                    log.i { "pullFromServer() — migrating local addons to server for profile $currentProfileId" }
+                    log.i { "pullFromServer() — migrating local addons to server for profile $requestProfileId" }
                     initialize()
                     pulledFromServer = true
-                    val enabledByUrl = loadLocalEnabledStates()
+                    val enabledByUrl = AddonStorage.loadAddonEnabledStates(requestProfileId).mapKeys { (url, _) -> ensureManifestSuffix(url) }
                     val addons = localUrls.mapIndexed { index, addonUrl ->
                         val manifestUrl = ensureManifestSuffix(addonUrl)
                         AddonPushItem(
@@ -191,7 +203,7 @@ object AddonRepository {
                         )
                     }
                     val params = buildJsonObject {
-                        put("p_profile_id", currentProfileId)
+                        put("p_profile_id", requestProfileId)
                         put("p_addons", json.encodeToJsonElement(addons))
                         putSyncOriginClientId()
                     }
@@ -203,11 +215,11 @@ object AddonRepository {
             }
 
             if (urls.isEmpty()) {
-                val localUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
+                val localUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(requestProfileId))
                 if (localUrls.isNotEmpty()) {
                     log.w { "pullFromServer() — remote empty while local has ${localUrls.size} addons; preserving local addons" }
-                    val enabledByUrl = loadLocalEnabledStates()
-                    val hiddenCatalogsByUrl = loadLocalCatalogHiddenStates()
+                    val enabledByUrl = AddonStorage.loadAddonEnabledStates(requestProfileId).mapKeys { (url, _) -> ensureManifestSuffix(url) }
+                    val hiddenCatalogsByUrl = AddonStorage.loadAddonCatalogHiddenStates(requestProfileId).mapKeys { (url, _) -> ensureManifestSuffix(url) }
                     val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
                     _uiState.value = AddonsUiState(
                         addons = localUrls.map { url ->
@@ -223,7 +235,7 @@ object AddonRepository {
                         val existing = existingByUrl[url]
                         val addon = _uiState.value.addons.firstOrNull { it.manifestUrl == url }
                         if (addon?.enabled == true && (existing == null || (addon.manifest == null && !addon.isRefreshing))) {
-                            refreshAddon(url)
+                            refreshAddonForProfile(url, false, requestProfileId, requestGeneration)
                         }
                     }
                     pulledFromServer = true
@@ -232,7 +244,7 @@ object AddonRepository {
                 }
             }
 
-            val hiddenCatalogsByUrl = loadLocalCatalogHiddenStates()
+            val hiddenCatalogsByUrl = AddonStorage.loadAddonCatalogHiddenStates(requestProfileId).mapKeys { (url, _) -> ensureManifestSuffix(url) }
             val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
             _uiState.value = AddonsUiState(
                 addons = urls.map { url ->
@@ -250,7 +262,7 @@ object AddonRepository {
                 val existing = existingByUrl[url]
                 val addon = _uiState.value.addons.firstOrNull { it.manifestUrl == url }
                 if (addon?.enabled == true && (existing == null || (addon.manifest == null && !addon.isRefreshing))) {
-                    refreshAddon(url)
+                    refreshAddonForProfile(url, false, requestProfileId, requestGeneration)
                 }
             }
             pulledFromServer = true
