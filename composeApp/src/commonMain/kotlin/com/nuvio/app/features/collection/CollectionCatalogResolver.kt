@@ -14,9 +14,11 @@ internal fun List<ManagedAddon>.findCollectionCatalog(
 ): ResolvedCollectionCatalog? {
     val activeAddons = enabledAddons()
     val declaredAddon = activeAddons.firstOrNull { it.manifest?.id == source.addonId }
-    val declaredCatalog = declaredAddon?.manifest?.catalogs?.findSourceCatalog(source)
-    if (declaredAddon != null && declaredCatalog != null) {
-        return ResolvedCollectionCatalog(addon = declaredAddon, catalog = declaredCatalog)
+    if (declaredAddon != null) {
+        val declaredCatalog = declaredAddon.manifest?.catalogs?.findSourceCatalog(source)
+        return declaredCatalog?.let { catalog ->
+            ResolvedCollectionCatalog(addon = declaredAddon, catalog = catalog)
+        }
     }
 
     // Imported/legacy collections may refer to an old addon ID. A fallback is safe only
