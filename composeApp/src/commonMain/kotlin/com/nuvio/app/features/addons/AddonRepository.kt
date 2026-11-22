@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -63,6 +65,7 @@ object AddonRepository {
     private var pulledFromServer = false
     private var currentProfileId: Int = 1
     private var profileGeneration: Long = 0L
+    private val refreshSemaphore = Semaphore(3)
     private val activeRefreshJobs = mutableMapOf<String, Job>()
     private val activeRefreshJobsLock = SynchronizedObject()
     private val pushJobsByProfile = mutableMapOf<Int, Job>()
@@ -518,9 +521,11 @@ object AddonRepository {
             refreshJob = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     val result: Result<AddonManifest> = try {
-                        InAppLogger.info("Addons/Manifest", "GET ${InAppLogger.redactUrl(manifestUrl)} reason=refresh")
-                        val payload = fetchAddonResponseText(url = manifestUrl, forceRefresh = forceRefresh)
-                        val manifest = AddonManifestParser.parse(manifestUrl = manifestUrl, payload = payload)
+                        val manifest = refreshSemaphore.withPermit {
+                            InAppLogger.info("Addons/Manifest", "GET ${InAppLogger.redactUrl(manifestUrl)} reason=refresh")
+                            val payload = fetchAddonResponseText(url = manifestUrl, forceRefresh = forceRefresh)
+                            AddonManifestParser.parse(manifestUrl = manifestUrl, payload = payload)
+                        }
                         Result.success(manifest)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
