@@ -148,6 +148,7 @@ object FolderDetailRepository {
         )
         if (sources.isEmpty()) return
 
+        log.i { "Waiting for addon manifests before resolving folder collection=${collectionId} folder=${folderId}" }
         scope.launch {
             AddonRepository.awaitManifestsLoaded()
             if (
@@ -169,6 +170,12 @@ object FolderDetailRepository {
         val sources = folder.resolvedSources
         val showAll = collection.showAllTab && sources.size > 1
         val addons = AddonRepository.uiState.value.addons
+        log.i {
+            "Resolving folder collection=${collection.id} folder=${folder.id} " +
+                "addons=${addons.size} enabled=${addons.count { it.enabled }} " +
+                "loaded=${addons.count { it.enabled && it.manifest != null }} " +
+                "pending=${addons.count { it.enabled && it.isRefreshing }}"
+        }
 
         val sourceTabs = buildList {
             sources.forEach { source ->
@@ -401,6 +408,10 @@ object FolderDetailRepository {
                     )
                 }.withUnreleasedFilter()
             }.onSuccess { page ->
+                log.i {
+                    "Collection catalog loaded catalogId=${currentTab.catalogId} type=${currentTab.type} " +
+                        "rawItems=${page.rawItemCount} parsedItems=${page.items.size} skip=${requestedSkip}"
+                }
                 val posterPattern = com.nuvio.app.core.poster.CustomPosterUrlRepository.let { repo ->
                     repo.ensureLoaded()
                     repo.patternForScreen(com.nuvio.app.core.poster.CustomPosterScreen.COLLECTIONS)
