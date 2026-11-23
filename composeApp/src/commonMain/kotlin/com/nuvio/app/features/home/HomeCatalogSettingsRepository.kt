@@ -53,7 +53,7 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(
                 items.joinToString(separator = "|") { item ->
-                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}"
+                    "${item.key}:${item.order}:${item.enabled}:${item.heroSourceEnabled}:${item.customTitle}:${item.isMerged}"
                 }
             )
         }
