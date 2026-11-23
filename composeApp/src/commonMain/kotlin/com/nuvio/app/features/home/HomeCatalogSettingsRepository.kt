@@ -631,7 +631,7 @@ internal data class CollectionCatalogDefinition(
     val title: String,
     val subtitle: String,
     val isPinnedToTop: Boolean,
-    val isMerged: Boolean,
+    val isMerged: Boolean = false,
 )
 
 internal fun visibleCollectionsWithUniqueIds(collections: List<Collection>): List<Collection> =
