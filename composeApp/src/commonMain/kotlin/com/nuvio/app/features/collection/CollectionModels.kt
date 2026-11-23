@@ -237,6 +237,7 @@ data class Collection(
     val viewMode: String = "TABBED_GRID",
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),
+    val isMerged: Boolean = false,
 ) {
     val folderViewMode: FolderViewMode
         get() = FolderViewMode.fromString(viewMode)
