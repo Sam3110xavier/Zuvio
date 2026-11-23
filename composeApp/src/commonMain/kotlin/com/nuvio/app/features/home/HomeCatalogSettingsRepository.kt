@@ -4,6 +4,7 @@ import androidx.compose.ui.text.intl.Locale
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.servers.ServerCatalog
 import com.nuvio.app.features.servers.ServerRepository
 import kotlinx.atomicfu.atomic
@@ -29,6 +30,8 @@ data class HomeCatalogSettingsItem(
     val isCollection: Boolean = false,
     val collectionId: String? = null,
     val isPinnedToTop: Boolean = false,
+    val isMerged: Boolean = false,
+    val collectionSource: CollectionSource? = null,
 ) {
     val displayTitle: String
         get() = customTitle.ifBlank { defaultTitle }
@@ -365,6 +368,7 @@ object HomeCatalogSettingsRepository {
     private fun publish() {
         val collectionMap = collectionDefinitions.associateBy { it.key }
         val catalogItems = definitions
+            .filterNot { definition -> ServerCatalog.isServerKey(definition.key) }
             .map { definition ->
                 val preference = preferences[definition.key]
                 HomeCatalogSettingsItem(
@@ -375,6 +379,14 @@ object HomeCatalogSettingsRepository {
                     enabled = preference?.enabled ?: true,
                     heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
+                    collectionSource = definition.let { sourceDefinition ->
+                        CollectionSource(
+                            addonId = sourceDefinition.addonIdForSync(),
+                            type = sourceDefinition.type,
+                            catalogId = sourceDefinition.catalogId,
+                            title = sourceDefinition.defaultTitle,
+                        )
+                    },
                 )
             }
 
@@ -391,6 +403,7 @@ object HomeCatalogSettingsRepository {
                 isCollection = true,
                 collectionId = colDef.collectionId,
                 isPinnedToTop = colDef.isPinnedToTop,
+                isMerged = colDef.isMerged,
             )
         }
 
@@ -621,6 +634,7 @@ internal data class CollectionCatalogDefinition(
     val title: String,
     val subtitle: String,
     val isPinnedToTop: Boolean,
+    val isMerged: Boolean,
 )
 
 internal fun visibleCollectionsWithUniqueIds(collections: List<Collection>): List<Collection> =
@@ -636,6 +650,7 @@ internal fun buildCollectionDefinitions(collections: List<Collection>): List<Col
             title = collection.title,
             subtitle = runBlocking { getString(Res.string.collections_folder_count, collection.folders.size) },
             isPinnedToTop = collection.pinToTop,
+            isMerged = collection.isMerged,
         )
     }
 
