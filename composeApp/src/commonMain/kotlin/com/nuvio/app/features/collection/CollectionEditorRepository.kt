@@ -2,6 +2,7 @@ package com.nuvio.app.features.collection
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.trakt.TraktPublicListSearchResult
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,7 @@ data class CollectionEditorUiState(
     val viewMode: FolderViewMode = FolderViewMode.TABBED_GRID,
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),
+    val mergedHomeRowId: String? = null,
     val isLoading: Boolean = true,
     val availableCatalogs: List<AvailableCatalog> = emptyList(),
     val editingFolder: CollectionFolder? = null,
@@ -108,6 +110,7 @@ object CollectionEditorRepository {
                     viewMode = existing.folderViewMode,
                     showAllTab = existing.showAllTab,
                     folders = existing.folders,
+                    mergedHomeRowId = existing.mergedHomeRowId,
                     isLoading = false,
                     availableCatalogs = catalogs,
                 )
@@ -842,6 +845,24 @@ object CollectionEditorRepository {
     fun save(): Boolean {
         val state = _uiState.value
         if (state.title.isBlank()) return false
+        if (state.mergedHomeRowId != null) {
+            val mergedSourceKeys = state.folders.firstOrNull()
+                ?.resolvedCatalogSources
+                ?.map { source -> "${source.addonId}:${source.type}:${source.catalogId}" }
+                .orEmpty()
+            if (!HomeCatalogSettingsRepository.updateMergedRowSources(state.mergedHomeRowId, mergedSourceKeys)) {
+                return false
+            }
+            if (!HomeCatalogSettingsRepository.updateMergedRowCollectionProperties(
+                    id = state.mergedHomeRowId,
+                    title = state.title,
+                    viewMode = state.viewMode,
+                    pinToTop = state.pinToTop,
+                )
+            ) {
+                return false
+            }
+        }
 
         val collection = Collection(
             id = state.collectionId,
@@ -851,6 +872,7 @@ object CollectionEditorRepository {
             viewMode = state.viewMode.name,
             showAllTab = state.showAllTab,
             folders = state.folders,
+            mergedHomeRowId = state.mergedHomeRowId,
         )
 
         CollectionMobileSettingsRepository.replaceCollectionFolderGifSettings(collection.id, collection.folders)

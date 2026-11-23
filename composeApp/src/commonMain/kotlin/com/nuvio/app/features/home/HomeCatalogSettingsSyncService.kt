@@ -38,10 +38,21 @@ data class SyncCatalogItem(
 )
 
 @Serializable
+data class SyncMergedHomeRowPreference(
+    val id: String,
+    val enabled: Boolean = true,
+    @SerialName("custom_title") val customTitle: String = "",
+    val order: Int = 0,
+    @SerialName("row_placement") val rowPlacement: String = HomeCatalogRowPlacement.NORMAL.storageValue,
+)
+
+@Serializable
 data class SyncHomeCatalogPayload(
     @SerialName("show_catalog_type") val showCatalogType: Boolean = true,
     @SerialName("hide_unreleased_content") val hideUnreleasedContent: Boolean = false,
     val items: List<SyncCatalogItem> = emptyList(),
+    @SerialName("merged_rows") val mergedRows: List<MergedHomeRowDefinition>? = null,
+    @SerialName("merged_row_preferences") val mergedRowPreferences: List<SyncMergedHomeRowPreference>? = null,
 )
 
 @Serializable

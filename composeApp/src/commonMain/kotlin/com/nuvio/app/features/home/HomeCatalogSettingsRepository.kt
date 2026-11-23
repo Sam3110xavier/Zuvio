@@ -3,6 +3,9 @@ package com.nuvio.app.features.home
 import androidx.compose.ui.text.intl.Locale
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.collection.Collection
+import com.nuvio.app.features.collection.CollectionFolder
+import com.nuvio.app.features.collection.CollectionSource
+import com.nuvio.app.features.collection.FolderViewMode
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.servers.ServerCatalog
 import com.nuvio.app.features.servers.ServerRepository
@@ -76,7 +79,7 @@ internal data class HomeCatalogSettingsUiState(
             append(hideMergedTitlesWithoutPosters)
             append('|')
             append(mergedRows.sortedBy { it.order }.joinToString { row ->
-                "${row.id}:${row.title}:${row.sourceKeys.joinToString(",")}:${row.displayMode}:${row.blendMode}:${row.contentType}:${row.hideIncludedRows}:${row.deduplicate}:${row.sortMode}:${row.hideTitlesWithoutPosters}"
+                "${row.id}:${row.title}:${row.sourceKeys.joinToString(",")}:${row.displayMode}:${row.viewMode}:${row.blendMode}:${row.contentType}:${row.hideIncludedRows}:${row.deduplicate}:${row.sortMode}:${row.hideTitlesWithoutPosters}"
             })
             append('|')
             append(
@@ -244,10 +247,12 @@ object HomeCatalogSettingsRepository {
 
     fun syncCatalogs(addons: List<ManagedAddon>) {
         ensureLoaded()
+        CollectionRepository.initialize()
         val collections = CollectionRepository.collections.value
         val syncInput = CatalogSyncInput(addons, collections, Locale.current.toLanguageTag(), ServerRepository.uiState.value.revision)
         if (lastCatalogSync == syncInput) return
         definitions = buildHomeCatalogDefinitions(addons)
+        ensureMergedCollectionEntities()
         collectionDefinitions = buildCollectionDefinitions(collections)
         lastCatalogSync = syncInput
         lastCollectionSync = lastCollectionSync?.takeIf {
@@ -452,6 +457,7 @@ object HomeCatalogSettingsRepository {
         title: String,
         sourceKeys: List<String>,
         displayMode: MergedHomeRowDisplayMode,
+        viewMode: FolderViewMode = FolderViewMode.TABBED_GRID,
         deduplicate: Boolean = true,
         contentType: MergedHomeRowContentType = MergedHomeRowContentType.ALL,
         blendMode: MergedHomeRowBlendMode = MergedHomeRowBlendMode.INTERLEAVE,
@@ -476,6 +482,7 @@ object HomeCatalogSettingsRepository {
             title = safeTitle,
             sourceKeys = requestedSources,
             displayMode = displayMode.storageValue,
+            viewMode = viewMode.name,
             deduplicate = deduplicate,
             order = (mergedRows.maxOfOrNull { it.order } ?: -1) + 1,
             contentType = contentType.storageValue,
@@ -485,6 +492,21 @@ object HomeCatalogSettingsRepository {
             hideTitlesWithoutPosters = hideTitlesWithoutPosters,
         )
         mergedRows = mergedRows + row
+        CollectionRepository.addCollection(
+            Collection(
+                id = id,
+                title = safeTitle,
+                viewMode = row.viewMode,
+                folders = listOf(
+                    CollectionFolder(
+                        id = "merged_folder_$id",
+                        title = safeTitle,
+                        sources = mergedCollectionSources(requestedSources),
+                    ),
+                ),
+                mergedHomeRowId = id,
+            ),
+        )
         val key = mergedHomeRowKey(id)
         preferences = preferences + (key to StoredHomeCatalogPreference(
             key = key,
@@ -494,6 +516,7 @@ object HomeCatalogSettingsRepository {
         ))
         publish()
         persist()
+        HomeCatalogSettingsSyncService.triggerPush()
         HomeRepository.applyCurrentSettings()
         return id
     }
@@ -503,6 +526,7 @@ object HomeCatalogSettingsRepository {
         title: String,
         sourceKeys: List<String>,
         displayMode: MergedHomeRowDisplayMode,
+        viewMode: FolderViewMode? = null,
         deduplicate: Boolean,
         contentType: MergedHomeRowContentType? = null,
         blendMode: MergedHomeRowBlendMode? = null,
@@ -522,6 +546,7 @@ object HomeCatalogSettingsRepository {
             title = safeTitle,
             sourceKeys = requestedSources,
             displayMode = displayMode.storageValue,
+            viewMode = viewMode?.name ?: existing.viewMode,
             deduplicate = deduplicate,
             contentType = contentType?.storageValue ?: existing.contentType,
             blendMode = blendMode?.storageValue ?: existing.blendMode,
@@ -531,8 +556,101 @@ object HomeCatalogSettingsRepository {
         )
         if (updated == existing) return true
         mergedRows = mergedRows.map { if (it.id == id) updated else it }
+        CollectionRepository.getCollection(id)?.let { collection ->
+            val updatedFolder = collection.folders.firstOrNull()?.copy(
+                title = safeTitle,
+                sources = mergedCollectionSources(requestedSources),
+            )
+            if (updatedFolder != null) {
+                CollectionRepository.updateCollection(
+                    collection.copy(title = safeTitle, viewMode = updated.viewMode, folders = listOf(updatedFolder)),
+                )
+            }
+        }
         publish()
         persist()
+        HomeCatalogSettingsSyncService.triggerPush()
+        HomeRepository.applyCurrentSettings()
+        return true
+    }
+
+    private fun mergedCollectionSources(sourceKeys: List<String>): List<CollectionSource> =
+        sourceKeys.mapNotNull { sourceKey ->
+            definitions.firstOrNull { it.key == sourceKey }?.let { definition ->
+                CollectionSource(
+                    provider = "addon",
+                    addonId = sourceKey.substringBefore(':'),
+                    type = definition.type,
+                    catalogId = definition.catalogId,
+                )
+            }
+        }
+
+    private fun ensureMergedCollectionEntities() {
+        mergedRows.forEach { row ->
+            if (CollectionRepository.getCollection(row.id) != null) return@forEach
+            val sources = mergedCollectionSources(row.sourceKeys)
+            if (sources.size < 2) return@forEach
+            CollectionRepository.addCollection(
+                Collection(
+                    id = row.id,
+                    title = row.title,
+                    viewMode = row.viewMode,
+                    folders = listOf(
+                        CollectionFolder(
+                            id = "merged_folder_${row.id}",
+                            title = row.title,
+                            sources = sources,
+                        ),
+                    ),
+                    mergedHomeRowId = row.id,
+                ),
+            )
+        }
+    }
+
+    fun updateMergedRowCollectionProperties(
+        id: String,
+        title: String,
+        viewMode: FolderViewMode,
+        pinToTop: Boolean,
+    ): Boolean {
+        ensureLoaded()
+        val safeTitle = title.trim()
+        if (safeTitle.isBlank()) return false
+        val existing = mergedRows.firstOrNull { it.id == id } ?: return false
+        val updated = existing.copy(title = safeTitle, viewMode = viewMode.name)
+        val key = mergedHomeRowKey(id)
+        val currentPreference = preferences[key] ?: StoredHomeCatalogPreference(key = key, heroSourceEnabled = false)
+        val nextPlacement = when {
+            pinToTop -> HomeCatalogRowPlacement.PINNED_TOP
+            currentPreference.rowPlacement == HomeCatalogRowPlacement.PINNED_TOP.storageValue ->
+                HomeCatalogRowPlacement.NORMAL
+            else -> HomeCatalogRowPlacement.fromStorage(currentPreference.rowPlacement)
+        }
+        if (updated == existing && currentPreference.rowPlacement == nextPlacement.storageValue) return true
+        mergedRows = mergedRows.map { row -> if (row.id == id) updated else row }
+        preferences = preferences + (key to currentPreference.copy(rowPlacement = nextPlacement.storageValue))
+        publish()
+        persist()
+        HomeCatalogSettingsSyncService.triggerPush()
+        HomeRepository.applyCurrentSettings()
+        return true
+    }
+
+    fun updateMergedRowSources(id: String, sourceKeys: List<String>): Boolean {
+        ensureLoaded()
+        val existing = mergedRows.firstOrNull { it.id == id } ?: return false
+        val requestedSources = sourceKeys.distinct()
+        if (requestedSources.size !in 2..MAX_MERGED_HOME_ROW_SOURCES) return false
+        if (requestedSources.any { it !in mergedRowSourceKeys() }) return false
+        if (existing.sourceKeys == requestedSources) return true
+        mergedRows = mergedRows.map { row ->
+            if (row.id == id) row.copy(sourceKeys = requestedSources) else row
+        }
+        publish()
+        persist()
+        HomeCatalogSettingsSyncService.triggerPush()
         HomeRepository.applyCurrentSettings()
         return true
     }
@@ -550,6 +668,24 @@ object HomeCatalogSettingsRepository {
             order = (mergedRows.maxOfOrNull { it.order } ?: -1) + 1,
         )
         mergedRows = mergedRows + copy
+        val copySources = mergedCollectionSources(copy.sourceKeys)
+        if (copySources.size >= 2) {
+            CollectionRepository.addCollection(
+                Collection(
+                    id = newId,
+                    title = copy.title,
+                    viewMode = copy.viewMode,
+                    folders = listOf(
+                        CollectionFolder(
+                            id = "merged_folder_$newId",
+                            title = copy.title,
+                            sources = copySources,
+                        ),
+                    ),
+                    mergedHomeRowId = newId,
+                ),
+            )
+        }
         val newKey = mergedHomeRowKey(newId)
         val sourcePreference = preferences[mergedHomeRowKey(id)]
         preferences = preferences + (newKey to StoredHomeCatalogPreference(
@@ -561,18 +697,28 @@ object HomeCatalogSettingsRepository {
         ))
         publish()
         persist()
+        HomeCatalogSettingsSyncService.triggerPush()
         HomeRepository.applyCurrentSettings()
         return newId
     }
 
     fun deleteMergedRow(id: String) {
         ensureLoaded()
-        if (mergedRows.none { it.id == id }) return
+        if (mergedRows.none { it.id == id }) {
+            if (CollectionRepository.getCollection(id)?.mergedHomeRowId == id) {
+                CollectionRepository.removeCollection(id)
+            }
+            return
+        }
         mergedRows = mergedRows.filterNot { it.id == id }
             .mapIndexed { index, row -> row.copy(order = index) }
         preferences = preferences - mergedHomeRowKey(id)
+        if (CollectionRepository.getCollection(id)?.mergedHomeRowId == id) {
+            CollectionRepository.removeCollection(id)
+        }
         publish()
         persist()
+        HomeCatalogSettingsSyncService.triggerPush()
         HomeRepository.applyCurrentSettings()
     }
 
@@ -592,6 +738,7 @@ object HomeCatalogSettingsRepository {
         persistVisibleOrder(visibleKeys)
         publish()
         persist()
+        HomeCatalogSettingsSyncService.triggerPush()
         HomeRepository.applyCurrentSettings()
     }
 
@@ -994,6 +1141,18 @@ object HomeCatalogSettingsRepository {
             showCatalogType = showCatalogType,
             hideUnreleasedContent = hideUnreleasedContent,
             items = items,
+            mergedRows = mergedRows.sortedBy { it.order },
+            mergedRowPreferences = mergedRows.mapNotNull { row ->
+                preferences[mergedHomeRowKey(row.id)]?.let { preference ->
+                    SyncMergedHomeRowPreference(
+                        id = row.id,
+                        enabled = preference.enabled,
+                        customTitle = preference.customTitle,
+                        order = preference.order,
+                        rowPlacement = preference.rowPlacement,
+                    )
+                }
+            },
         )
     }
 
@@ -1001,6 +1160,22 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         showCatalogType = payload.showCatalogType
         hideUnreleasedContent = payload.hideUnreleasedContent
+        payload.mergedRows?.let { remoteRows ->
+            mergedRows = remoteRows.sortedBy { it.order }
+            val mergedPreferences = payload.mergedRowPreferences.orEmpty().associate { remote ->
+                val key = mergedHomeRowKey(remote.id)
+                key to StoredHomeCatalogPreference(
+                    key = key,
+                    customTitle = remote.customTitle,
+                    enabled = remote.enabled,
+                    heroSourceEnabled = false,
+                    order = remote.order,
+                    rowPlacement = remote.rowPlacement,
+                )
+            }
+            preferences = preferences.filterKeys { !it.startsWith("merged_home_row:") } + mergedPreferences
+            collectionDefinitions = buildCollectionDefinitions(CollectionRepository.collections.value)
+        }
         if (payload.items.isNotEmpty()) {
             val existingHeroState = preferences.mapValues { it.value.heroSourceEnabled }
             val hasHeroChoice = existingHeroState.any { (key, enabled) -> enabled && !key.startsWith("collection_") }
@@ -1135,7 +1310,9 @@ internal fun visibleCollectionsWithUniqueIds(collections: List<Collection>): Lis
         .distinctBy(Collection::id)
 
 internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
-    visibleCollectionsWithUniqueIds(collections).map { collection ->
+    visibleCollectionsWithUniqueIds(collections).filter { collection ->
+        collection.mergedHomeRowId == null || mergedRows.none { it.id == collection.mergedHomeRowId }
+    }.map { collection ->
         CollectionCatalogDefinition(
             key = "collection_${collection.id}",
             collectionId = collection.id,

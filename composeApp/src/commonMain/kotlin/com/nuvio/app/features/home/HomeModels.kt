@@ -65,6 +65,7 @@ data class HomeCatalogSection(
     val displayMode: String? = null,
     val sourceTabs: List<HomeCatalogTab> = emptyList(),
     val supportsViewAll: Boolean = true,
+    val collectionId: String? = null,
 )
 
 fun HomeCatalogSection.canOpenCatalog(previewLimit: Int): Boolean =

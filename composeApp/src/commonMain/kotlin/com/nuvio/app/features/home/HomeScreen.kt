@@ -1227,10 +1227,21 @@ fun HomeScreen(
                                             entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
                                             modifier = Modifier.padding(bottom = 12.dp),
                                             sectionPadding = homeSectionPadding,
-                                            onViewAllClick = if (section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT)) {
-                                                onCatalogClick?.let { { it(section) } }
-                                            } else {
-                                                null
+                                            onViewAllClick = when {
+                                                section.isMergedRow -> {
+                                                    val mergedCollection = collections.firstOrNull {
+                                                        it.id == section.collectionId
+                                                    }
+                                                    val mergedFolderId = mergedCollection?.folders?.firstOrNull()?.id
+                                                    if (mergedCollection != null && mergedFolderId != null) {
+                                                        onFolderClick?.let { { it(mergedCollection.id, mergedFolderId) } }
+                                                    } else {
+                                                        null
+                                                    }
+                                                }
+                                                section.canOpenCatalog(HOME_CATALOG_PREVIEW_LIMIT) ->
+                                                    onCatalogClick?.let { { it(section) } }
+                                                else -> null
                                             },
                                             selectedTabKey = mergedRowSelectedTabs[section.key]
                                                 ?: section.sourceTabs.firstOrNull()?.key,

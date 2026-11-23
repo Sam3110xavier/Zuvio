@@ -237,6 +237,8 @@ data class Collection(
     val viewMode: String = "TABBED_GRID",
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),
+    /** Non-null only when this collection is the persisted backing entity for a merged Home row. */
+    val mergedHomeRowId: String? = null,
 ) {
     val folderViewMode: FolderViewMode
         get() = FolderViewMode.fromString(viewMode)

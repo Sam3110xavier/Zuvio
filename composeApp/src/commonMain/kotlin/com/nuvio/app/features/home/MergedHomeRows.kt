@@ -14,6 +14,7 @@ data class MergedHomeRowDefinition(
     val sourceKeys: List<String>,
     @SerialName("display_mode")
     val displayMode: String = MergedHomeRowDisplayMode.SOURCE_TABS.storageValue,
+    val viewMode: String = "TABBED_GRID",
     val deduplicate: Boolean = true,
     val order: Int = 0,
     @SerialName("content_type")

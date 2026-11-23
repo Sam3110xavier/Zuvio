@@ -395,6 +395,7 @@ object HomeRepository {
                     displayMode = row.displayMode,
                     sourceTabs = sourceTabs,
                     supportsViewAll = true,
+                    collectionId = row.id,
                 )
             }
         val configuredOrder = HomeCatalogSettingsRepository.uiState.value.items

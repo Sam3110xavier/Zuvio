@@ -37,6 +37,7 @@ import com.nuvio.app.features.home.MergedHomeRowContentType
 import com.nuvio.app.features.home.MergedHomeRowDefinition
 import com.nuvio.app.features.home.MergedHomeRowDisplayMode
 import com.nuvio.app.features.home.mergedHomeRowKey
+import com.nuvio.app.features.collection.FolderViewMode
 
 @Composable
 internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
@@ -168,12 +169,13 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
             row = editingRow,
             sourceRows = sourceRows,
             onDismiss = { showEditor = false },
-            onSave = { title, keys, mode, type, blend, deduplicate, hideIncluded, hidePosterless ->
+            onSave = { title, keys, mode, viewMode, type, blend, deduplicate, hideIncluded, hidePosterless ->
                 val saved = if (editingRow == null) {
                     HomeCatalogSettingsRepository.createMergedRow(
                         title = title,
                         sourceKeys = keys,
                         displayMode = mode,
+                        viewMode = viewMode,
                         deduplicate = deduplicate,
                         contentType = type,
                         blendMode = blend,
@@ -186,6 +188,7 @@ internal fun MergedHomeRowsSettingsSection(isTablet: Boolean) {
                         title = title,
                         sourceKeys = keys,
                         displayMode = mode,
+                        viewMode = viewMode,
                         deduplicate = deduplicate,
                         contentType = type,
                         blendMode = blend,
@@ -226,6 +229,7 @@ private fun MergedHomeRowEditorDialog(
         String,
         List<String>,
         MergedHomeRowDisplayMode,
+        FolderViewMode,
         MergedHomeRowContentType,
         MergedHomeRowBlendMode,
         Boolean,
@@ -243,6 +247,9 @@ private fun MergedHomeRowEditorDialog(
     val validSelectedCount = selectedKeys.count { it in availableSourceKeys }
     var displayMode by remember(row?.id) {
         mutableStateOf(row?.resolvedDisplayMode() ?: MergedHomeRowDisplayMode.SOURCE_TABS)
+    }
+    var viewMode by remember(row?.id) {
+        mutableStateOf(FolderViewMode.fromString(row?.viewMode))
     }
     var contentType by remember(row?.id) {
         mutableStateOf(row?.resolvedContentType() ?: MergedHomeRowContentType.ALL)
@@ -294,7 +301,7 @@ private fun MergedHomeRowEditorDialog(
                     Checkbox(checked = hideIncluded, onCheckedChange = { hideIncluded = it })
                     Text("Hide included source rows from Home")
                 }
-                Text("View mode", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                Text("Home row presentation", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                 MergedChoiceRow("Unified carousel", displayMode == MergedHomeRowDisplayMode.UNIFIED_CAROUSEL) {
                     displayMode = MergedHomeRowDisplayMode.UNIFIED_CAROUSEL
                 }
@@ -303,6 +310,16 @@ private fun MergedHomeRowEditorDialog(
                 }
                 MergedChoiceRow("Movie / series tabs", displayMode == MergedHomeRowDisplayMode.TYPE_TABS) {
                     displayMode = MergedHomeRowDisplayMode.TYPE_TABS
+                }
+                Text("Collection view mode", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                MergedChoiceRow("Tabbed grid", viewMode == FolderViewMode.TABBED_GRID) {
+                    viewMode = FolderViewMode.TABBED_GRID
+                }
+                MergedChoiceRow("Rows", viewMode == FolderViewMode.ROWS) {
+                    viewMode = FolderViewMode.ROWS
+                }
+                MergedChoiceRow("Follow layout", viewMode == FolderViewMode.FOLLOW_LAYOUT) {
+                    viewMode = FolderViewMode.FOLLOW_LAYOUT
                 }
                 if (displayMode != MergedHomeRowDisplayMode.TYPE_TABS) {
                     Text("Content type", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
@@ -373,7 +390,7 @@ private fun MergedHomeRowEditorDialog(
                     else -> null
                 }
                 if (validationError == null) {
-                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, contentType, blendMode, deduplicate, hideIncluded, hidePosterless)) {
+                    if (onSave(title, selectedKeys.filter { it in availableSourceKeys }, displayMode, viewMode, contentType, blendMode, deduplicate, hideIncluded, hidePosterless)) {
                         onDismiss()
                     } else {
                         validationError = "The selected source catalogs are no longer available."
@@ -391,4 +408,33 @@ private fun MergedChoiceRow(label: String, selected: Boolean, onClick: () -> Uni
         RadioButton(selected = selected, onClick = onClick)
         Text(label)
     }
+}
+
+
+@Composable
+fun MergedHomeRowCreationDialog(onDismiss: () -> Unit) {
+    val state by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val eligibleKeys = remember(state.items) { HomeCatalogSettingsRepository.mergedRowSourceKeys() }
+    val sourceRows = remember(state.items, eligibleKeys) {
+        state.items.filter { it.key in eligibleKeys }
+    }
+
+    MergedHomeRowEditorDialog(
+        row = null,
+        sourceRows = sourceRows,
+        onDismiss = onDismiss,
+        onSave = { title, keys, displayMode, viewMode, contentType, blendMode, deduplicate, hideIncluded, hidePosterless ->
+            HomeCatalogSettingsRepository.createMergedRow(
+                title = title,
+                sourceKeys = keys,
+                displayMode = displayMode,
+                viewMode = viewMode,
+                deduplicate = deduplicate,
+                contentType = contentType,
+                blendMode = blendMode,
+                hideIncludedRows = hideIncluded,
+                hideTitlesWithoutPosters = hidePosterless,
+            ) != null
+        },
+    )
 }

@@ -1,5 +1,8 @@
 package com.nuvio.app.features.collection
 
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.settings.MergedHomeRowCreationDialog
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +34,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +82,7 @@ fun CollectionManagementScreen(
     var importError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
     var showCopyError by remember { mutableStateOf(false) }
+    var showMergedRowCreator by remember { mutableStateOf(false) }
 
     NuvioScreen {
         stickyHeader {
@@ -126,6 +131,14 @@ fun CollectionManagementScreen(
                 onClick = { onNavigateToEditor(null) },
             )
         }
+        item {
+            TextButton(
+                onClick = { showMergedRowCreator = true },
+                enabled = HomeCatalogSettingsRepository.mergedRowSourceKeys().size >= 2,
+            ) {
+                Text("Create merged row")
+            }
+        }
 
         if (collections.isNotEmpty()) {
             item { NuvioSectionLabel(text = stringResource(Res.string.collections_your_collections)) }
@@ -167,6 +180,12 @@ fun CollectionManagementScreen(
                 }
             }
         }
+    }
+
+    if (showMergedRowCreator) {
+        MergedHomeRowCreationDialog(
+            onDismiss = { showMergedRowCreator = false },
+        )
     }
 
     if (showImportDialog) {
@@ -215,7 +234,12 @@ fun CollectionManagementScreen(
         dismissText = stringResource(Res.string.action_cancel),
         onConfirm = {
             if (deleteId != null) {
-                CollectionRepository.removeCollection(deleteId)
+                val collection = CollectionRepository.getCollection(deleteId)
+                if (collection?.mergedHomeRowId != null) {
+                    HomeCatalogSettingsRepository.deleteMergedRow(collection.mergedHomeRowId)
+                } else {
+                    CollectionRepository.removeCollection(deleteId)
+                }
             }
             showDeleteConfirm = null
         },
