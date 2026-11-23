@@ -157,6 +157,8 @@ fun ProfileEditScreen(
                         avatarColorHex = avatarColorHex,
                         avatarId = if (customAvatarUrl == null) selectedAvatarId else null,
                         avatarUrl = customAvatarUrl,
+                        profileBackgroundId = selectedBackgroundId,
+                        profileBackgroundUrl = selectedBackgroundUrl,
                         usesPrimaryAddons = usesPrimaryAddons,
                     )
                 } else {
