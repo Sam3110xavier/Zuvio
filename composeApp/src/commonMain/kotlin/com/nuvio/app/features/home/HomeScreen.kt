@@ -1309,7 +1309,6 @@ private fun LazyListScope.homeContinueWatchingSections(
     }
 }
 
-private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val HOME_CONTINUE_WATCHING_SECTION_KEY = "home_continue_watching"
 private const val HOME_UPCOMING_SECTION_KEY = "home_upcoming"
 
