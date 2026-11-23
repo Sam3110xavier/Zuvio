@@ -1176,14 +1176,35 @@ fun HomeScreen(
                         if (settingsItem.isCollection) {
                             val collection = collectionsMap[settingsItem.key]
                             if (collection != null) {
-                                item(key = keyedSettingsItem.lazyKey, contentType = "collection") {
-                                    HomeCollectionRowSection(
-                                        collection = collection,
-                                        modifier = Modifier.padding(bottom = 12.dp),
-                                        sectionPadding = homeSectionPadding,
-                                        animateGifs = animateCollectionGifs,
-                                        onFolderClick = onFolderClick,
-                                    )
+                                if (collection.isMerged) {
+                                    val section = sectionsMap[settingsItem.key]
+                                    if (section != null && section.items.isNotEmpty()) {
+                                        item(key = keyedSettingsItem.lazyKey, contentType = "merged_collection") {
+                                            HomeCatalogRowSection(
+                                                section = section,
+                                                entries = section.items.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                                modifier = Modifier.padding(bottom = 12.dp),
+                                                sectionPadding = homeSectionPadding,
+                                                onViewAllClick = collection.folders.firstOrNull()?.let { folder ->
+                                                    onFolderClick?.let { { it(collection.id, folder.id) } }
+                                                },
+                                                watchedKeys = watchedUiState.watchedKeys,
+                                                fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                                                onPosterClick = onPosterClick,
+                                                onPosterLongClick = onPosterLongClick,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    item(key = keyedSettingsItem.lazyKey, contentType = "collection") {
+                                        HomeCollectionRowSection(
+                                            collection = collection,
+                                            modifier = Modifier.padding(bottom = 12.dp),
+                                            sectionPadding = homeSectionPadding,
+                                            animateGifs = animateCollectionGifs,
+                                            onFolderClick = onFolderClick,
+                                        )
+                                    }
                                 }
                             }
                         } else {
