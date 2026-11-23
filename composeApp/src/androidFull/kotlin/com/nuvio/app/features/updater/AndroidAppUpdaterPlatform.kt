@@ -131,8 +131,7 @@ object AndroidAppUpdaterPlatform {
             try {
                 context.packageManager.canRequestPackageInstalls()
             } catch (_: SecurityException) {
-            
-                true
+                false
             }
         } else {
             true
