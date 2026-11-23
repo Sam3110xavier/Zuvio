@@ -110,6 +110,7 @@ object ProfileRepository {
         if (stored == null) {
             _state.value = ProfileState()
             activeProfileIndex = 1
+            com.nuvio.app.core.ui.background.AppBackgroundRepository.reload()
             return
         }
 
@@ -123,10 +124,12 @@ object ProfileRepository {
             withContext(Dispatchers.IO) {
                 ProfileBiometricAuth.disable(1, stored.userId)
             }
+            com.nuvio.app.core.ui.background.AppBackgroundRepository.reload()
             return
         }
 
         applyStoredPayload(stored)
+        com.nuvio.app.core.ui.background.AppBackgroundRepository.reload()
     }
 
     fun clearInMemory() {
