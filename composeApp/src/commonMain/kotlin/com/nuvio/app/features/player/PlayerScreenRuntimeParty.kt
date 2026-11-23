@@ -334,7 +334,8 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
         val currentParty = PartyRepository.state.value.party
         if (
             partyKey != key ||
-            currentParty?.id != party.id ||
+            currentParty == null ||
+            currentParty.id != party.id ||
             currentParty.isHost ||
             currentParty.media.key != key ||
             PartyRepository.sharedStream.value != shared
