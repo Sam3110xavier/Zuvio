@@ -271,6 +271,12 @@ object HomeRepository {
         if (currentDefinitions.isEmpty() && cachedSections.isNotEmpty()) return
         val snapshot = HomeCatalogSettingsRepository.snapshot()
         val preferences = snapshot.preferences
+        val hiddenIncludedSourceKeys = snapshot.mergedRows.asSequence()
+            .filter { row ->
+                row.hideIncludedRows && preferences[mergedHomeRowKey(row.id)]?.enabled != false
+            }
+            .flatMap { it.sourceKeys.asSequence() }
+            .toSet()
         val todayIsoDate = if (snapshot.hideUnreleasedContent) CurrentDateProvider.todayIsoDate() else null
         CustomPosterUrlRepository.ensureLoaded()
         val posterPattern = CustomPosterUrlRepository.patternForScreen(com.nuvio.app.core.poster.CustomPosterScreen.HOME)
@@ -283,7 +289,7 @@ object HomeRepository {
             .let { orderHomeCatalogDefinitions(it, snapshot) }
             .mapNotNull { definition ->
                 val preference = preferences[definition.key]
-                if (preference?.enabled == false) return@mapNotNull null
+                if (preference?.enabled == false || definition.key in hiddenIncludedSourceKeys) return@mapNotNull null
 
                 val section = cachedSections[definition.cacheKey]
                     ?.withPosterOverlay()
@@ -298,7 +304,104 @@ object HomeRepository {
         if (entries.isNotEmpty() || currentDefinitions.isNotEmpty()) {
             lastPublishedEntries = entries
         }
-        val sections = entries.map { (_, section) -> section }
+        val visibleCatalogSectionsByKey = entries.associate { (_, section) -> section.key to section }
+        val sourceSectionsByKey = currentDefinitions.mapNotNull { definition ->
+            val section = visibleCatalogSectionsByKey[definition.key]
+                ?: cachedSections[definition.cacheKey]
+                    ?.withPosterOverlay()
+                    ?.withReleaseFilter()
+                    ?: return@mapNotNull null
+            if (section.items.isEmpty() && !section.hasMore) return@mapNotNull null
+            val customTitle = preferences[definition.key]?.customTitle.orEmpty()
+            definition.key to section.copy(
+                title = customTitle.ifBlank { definition.titleFor(snapshot.showCatalogType) },
+            )
+        }.toMap()
+
+        val mergedSections = snapshot.mergedRows
+            .sortedBy { it.order }
+            .mapNotNull { mergedRow ->
+                val resolvedRow = HomeCatalogSettingsRepository.resolveMergedHomeRow(mergedRow.id)
+                    ?: return@mapNotNull null
+                val row = resolvedRow.definition
+                val rowKey = mergedHomeRowKey(row.id)
+                if (preferences[rowKey]?.enabled == false) return@mapNotNull null
+                val sourceSections = resolvedRow.sources.mapNotNull { source ->
+                    sourceSectionsByKey[source.definition.key]?.copy(title = source.title)
+                }.map { it.withReleaseFilter() }
+                if (sourceSections.isEmpty()) return@mapNotNull null
+
+                val displayMode = row.resolvedDisplayMode()
+                val contentType = row.contentTypeForDisplay()
+                val mergedItems = mergeHomeRowItems(
+                    sourceItems = sourceSections.map(HomeCatalogSection::items),
+                    deduplicate = row.deduplicate,
+                    maxItems = HOME_MERGED_ROW_ITEM_LIMIT,
+                    blendMode = row.resolvedBlendMode(),
+                    sortMode = MergedHomeRowSortMode.OFF,
+                    contentType = contentType,
+                    hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                )
+                val hasMore = sourceSections.any(HomeCatalogSection::hasMore)
+                if (mergedItems.isEmpty() && !hasMore) return@mapNotNull null
+
+                val sourceTabs = when (displayMode) {
+                    MergedHomeRowDisplayMode.SOURCE_TABS -> buildList {
+                        add(HomeCatalogTab("all", "All", mergedItems, mergedItems.size, hasMore))
+                        sourceSections.forEach { source ->
+                            val sourceItems = filterMergedHomeItems(
+                                items = source.items,
+                                contentType = contentType,
+                                hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                            )
+                            add(
+                                HomeCatalogTab(
+                                    key = source.key,
+                                    title = cleanMergedSourceTabTitle(source.title),
+                                    items = sourceItems,
+                                    availableItemCount = sourceItems.size,
+                                    hasMore = source.hasMore,
+                                ),
+                            )
+                        }
+                    }
+                    MergedHomeRowDisplayMode.TYPE_TABS -> buildMergedHomeTypeTabs(
+                        sourceItems = sourceSections.map(HomeCatalogSection::items),
+                        allItems = mergedItems,
+                        deduplicate = row.deduplicate,
+                        blendMode = row.resolvedBlendMode(),
+                        sortMode = MergedHomeRowSortMode.OFF,
+                        hideTitlesWithoutPosters = snapshot.hideMergedTitlesWithoutPosters || row.hideTitlesWithoutPosters,
+                        hasMore = hasMore,
+                        maxItems = HOME_MERGED_ROW_ITEM_LIMIT,
+                    )
+                    MergedHomeRowDisplayMode.UNIFIED_CAROUSEL -> emptyList()
+                }
+                val customTitle = preferences[rowKey]?.customTitle.orEmpty()
+                HomeCatalogSection(
+                    key = rowKey,
+                    title = customTitle.ifBlank { row.title },
+                    subtitle = if (resolvedRow.unavailableSourceCount > 0 || sourceSections.size < row.sourceKeys.size) {
+                        "Merged row · ${sourceSections.size}/${row.sourceKeys.size} sources available"
+                    } else {
+                        "Merged row"
+                    },
+                    addonName = "Merged row",
+                    target = CatalogTarget.MergedRow(rowId = row.id),
+                    items = mergedItems,
+                    availableItemCount = mergedItems.size,
+                    hasMore = hasMore,
+                    isMergedRow = true,
+                    displayMode = row.displayMode,
+                    sourceTabs = sourceTabs,
+                    supportsViewAll = true,
+                )
+            }
+        val configuredOrder = HomeCatalogSettingsRepository.uiState.value.items
+            .mapIndexed { index, item -> item.key to index }
+            .toMap()
+        val sections = (entries.map { (_, section) -> section } + mergedSections)
+            .sortedBy { section -> configuredOrder[section.key] ?: Int.MAX_VALUE }
 
         if (snapshot.heroEnabled && !heroSourcesResolved) {
             _uiState.value = HomeUiState(

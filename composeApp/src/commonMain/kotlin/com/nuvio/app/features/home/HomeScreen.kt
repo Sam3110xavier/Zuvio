@@ -157,6 +157,7 @@ fun HomeScreen(
         HomeCatalogSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val homeListState = rememberLazyListState()
+    var mergedRowSelectedTabs by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     val continueWatchingListState = rememberLazyListState()
     val upcomingListState = rememberLazyListState()
     ScreenActivityEffect(homeListState, continueWatchingListState, upcomingListState) { active ->
@@ -1231,6 +1232,12 @@ fun HomeScreen(
                                             } else {
                                                 null
                                             },
+                                            selectedTabKey = mergedRowSelectedTabs[section.key]
+                                                ?: section.sourceTabs.firstOrNull()?.key,
+                                            onTabSelected = { key ->
+                                                mergedRowSelectedTabs = mergedRowSelectedTabs + (section.key to key)
+                                            },
+                                            showTabSelector = section.isMergedRow,
                                             watchedKeys = watchedUiState.watchedKeys,
                                             fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                                             onPosterClick = onPosterClick,

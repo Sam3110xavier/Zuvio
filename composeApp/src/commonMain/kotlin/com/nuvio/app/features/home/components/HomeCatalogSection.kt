@@ -1,11 +1,22 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import com.nuvio.app.core.ui.NuvioShelfSection
@@ -14,6 +25,7 @@ import com.nuvio.app.core.ui.PosterRowImagePrefetchEffect
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.homeCatalogPreviewItems
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.watching.application.WatchingState
 
@@ -28,6 +40,9 @@ fun HomeCatalogRowSection(
     onViewAllClick: (() -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    selectedTabKey: String? = null,
+    onTabSelected: ((String) -> Unit)? = null,
+    showTabSelector: Boolean = true,
 ) {
     if (sectionPadding != null) {
         HomeCatalogRowSectionContent(
@@ -40,6 +55,9 @@ fun HomeCatalogRowSection(
             onViewAllClick = onViewAllClick,
             onPosterClick = onPosterClick,
             onPosterLongClick = onPosterLongClick,
+            selectedTabKey = selectedTabKey,
+            onTabSelected = onTabSelected,
+            showTabSelector = showTabSelector,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -53,6 +71,9 @@ fun HomeCatalogRowSection(
                 onViewAllClick = onViewAllClick,
                 onPosterClick = onPosterClick,
                 onPosterLongClick = onPosterLongClick,
+                selectedTabKey = selectedTabKey,
+                onTabSelected = onTabSelected,
+                showTabSelector = showTabSelector,
             )
         }
     }
@@ -69,20 +90,53 @@ private fun HomeCatalogRowSectionContent(
     onViewAllClick: (() -> Unit)?,
     onPosterClick: ((MetaPreview) -> Unit)?,
     onPosterLongClick: ((MetaPreview) -> Unit)?,
+    selectedTabKey: String?,
+    onTabSelected: ((String) -> Unit)?,
+    showTabSelector: Boolean,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
+    var internalSelectedTabKey by remember(section.key) { mutableStateOf("all") }
+    val activeSelectedTabKey = selectedTabKey ?: internalSelectedTabKey
+    val selectedTab = section.sourceTabs.firstOrNull { it.key == activeSelectedTabKey }
+        ?: section.sourceTabs.firstOrNull()
+    val visibleEntries = remember(selectedTab, entries) {
+        homeCatalogPreviewItems(selectedTab, entries)
+    }
     val rowState = rememberLazyListState()
-    val prefetchTargets = remember(entries, posterCardStyle) {
-        entries.map { item ->
+    LaunchedEffect(activeSelectedTabKey) {
+        rowState.scrollToItem(0)
+    }
+    val prefetchTargets = remember(visibleEntries, posterCardStyle) {
+        visibleEntries.map { item ->
             item.homePosterImages(posterCardStyle, useLandscapeBackdropMode = posterCardStyle.catalogLandscapeModeEnabled)
                 .toPrefetchTarget()
         }
     }
     PosterRowImagePrefetchEffect(state = rowState, targets = prefetchTargets)
 
-    NuvioShelfSection(
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showTabSelector && section.sourceTabs.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                section.sourceTabs.forEach { tab ->
+                    FilterChip(
+                        selected = selectedTab?.key == tab.key,
+                        onClick = {
+                            if (onTabSelected != null) onTabSelected(tab.key)
+                            else internalSelectedTabKey = tab.key
+                        },
+                        label = { Text(tab.title) },
+                    )
+                }
+            }
+        }
+        NuvioShelfSection(
         title = section.title,
-        entries = entries,
+        entries = visibleEntries,
         modifier = modifier,
         headerHorizontalPadding = sectionPadding,
         rowContentPadding = PaddingValues(horizontal = sectionPadding),
@@ -102,5 +156,6 @@ private fun HomeCatalogRowSectionContent(
             onClick = onPosterClick?.let { { it(item) } },
             onLongClick = onPosterLongClick?.let { { it(item) } },
         )
+        }
     }
 }
