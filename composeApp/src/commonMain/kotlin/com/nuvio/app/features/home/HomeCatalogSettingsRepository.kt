@@ -368,7 +368,6 @@ object HomeCatalogSettingsRepository {
     private fun publish() {
         val collectionMap = collectionDefinitions.associateBy { it.key }
         val catalogItems = definitions
-            .filterNot { definition -> ServerCatalog.isServerKey(definition.key) }
             .map { definition ->
                 val preference = preferences[definition.key]
                 HomeCatalogSettingsItem(
@@ -379,14 +378,12 @@ object HomeCatalogSettingsRepository {
                     enabled = preference?.enabled ?: true,
                     heroSourceEnabled = preference?.heroSourceEnabled ?: true,
                     order = preference?.order ?: 0,
-                    collectionSource = definition.let { sourceDefinition ->
-                        CollectionSource(
-                            addonId = sourceDefinition.addonIdForSync(),
-                            type = sourceDefinition.type,
-                            catalogId = sourceDefinition.catalogId,
-                            title = sourceDefinition.defaultTitle,
-                        )
-                    },
+                    collectionSource = if (ServerCatalog.isServerKey(definition.key)) null else CollectionSource(
+                        addonId = definition.addonIdForSync(),
+                        type = definition.type,
+                        catalogId = definition.catalogId,
+                        title = definition.defaultTitle,
+                    ),
                 )
             }
 
