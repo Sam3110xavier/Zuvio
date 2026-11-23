@@ -18,7 +18,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +42,7 @@ import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsItem
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.components.HomeEmptyStateCard
@@ -120,6 +125,9 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
             }
         }
+    }
+    item {
+        MergeRowsAction(items = items.filter { it.collectionSource != null && !it.isCollection })
     }
     item {
         val catalogOnlyItems = items.filter { !it.isCollection }
@@ -370,5 +378,85 @@ private fun HomescreenCatalogList(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MergeRowsAction(items: List<HomeCatalogSettingsItem>) {
+    var showDialog by remember { mutableStateOf(false) }
+    var title by remember { mutableStateOf("Merged row") }
+    var selectedKeys by remember { mutableStateOf(emptySet<String>()) }
+    if (items.isEmpty()) return
+
+    NuvioActionLabel(
+        text = "Create merged row",
+        onClick = {
+            selectedKeys = emptySet()
+            title = "Merged row"
+            showDialog = true
+        },
+    )
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Create merged row") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Row name") },
+                        singleLine = true,
+                    )
+                    Text(
+                        text = "Choose the home catalog rows to combine",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        itemsIndexed(items, key = { _, item -> item.key }) { _, item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedKeys = if (item.key in selectedKeys) {
+                                            selectedKeys - item.key
+                                        } else {
+                                            selectedKeys + item.key
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = item.key in selectedKeys,
+                                    onCheckedChange = { checked ->
+                                        selectedKeys = if (checked) selectedKeys + item.key else selectedKeys - item.key
+                                    },
+                                )
+                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                    Text(item.displayTitle, style = MaterialTheme.typography.bodyLarge)
+                                    Text(item.addonName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = title.isNotBlank() && selectedKeys.isNotEmpty(),
+                    onClick = {
+                        val sources = items.filter { it.key in selectedKeys }.mapNotNull { it.collectionSource }
+                        CollectionRepository.createMergedCollection(title, sources)
+                        showDialog = false
+                    },
+                ) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 }
