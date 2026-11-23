@@ -179,6 +179,27 @@ object CollectionRepository {
     @OptIn(ExperimentalUuidApi::class)
     fun generateId(): String = Uuid.random().toString()
 
+    fun createMergedCollection(title: String, sources: List<CollectionSource>): Collection? {
+        val selectedSources = sources.distinctBy(CollectionSource::catalogRouteKey)
+        if (title.isBlank() || selectedSources.isEmpty()) return null
+        val folderId = generateId()
+        val collection = Collection(
+            id = generateId(),
+            title = title.trim(),
+            showAllTab = true,
+            isMerged = true,
+            folders = listOf(
+                CollectionFolder(
+                    id = folderId,
+                    title = title.trim(),
+                    sources = selectedSources,
+                ),
+            ),
+        )
+        addCollection(collection)
+        return collection
+    }
+
     fun getAvailableCatalogs(): List<AvailableCatalog> {
         val addons = AddonRepository.uiState.value.addons.enabledAddons()
         return addons.mapNotNull { addon ->
