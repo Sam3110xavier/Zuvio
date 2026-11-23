@@ -406,7 +406,7 @@ object HomeRepository {
         val collections = CollectionRepository.collections.value.filter { it.isMerged && it.folders.isNotEmpty() }
         val requestKey = collections.joinToString("|") { collection ->
             collection.id + ":" + collection.folders.first().resolvedSources.joinToString(",") { it.catalogRouteKey() }
-        } + "|addons=" + addons.joinToString(",") { it.manifest?.id.orEmpty() }
+        } + "|addons=" + addons.joinToString(",") { it.manifest?.id.orEmpty() + ":" + it.manifestUrl }
         if (requestKey == mergedRowsRequestKey && !forceRefresh) return
         mergedRowsRequestKey = requestKey
         mergedRowsJob?.cancel()
