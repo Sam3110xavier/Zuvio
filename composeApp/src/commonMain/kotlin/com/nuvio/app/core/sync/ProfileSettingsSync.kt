@@ -388,7 +388,7 @@ object ProfileSettingsSync {
 
 @Serializable
 private data class MobileProfileSettingsBlob(
-    val version: Int = 4,
+    val version: Int = 5,
     val features: MobileProfileSettingsFeatures = MobileProfileSettingsFeatures(),
 )
 
