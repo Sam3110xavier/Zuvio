@@ -286,9 +286,6 @@ internal fun LazyListScope.homescreenSettingsContent(
             }
         }
     }
-    item(key = "merged_home_rows_settings") {
-        MergedHomeRowsSettingsSection(isTablet = isTablet)
-    }
     item(key = "hidden_home_rows") {
         if (hiddenItems.isNotEmpty()) {
             var showHiddenRows by rememberSaveable { mutableStateOf(false) }
