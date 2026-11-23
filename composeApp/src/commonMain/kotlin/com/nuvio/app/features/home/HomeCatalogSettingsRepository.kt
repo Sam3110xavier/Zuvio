@@ -487,7 +487,13 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         val catalogDefinitionsByKey = definitions.associateBy { it.key }
         val collectionDefinitionsByKey = collectionDefinitions.associateBy { it.key }
-        val items = preferences.values.filterNot { ServerCatalog.isServerKey(it.key) }.sortedBy { it.order }.map { pref ->
+        val localMergedCollectionKeys = collectionDefinitions
+            .filter { it.isMerged }
+            .mapTo(mutableSetOf()) { it.key }
+        val items = preferences.values
+            .filterNot { ServerCatalog.isServerKey(it.key) || it.key in localMergedCollectionKeys }
+            .sortedBy { it.order }
+            .map { pref ->
             val catalogDefinition = catalogDefinitionsByKey[pref.key]
             val collectionDefinition = collectionDefinitionsByKey[pref.key]
             val isCollection = collectionDefinition != null || pref.key.startsWith("collection_")
@@ -542,10 +548,12 @@ object HomeCatalogSettingsRepository {
             }
             val remoteKeys = remotePreferences.keys
             val knownKeys = knownPreferenceKeys()
+            val localMergedPreferences = preferences.filterKeys { it in localMergedCollectionKeys }
             val preservedPreferences = preferences.filterKeys { key ->
-                key !in remoteKeys && (key in knownKeys || key.requiresExplicitSyncKey())
+                key !in remoteKeys && key !in localMergedCollectionKeys &&
+                    (key in knownKeys || key.requiresExplicitSyncKey())
             }
-            preferences = preservedPreferences + remotePreferences
+            preferences = preservedPreferences + remotePreferences + localMergedPreferences
             normalizePreferences()
         }
         hasLoaded = true

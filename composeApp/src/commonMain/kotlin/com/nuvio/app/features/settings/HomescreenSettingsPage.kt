@@ -127,9 +127,6 @@ internal fun LazyListScope.homescreenSettingsContent(
         }
     }
     item {
-        MergeRowsAction(items = items.filter { it.collectionSource != null && !it.isCollection })
-    }
-    item {
         val catalogOnlyItems = items.filter { !it.isCollection }
         if (heroEnabled && catalogOnlyItems.isNotEmpty()) {
             var heroSourcesExpanded by remember { mutableStateOf(false) }
@@ -183,10 +180,13 @@ internal fun LazyListScope.homescreenSettingsContent(
                 title = sectionTitle,
                 isTablet = isTablet,
                 actions = {
-                    NuvioActionLabel(
-                        text = stringResource(Res.string.action_reset),
-                        onClick = HomeCatalogSettingsRepository::resetToDefaults,
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MergeRowsAction(items = items.filter { it.collectionSource != null && !it.isCollection })
+                        NuvioActionLabel(
+                            text = stringResource(Res.string.action_reset),
+                            onClick = HomeCatalogSettingsRepository::resetToDefaults,
+                        )
+                    }
                 },
             ) {
                 val hapticFeedback = LocalHapticFeedback.current

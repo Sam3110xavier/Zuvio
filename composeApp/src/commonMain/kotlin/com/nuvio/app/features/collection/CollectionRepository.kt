@@ -86,7 +86,7 @@ object CollectionRepository {
         ensureLoaded()
         val decorated = CollectionMobileSettingsRepository.applyToCollection(collection)
         _collections.value = _collections.value.upsertCollectionById(decorated)
-        persist()
+        persist(sync = !decorated.isMerged)
     }
 
     fun updateCollection(collection: Collection) {
@@ -95,19 +95,23 @@ object CollectionRepository {
         _collections.value = _collections.value.deduplicatedById().map {
             if (it.id == collection.id) decorated else it
         }
-        persist()
+        persist(sync = !decorated.isMerged)
     }
 
     fun removeCollection(collectionId: String) {
         ensureLoaded()
+        val wasMerged = _collections.value.firstOrNull { it.id == collectionId }?.isMerged == true
         _collections.value = _collections.value.filter { it.id != collectionId }
-        persist()
+        persist(sync = !wasMerged)
     }
 
     fun setCollections(collections: List<Collection>) {
         ensureLoaded()
         val normalized = normalizeCollections(collections, source = "setCollections")
-        _collections.value = CollectionMobileSettingsRepository.applyToCollections(normalized)
+        val localMerged = _collections.value.filter { it.isMerged }
+        _collections.value = CollectionMobileSettingsRepository.applyToCollections(
+            (normalized.filterNot { it.isMerged } + localMerged).deduplicatedById(),
+        )
         persist()
     }
 
@@ -130,9 +134,13 @@ object CollectionRepository {
         persist()
     }
 
+    /**
+     * Merged home rows are device-local configuration. Never include them in
+     * the collection sync payload, even if an older client uploaded them.
+     */
     fun exportToJson(): String {
         ensureLoaded()
-        return mergedCollectionsJson().toString()
+        return json.encodeToString(_collections.value.filterNot { it.isMerged })
     }
 
     fun importFromJson(jsonString: String): Result<List<Collection>> {
@@ -225,7 +233,11 @@ object CollectionRepository {
 
     internal fun applyFromRemote(collections: List<Collection>, rawJson: JsonElement) {
         rawCollectionsJson = rawJson
-        val normalized = normalizeCollections(collections, source = "remote sync")
+        val localMerged = _collections.value.filter { it.isMerged }
+        val normalized = normalizeCollections(
+            collections.filterNot { it.isMerged } + localMerged,
+            source = "remote sync",
+        )
         _collections.value = CollectionMobileSettingsRepository.applyToCollections(normalized)
         persist(sync = false)
     }
