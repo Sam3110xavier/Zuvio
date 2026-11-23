@@ -532,6 +532,9 @@ object HomeCatalogSettingsRepository {
 
     fun applyFromRemote(payload: SyncHomeCatalogPayload) {
         ensureLoaded()
+        val localMergedCollectionKeys = collectionDefinitions
+            .filter { it.isMerged }
+            .mapTo(mutableSetOf()) { it.key }
         showCatalogType = payload.showCatalogType
         hideUnreleasedContent = payload.hideUnreleasedContent
         if (payload.items.isNotEmpty()) {
