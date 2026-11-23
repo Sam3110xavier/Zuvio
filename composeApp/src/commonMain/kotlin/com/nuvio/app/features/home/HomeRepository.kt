@@ -41,6 +41,9 @@ object HomeRepository {
     private var currentRequestKey: String? = null
     private var currentDefinitions: List<HomeCatalogDefinition> = emptyList()
     private var cachedSections: Map<String, HomeCatalogSection> = emptyMap()
+    private var cachedMergedSections: Map<String, HomeCatalogSection> = emptyMap()
+    private var mergedRowsJob: Job? = null
+    private var mergedRowsRequestKey: String? = null
     private var cachedCollectionHeroItems: List<MetaPreview> = emptyList()
     private var collectionHeroJob: Job? = null
     private var collectionHeroRequestKey: String? = null
@@ -49,6 +52,7 @@ object HomeRepository {
 
     fun refresh(addons: List<ManagedAddon>, force: Boolean = false) {
         val activeAddons = addons.enabledAddons()
+        refreshMergedRows(activeAddons, force)
         val requests = buildHomeCatalogDefinitions(activeAddons)
         currentDefinitions = requests
         val requestCacheKeys = requests.mapTo(mutableSetOf(), HomeCatalogDefinition::cacheKey)
@@ -160,6 +164,7 @@ object HomeRepository {
     }
 
     fun applyCurrentSettings() {
+        refreshMergedRows(AddonRepository.uiState.value.addons.enabledAddons(), forceRefresh = false)
         publishCurrentState(
             isLoading = _uiState.value.isLoading,
             requestKey = currentRequestKey,
@@ -179,6 +184,10 @@ object HomeRepository {
         currentRequestKey = null
         currentDefinitions = emptyList()
         cachedSections = emptyMap()
+        cachedMergedSections = emptyMap()
+        mergedRowsJob?.cancel()
+        mergedRowsJob = null
+        mergedRowsRequestKey = null
         cachedCollectionHeroItems = emptyList()
         collectionHeroJob?.cancel()
         collectionHeroJob = null
@@ -203,7 +212,7 @@ object HomeRepository {
         fun HomeCatalogSection.withPosterOverlay(): HomeCatalogSection =
             copy(items = items.reapplyCustomPosterUrls(posterPattern))
 
-        val sections = currentDefinitions
+        val catalogSections = currentDefinitions
             .sortedBy { definition -> preferences[definition.key]?.order ?: Int.MAX_VALUE }
             .mapNotNull { definition ->
                 val preference = preferences[definition.key]
@@ -219,6 +228,19 @@ object HomeRepository {
                     title = customTitle.ifBlank { definition.titleFor(snapshot.showCatalogType) },
                 )
             }
+        val mergedSections = cachedMergedSections.values.mapNotNull { section ->
+            val preference = preferences[section.key] ?: return@mapNotNull null
+            if (!preference.enabled || section.items.isEmpty()) return@mapNotNull null
+            section.copy(
+                title = preference.customTitle.ifBlank { section.title },
+                items = section.items.reapplyCustomPosterUrls(posterPattern).let { items ->
+                    if (todayIsoDate == null) items else items.filterReleasedItems(todayIsoDate)
+                },
+            )
+        }
+        val sections = (catalogSections + mergedSections).sortedBy { section ->
+            preferences[section.key]?.order ?: Int.MAX_VALUE
+        }
 
         if (snapshot.heroEnabled && !heroSourcesResolved) {
             _uiState.value = HomeUiState(
@@ -380,6 +402,48 @@ object HomeRepository {
         }
     }
 
+    private fun refreshMergedRows(addons: List<ManagedAddon>, forceRefresh: Boolean) {
+        val collections = CollectionRepository.collections.value.filter { it.isMerged && it.folders.isNotEmpty() }
+        val requestKey = collections.joinToString("|") { collection ->
+            collection.id + ":" + collection.folders.first().resolvedSources.joinToString(",") { it.catalogRouteKey() }
+        } + "|addons=" + addons.joinToString(",") { it.manifest?.id.orEmpty() }
+        if (requestKey == mergedRowsRequestKey && !forceRefresh) return
+        mergedRowsRequestKey = requestKey
+        mergedRowsJob?.cancel()
+        mergedRowsJob = scope.launch {
+            val sections = collections.mapNotNull { collection ->
+                val folder = collection.folders.firstOrNull() ?: return@mapNotNull null
+                val sources = folder.resolvedSources
+                if (sources.isEmpty()) return@mapNotNull null
+                val results = sources.map { source ->
+                    async {
+                        runCatching { source.resolveCollectionHeroItems(addons, forceRefresh) }
+                            .getOrDefault(emptyList())
+                    }
+                }.awaitAll()
+                val items = roundRobinCollectionHeroItems(results).distinctBy(MetaPreview::stableKey)
+                if (items.isEmpty()) return@mapNotNull null
+                val firstSource = sources.first()
+                HomeCatalogSection(
+                    key = "collection_" + collection.id,
+                    title = collection.title,
+                    subtitle = "Merged row",
+                    addonName = "Merged row",
+                    target = CatalogTarget.CollectionSource(
+                        collectionId = collection.id,
+                        folderId = folder.id,
+                        sourceKey = firstSource.catalogRouteKey(),
+                        contentType = firstSource.type ?: firstSource.mediaType ?: "movie",
+                    ),
+                    items = items,
+                    availableItemCount = items.size,
+                    hasMore = false,
+                )
+            }
+            cachedMergedSections = sections.associateBy(HomeCatalogSection::key)
+            publishCurrentState(isLoading = _uiState.value.isLoading, requestKey = currentRequestKey)
+        }
+    }
     private fun enabledCollectionsForHero(snapshot: HomeCatalogSettingsSnapshot): List<Collection> {
         val preferences = snapshot.preferences
         return CollectionRepository.collections.value
