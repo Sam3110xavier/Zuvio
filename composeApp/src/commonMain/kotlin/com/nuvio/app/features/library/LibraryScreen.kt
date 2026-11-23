@@ -255,7 +255,11 @@ fun LibraryScreen(
     val hasServers = serversUiState.connections.any { it.enabled }
     val hasTelegram = TelegramIntegrationBridge.isAvailable()
     val sourceMode = displaySettings.viewMode
-        .takeUnless { (it == LibraryViewMode.Servers && !hasServers) || (it == LibraryViewMode.Telegram && !hasTelegram) }
+        .takeUnless {
+            it == LibraryViewMode.Downloaded ||
+                (it == LibraryViewMode.Servers && !hasServers) ||
+                (it == LibraryViewMode.Telegram && !hasTelegram)
+        }
         ?: LibraryViewMode.Saved
     var telegramEntries by remember { mutableStateOf<List<TelegramLibraryEntry>>(emptyList()) }
     var telegramSearch by rememberSaveable { mutableStateOf("") }
@@ -1270,11 +1274,6 @@ private fun LibrarySourceSwitch(
                 label = stringResource(Res.string.library_source_saved),
                 selected = selectedMode == LibraryViewMode.Saved,
                 onClick = { onModeSelected(LibraryViewMode.Saved) },
-            )
-            LibraryChip(
-                label = stringResource(Res.string.library_source_downloaded),
-                selected = selectedMode == LibraryViewMode.Downloaded,
-                onClick = { onModeSelected(LibraryViewMode.Downloaded) },
             )
             LibraryChip(
                 label = stringResource(Res.string.library_source_cloud),
