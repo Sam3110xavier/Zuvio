@@ -66,7 +66,7 @@ object CollectionSyncService {
                 blob.collectionsJson
             }
             val remoteJson = remoteCollectionsJson.toString()
-            val localJson = CollectionRepository.exportToJson()
+            val localJson = CollectionRepository.exportToSyncJson()
             if (ProfileRepository.activeProfileId != profileId) return@runCatching
 
             if (remoteJson == localJson) {
@@ -109,7 +109,7 @@ object CollectionSyncService {
     private suspend fun pushToRemote(profileId: Int) {
         runCatching {
             if (ProfileRepository.activeProfileId != profileId) return@runCatching
-            val collectionsJson = CollectionRepository.exportToJson()
+            val collectionsJson = CollectionRepository.exportToSyncJson()
             if (ProfileRepository.activeProfileId != profileId) return@runCatching
             val jsonElement = runCatching {
                 json.parseToJsonElement(collectionsJson)

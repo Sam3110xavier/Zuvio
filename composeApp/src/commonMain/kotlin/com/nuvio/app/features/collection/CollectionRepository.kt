@@ -140,6 +140,12 @@ object CollectionRepository {
      */
     fun exportToJson(): String {
         ensureLoaded()
+        return mergedCollectionsJson().toString()
+    }
+
+    /** Collection sync deliberately excludes device-local merged rows. */
+    fun exportToSyncJson(): String {
+        ensureLoaded()
         return json.encodeToString(_collections.value.filterNot { it.isMerged })
     }
 
@@ -151,9 +157,11 @@ object CollectionRepository {
             }
             rawCollectionsJson = json.parseToJsonElement(jsonString)
             val imported = json.decodeFromString<List<Collection>>(jsonString).deduplicatedById()
-            _collections.value = CollectionMobileSettingsRepository.applyToCollections(imported)
+            val localMerged = _collections.value.filter { it.isMerged }
+            val preserved = (imported.filterNot { it.isMerged } + localMerged).deduplicatedById()
+            _collections.value = CollectionMobileSettingsRepository.applyToCollections(preserved)
             persist()
-            imported
+            preserved
         }
     }
 
