@@ -196,7 +196,7 @@ internal fun LazyListScope.homescreenSettingsContent(
         }
     }
     item {
-        val catalogOnlyItems = items.filter { !it.isCollection }
+        val catalogOnlyItems = items.filter { !it.isCollection && !it.isMergedRow }
         if (heroEnabled && catalogOnlyItems.isNotEmpty()) {
             val settingsUiState by remember {
                 HomeCatalogSettingsRepository.uiState
@@ -285,6 +285,9 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
             }
         }
+    }
+    item(key = "merged_home_rows_settings") {
+        MergedHomeRowsSettingsSection(isTablet = isTablet)
     }
     item(key = "hidden_home_rows") {
         if (hiddenItems.isNotEmpty()) {
