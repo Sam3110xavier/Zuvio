@@ -1,5 +1,6 @@
 package com.nuvio.app.features.collection
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +24,14 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,6 +56,7 @@ import com.nuvio.app.core.ui.DialogButton
 import com.nuvio.app.core.ui.DialogButtons
 import com.nuvio.app.core.ui.DialogButtonStyle
 import com.nuvio.app.core.ui.DialogSurface
+import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -59,6 +64,8 @@ import com.nuvio.app.core.ui.NuvioSectionLabel
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
+import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -72,6 +79,10 @@ fun CollectionManagementScreen(
     onNavigateToEditor: (String?) -> Unit,
 ) {
     val collections by CollectionRepository.collections.collectAsState()
+    val homeCatalogSettings by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
@@ -118,6 +129,13 @@ fun CollectionManagementScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        item {
+            MergedHomeRowsSection(
+                items = homeCatalogSettings.items.filter { it.collectionSource != null && !it.isCollection },
+                mergedCount = collections.count { it.isMerged },
+            )
         }
 
         item {
@@ -221,6 +239,119 @@ fun CollectionManagementScreen(
         },
         onDismiss = { showDeleteConfirm = null },
     )
+}
+
+@Composable
+private fun MergedHomeRowsSection(
+    items: List<HomeCatalogSettingsItem>,
+    mergedCount: Int,
+) {
+    if (items.isEmpty()) return
+
+    var showDialog by remember { mutableStateOf(false) }
+    var title by remember { mutableStateOf("Merged row") }
+    var selectedKeys by remember { mutableStateOf(emptySet<String>()) }
+
+    NuvioSectionLabel(text = "Merged home rows")
+    NuvioSurfaceCard {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = "Combine catalogs from different add-ons into one home row. Select at least two sources. Reorder merged rows with the drag handles in the Home Layout catalog list.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Your merged rows",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "$mergedCount configured",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                NuvioActionLabel(
+                    text = "Create merged row",
+                    onClick = {
+                        selectedKeys = emptySet()
+                        title = "Merged row"
+                        showDialog = true
+                    },
+                )
+            }
+        }
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Create merged row") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Row name") },
+                        singleLine = true,
+                    )
+                    Text(
+                        text = "Choose the home catalog rows to combine",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        itemsIndexed(items, key = { _, item -> item.key }) { _, item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedKeys = if (item.key in selectedKeys) {
+                                            selectedKeys - item.key
+                                        } else {
+                                            selectedKeys + item.key
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = item.key in selectedKeys,
+                                    onCheckedChange = { checked ->
+                                        selectedKeys = if (checked) selectedKeys + item.key else selectedKeys - item.key
+                                    },
+                                )
+                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                    Text(item.displayTitle, style = MaterialTheme.typography.bodyLarge)
+                                    Text(item.addonName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = title.isNotBlank() && selectedKeys.size >= 2,
+                    onClick = {
+                        val sources = items.filter { it.key in selectedKeys }.mapNotNull { it.collectionSource }
+                        CollectionRepository.createMergedCollection(title, sources)
+                        showDialog = false
+                    },
+                ) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
