@@ -818,7 +818,7 @@ internal fun StreamList(
     val partyState by PartyRepository.state.collectAsStateWithLifecycle()
     val sharedStreamUrl = sharedStream?.stream?.playableDirectUrl?.trim()?.takeIf { it.isNotEmpty() }
     val sharedStreamIdentity = sharedStream?.stream?.let { stream ->
-        "${partyState.party?.id}|${stream.mediaKey}|${sharedStreamUrl.orEmpty()}"
+        "${partyState.party?.id}|${partyState.party?.media?.key}|${sharedStreamUrl.orEmpty()}"
     }
     var lastAutoFollowedStreamIdentity by rememberSaveable {
         mutableStateOf<String?>(null)
@@ -852,7 +852,7 @@ internal fun StreamList(
             val stillSameSharedStream = currentParty?.let {
                 !it.isHost && it.id == partyState.party?.id
             } == true &&
-                currentSharedStream?.mediaKey == sharedStream?.stream?.mediaKey &&
+                currentParty?.media?.key == partyState.party?.media?.key &&
                 currentSharedStream?.url?.trim() == sharedStreamUrl
 
             if (stillSameSharedStream) {
