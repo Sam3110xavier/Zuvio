@@ -852,7 +852,7 @@ internal fun StreamList(
                 !it.isHost && it.id == partyState.party?.id
             } == true &&
                 currentSharedStream?.mediaKey == sharedStream?.stream?.mediaKey &&
-                currentSharedStream.url.trim() == sharedStreamUrl
+                currentSharedStream?.url?.trim() == sharedStreamUrl
 
             if (stillSameSharedStream) {
                 lastAutoFollowedStreamIdentity = sharedStreamIdentity
