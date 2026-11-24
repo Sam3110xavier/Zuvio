@@ -423,27 +423,6 @@ fun CollectionEditorScreen(
 
             if (state.isMergeRow) {
                 item {
-                    NuvioSectionLabel(text = "Home Rows")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val selectedRows = state.selectedHomeRowKeys.mapNotNull { key ->
-                        state.availableHomeRows.firstOrNull { it.key == key }?.let { key to it.displayTitle }
-                    }
-                    val selectedKeys = state.selectedHomeRowKeys.toSet()
-                    val availableRows = state.availableHomeRows
-                        .filterNot { it.key in selectedKeys }
-                        .map { it.key to it.displayTitle }
-                    HomeRowReorderableList(
-                        selectedRows = selectedRows,
-                        availableRows = availableRows,
-                        onToggle = CollectionEditorRepository::toggleHomeRow,
-                    )
-                    if (state.availableHomeRows.isEmpty()) {
-                        Text("No Home Rows are currently available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (state.selectedHomeRowKeys.isEmpty()) {
-                        Text("Select at least one Home Row.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                item {
                     val selectedHomeRowSettings = state.selectedHomeRowKeys.mapNotNull { key ->
                         state.availableHomeRows.firstOrNull { it.key == key }
                     }
@@ -475,6 +454,27 @@ fun CollectionEditorScreen(
                                 ),
                             )
                         }
+                    }
+                }
+                item {
+                    NuvioSectionLabel(text = "Home Rows")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val selectedRows = state.selectedHomeRowKeys.mapNotNull { key ->
+                        state.availableHomeRows.firstOrNull { it.key == key }?.let { key to it.displayTitle }
+                    }
+                    val selectedKeys = state.selectedHomeRowKeys.toSet()
+                    val availableRows = state.availableHomeRows
+                        .filterNot { it.key in selectedKeys }
+                        .map { it.key to it.displayTitle }
+                    HomeRowReorderableList(
+                        selectedRows = selectedRows,
+                        availableRows = availableRows,
+                        onToggle = CollectionEditorRepository::toggleHomeRow,
+                    )
+                    if (state.availableHomeRows.isEmpty()) {
+                        Text("No Home Rows are currently available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (state.selectedHomeRowKeys.isEmpty()) {
+                        Text("Select at least one Home Row.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
