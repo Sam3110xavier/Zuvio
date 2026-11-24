@@ -67,7 +67,6 @@ import com.nuvio.app.features.party.messageRes
 import com.nuvio.app.features.party.partyMediaKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -248,7 +247,6 @@ private fun PlayerScreenRuntime.handlePartyMediaChange(media: PartyMedia) {
 internal fun PlayerScreenRuntime.BindPartyEffects() {
     // This binding belongs to the player session, including background PiP.
     val partyState by PartyRepository.state.collectAsState()
-    val receivedSharedStream by PartyRepository.sharedStream.collectAsState()
     val partyId = partyState.party?.id
     val key = partyKey
     val sharing = partyState.party?.let { it.isHost && it.sharing } == true
@@ -286,64 +284,6 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
 
     LaunchedEffect(sharing, sharedStream) {
         if (sharing) PartyRepository.shareStream(sharedStream)
-    }
-
-    LaunchedEffect(
-        partyId,
-        key,
-        partyState.party?.isHost,
-        partyState.party?.media?.key,
-        receivedSharedStream?.mediaKey,
-        receivedSharedStream?.url,
-    ) {
-        val party = partyState.party ?: return@LaunchedEffect
-        val shared = receivedSharedStream ?: return@LaunchedEffect
-        val videoId = activeVideoId ?: return@LaunchedEffect
-        val sharedUrl = shared.url.trim()
-
-        // Only guests watching this exact party item may follow the host's shared URL.
-        if (
-            party.isHost ||
-            party.media.key != key ||
-            shared.mediaKey != key ||
-            !isShareableStreamUrl(sharedUrl)
-        ) {
-            return@LaunchedEffect
-        }
-
-        // Reuse the normal player source search and select the guest's own StreamItem,
-        // preserving its local headers, addon metadata, and playback preparation.
-        PlayerStreamsRepository.loadSources(
-            type = contentType ?: parentMetaType,
-            videoId = videoId,
-            season = activeSeasonNumber,
-            episode = activeEpisodeNumber,
-        )
-
-        val matchingStream = PlayerStreamsRepository.sourceState.first { state ->
-            state.groups.asSequence()
-                .flatMap { it.streams.asSequence() }
-                .any { it.playableDirectUrl == sharedUrl } ||
-                !state.isAnyLoading
-        }.groups.asSequence()
-            .flatMap { it.streams.asSequence() }
-            .firstOrNull { it.playableDirectUrl == sharedUrl }
-            ?: return@LaunchedEffect
-
-        // Recheck the party and media identity after the asynchronous source search.
-        val currentParty = PartyRepository.state.value.party
-        if (
-            partyKey != key ||
-            currentParty == null ||
-            currentParty.id != party.id ||
-            currentParty.isHost ||
-            currentParty.media.key != key ||
-            PartyRepository.sharedStream.value != shared
-        ) {
-            return@LaunchedEffect
-        }
-
-        switchToSource(matchingStream)
     }
 
     LaunchedEffect(key) {
