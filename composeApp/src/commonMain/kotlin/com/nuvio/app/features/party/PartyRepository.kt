@@ -368,7 +368,7 @@ object PartyRepository {
                 _sharedStream.value = payload["stream"]
                     ?.takeIf { it !is JsonNull }
                     ?.let { decode(it, PartyStream.serializer()) }
-                    ?.takeIf { isShareableStreamUrl(it.url) }
+                    ?.takeIf { it.mediaKey == party.media.key && isShareableStreamUrl(it.url) }
             }
             "chat" -> PartyChat.receive(payload)
         }
@@ -456,7 +456,7 @@ object PartyRepository {
                 presence = current.presence.filterKeys { key -> snapshot.members.any { it.id == key } },
             )
         }
-        if (info.media.key != _state.value.party?.media?.key) applyMedia(info.media, info.playback)
+        if (info.media != _state.value.party?.media) applyMedia(info.media, info.playback)
         info.playback?.let(::accept)
     }
 

@@ -113,24 +113,6 @@ internal fun LibrarySavedControls(
     }
 
     val leadingChips: @Composable (Boolean) -> Unit = { fillWidth ->
-        if (layoutMode == LibraryLayoutMode.VERTICAL && sourceMode.isRemoteTrackingSource) {
-            val selectedSection = verticalProjection.availableSections
-                .firstOrNull { section -> section.type == verticalProjection.selectedSectionKey }
-            FacetSlot(fillWidth) {
-                NuvioDropdownChip(
-                    title = stringResource(Res.string.library_filter_list),
-                    label = selectedSection?.let { section -> localizedLibrarySectionTitle(section.type, section.displayTitle) }.orEmpty(),
-                    selectedKey = verticalProjection.selectedSectionKey,
-                    options = verticalProjection.availableSections.map { section ->
-                        NuvioDropdownOption(key = section.type, label = localizedLibrarySectionTitle(section.type, section.displayTitle))
-                    },
-                    enabled = verticalProjection.availableSections.size > 1,
-                    onSelected = { option -> onSectionSelected(option.key) },
-                    fillWidth = fillWidth,
-                )
-            }
-        }
-
         if (layoutMode == LibraryLayoutMode.VERTICAL) {
             val typeOptions = buildList {
                 add(NuvioDropdownOption(key = "", label = "$allTypesLabel (${verticalProjection.allTypesCount})"))
@@ -177,7 +159,7 @@ internal fun LibrarySavedControls(
         }
     }
 
-    val chipCount = (if (sourceMode.isRemoteTrackingSource) 1 else 0) + 2 +
+    val chipCount = 2 +
         (if (verticalProjection.availableGenres.isNotEmpty()) 1 else 0) +
         (if (verticalProjection.availableYears.isNotEmpty()) 1 else 0) + 1
 
@@ -205,6 +187,24 @@ internal fun LibrarySavedControls(
             if (layoutMode == LibraryLayoutMode.VERTICAL && !singleRow) {
                 LibraryFilterRow {
                     facetChips(true)
+                }
+            }
+
+            if (layoutMode == LibraryLayoutMode.VERTICAL &&
+                sourceMode.isRemoteTrackingSource &&
+                verticalProjection.availableSections.isNotEmpty()
+            ) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    verticalProjection.availableSections.forEach { section ->
+                        LibraryChip(
+                            label = localizedLibrarySectionTitle(section.type, section.displayTitle),
+                            selected = section.type == verticalProjection.selectedSectionKey,
+                            onClick = { onSectionSelected(section.type) },
+                        )
+                    }
                 }
             }
         }
