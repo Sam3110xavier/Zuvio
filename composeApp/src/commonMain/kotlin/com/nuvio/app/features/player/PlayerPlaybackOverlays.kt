@@ -166,8 +166,8 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             onOpen = onOpenMovieRecommendation,
             onDismiss = onDismissMovieRecommendations,
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = stackEnd, bottom = cardBottom),
+                .align(Alignment.BottomCenter)
+                .padding(bottom = overlayBottomPadding),
         )
     }
 
