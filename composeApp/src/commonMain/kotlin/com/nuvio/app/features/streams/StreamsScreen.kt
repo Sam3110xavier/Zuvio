@@ -97,6 +97,7 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.party.PartyRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedRepository
@@ -814,6 +815,55 @@ internal fun StreamList(
     val checkingMoreAddonsText = stringResource(Res.string.streams_checking_more_addons)
     val formatStreamSize = rememberStreamSizeLabelFormat()
     val sharedStream = LocalSharedStream.current
+    val partyState by PartyRepository.state.collectAsStateWithLifecycle()
+    val sharedStreamUrl = sharedStream?.stream?.playableDirectUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val sharedStreamIdentity = sharedStream?.stream?.let { stream ->
+        "${partyState.party?.id}|${stream.mediaKey}|${sharedStreamUrl.orEmpty()}"
+    }
+    var lastAutoFollowedStreamIdentity by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    val matchingSharedStream = remember(
+        sharedStreamUrl,
+        sharedStreamIdentity,
+        uiState.groups,
+        partyState.party?.isHost,
+    ) {
+        if (partyState.party?.isHost == false && sharedStreamUrl != null) {
+            uiState.groups.asSequence()
+                .flatMap { it.streams.asSequence() }
+                .firstOrNull { it.playableDirectUrl?.trim() == sharedStreamUrl }
+        } else {
+            null
+        }
+    }
+    LaunchedEffect(sharedStreamIdentity, matchingSharedStream?.playableDirectUrl) {
+        if (sharedStreamIdentity == null) {
+            lastAutoFollowedStreamIdentity = null
+            return@LaunchedEffect
+        }
+
+        if (matchingSharedStream != null &&
+            lastAutoFollowedStreamIdentity != sharedStreamIdentity
+        ) {
+            val currentParty = PartyRepository.state.value.party
+            val currentSharedStream = PartyRepository.sharedStream.value
+            val stillSameSharedStream = currentParty?.let {
+                !it.isHost && it.id == partyState.party?.id
+            } == true &&
+                currentSharedStream?.mediaKey == sharedStream?.stream?.mediaKey &&
+                currentSharedStream.url.trim() == sharedStreamUrl
+
+            if (stillSameSharedStream) {
+                lastAutoFollowedStreamIdentity = sharedStreamIdentity
+                onStreamSelected(
+                    matchingSharedStream,
+                    resumePositionMs,
+                    resumeProgressFraction,
+                )
+            }
+        }
+    }
     val streamBadgeSettings by remember {
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
@@ -850,7 +900,7 @@ internal fun StreamList(
         header?.let { listHeader ->
             item(key = "list_header", contentType = "list_header") { listHeader() }
         }
-        sharedStream?.let { shared ->
+        if (matchingSharedStream == null) sharedStream?.let { shared ->
             item(key = "shared_stream") {
                 Column {
                     StreamSectionHeader(
