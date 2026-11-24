@@ -222,25 +222,10 @@ private fun PlayerScreenRuntime.applyPartyPaused(paused: Boolean, force: Boolean
 }
 
 private fun PlayerScreenRuntime.handlePartyMediaChange(media: PartyMedia) {
-    if (media.key == partyKey) return
-    val season = media.season
-    val episode = media.episode
-    if (media.metaId == parentMetaId && isSeries && season != null && episode != null) {
-        val next = nextEpisodeInfo
-        if (next != null && next.hasAired && next.season == season && next.episode == episode) {
-            playNextEpisode()
-            return
-        }
-        val video = playerMetaVideos.firstOrNull { it.season == season && it.episode == episode }
-        if (video != null) {
-            episodeStreamsPanelState = EpisodeStreamsPanelState(showStreams = true, selectedEpisode = video)
-            showEpisodesPanel = true
-            showPartyPanel = false
-            return
-        }
-    }
+    val party = PartyRepository.state.value.party ?: return
+    if (party.isHost || media.key == partyKey) return
     showPartyChat = false
-    showPartyPanel = true
+    args.onOpenPartyMedia(media)
 }
 
 @Composable
@@ -251,6 +236,7 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
     val key = partyKey
     val sharing = partyState.party?.let { it.isHost && it.sharing } == true
     val sharedStream = if (sharing) currentPartyStream() else null
+    val incomingSharedStream by PartyRepository.sharedStream.collectAsState()
 
     DisposableEffect(playerController) {
         val source = playerController as? PlayerSystemControlSource
@@ -284,6 +270,14 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
 
     LaunchedEffect(sharing, sharedStream) {
         if (sharing) PartyRepository.shareStream(sharedStream)
+    }
+
+    LaunchedEffect(partyId, partyState.party?.isHost, partyState.party?.media?.key, incomingSharedStream) {
+        val party = partyState.party ?: return@LaunchedEffect
+        val stream = incomingSharedStream ?: return@LaunchedEffect
+        if (!party.isHost && stream.mediaKey == party.media.key && stream.mediaKey == partyKey) {
+            switchToSource(stream.toStreamItem(), saveForReuse = false)
+        }
     }
 
     LaunchedEffect(key) {
