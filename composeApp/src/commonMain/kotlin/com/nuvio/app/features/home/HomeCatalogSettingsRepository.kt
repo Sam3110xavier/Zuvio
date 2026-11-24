@@ -377,6 +377,30 @@ object HomeCatalogSettingsRepository {
         }
     }
 
+    /**
+     * Updates the existing Home Layout visibility state for several rows in one operation.
+     * This deliberately uses the same enabled preference as the Home Layout switches.
+     */
+    fun setEnabledForKeys(keys: List<String>, enabled: Boolean) {
+        ensureLoaded()
+        val updatedPreferences = preferences.toMutableMap()
+        var changed = false
+        keys.distinct().forEach { key ->
+            val current = updatedPreferences[key] ?: defaultPreferenceForMissingKey(key) ?: return@forEach
+            if (current.enabled != enabled) {
+                updatedPreferences[key] = current.copy(enabled = enabled)
+                changed = true
+            }
+        }
+        if (!changed) return
+
+        preferences = updatedPreferences.toMap()
+        publish()
+        persist()
+        HomeRepository.applyCurrentSettings()
+        HomeCatalogSettingsSyncService.triggerPush()
+    }
+
     fun setCustomTitle(key: String, title: String) {
         updatePreference(key) { preference ->
             preference.copy(customTitle = title)

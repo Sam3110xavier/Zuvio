@@ -425,27 +425,56 @@ fun CollectionEditorScreen(
                 item {
                     NuvioSectionLabel(text = "Home Rows")
                     Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        state.availableHomeRows.forEach { homeRow ->
-                            FilterChip(
-                                selected = homeRow.key in state.selectedHomeRowKeys,
-                                onClick = { CollectionEditorRepository.toggleHomeRow(homeRow.key) },
-                                label = { Text(homeRow.displayTitle) },
-                                leadingIcon = if (homeRow.key in state.selectedHomeRowKeys) {
-                                    {
-                                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    }
-                                } else null,
-                            )
-                        }
+                    val selectedRows = state.selectedHomeRowKeys.mapNotNull { key ->
+                        state.availableHomeRows.firstOrNull { it.key == key }?.let { key to it.displayTitle }
                     }
+                    val selectedKeys = state.selectedHomeRowKeys.toSet()
+                    val availableRows = state.availableHomeRows
+                        .filterNot { it.key in selectedKeys }
+                        .map { it.key to it.displayTitle }
+                    HomeRowReorderableList(
+                        selectedRows = selectedRows,
+                        availableRows = availableRows,
+                        onToggle = CollectionEditorRepository::toggleHomeRow,
+                    )
                     if (state.availableHomeRows.isEmpty()) {
                         Text("No Home Rows are currently available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else if (state.selectedHomeRowKeys.isEmpty()) {
                         Text("Select at least one Home Row.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                item {
+                    val selectedHomeRowSettings = state.selectedHomeRowKeys.mapNotNull { key ->
+                        state.availableHomeRows.firstOrNull { it.key == key }
+                    }
+                    val includedRowsHidden = selectedHomeRowSettings.isNotEmpty() &&
+                        selectedHomeRowSettings.size == state.selectedHomeRowKeys.size &&
+                        selectedHomeRowSettings.all { !it.enabled }
+
+                    NuvioSurfaceCard {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                CollectionEditorRepository.setIncludedHomeRowsHidden(!includedRowsHidden)
+                            },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text("Hide included Home Rows", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                Text("Uses the existing Home Layout visibility settings for selected rows", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = includedRowsHidden,
+                                enabled = selectedHomeRowSettings.isNotEmpty(),
+                                onCheckedChange = CollectionEditorRepository::setIncludedHomeRowsHidden,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                                ),
+                            )
+                        }
                     }
                 }
             } else {
@@ -544,6 +573,128 @@ fun CollectionEditorScreen(
                         }
                     },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeRowReorderableList(
+    selectedRows: List<Pair<String, String>>,
+    availableRows: List<Pair<String, String>>,
+    onToggle: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState = lazyListState) { from, to ->
+        CollectionEditorRepository.moveHomeRowByIndex(from.index, to.index)
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (selectedRows.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 720.dp),
+                state = lazyListState,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                itemsIndexed(selectedRows, key = { _, row -> row.first }) { _, row ->
+                    ReorderableItem(reorderableState, key = row.first) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = MaterialTheme.shapes.extraLarge,
+                            shadowElevation = elevation,
+                        ) {
+                            NuvioSurfaceCard {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            row.second,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            "Included in Merge Row",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            modifier = with(this@ReorderableItem) {
+                                                Modifier.draggableHandle(
+                                                    onDragStarted = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                                    onDragStopped = { hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                                                ).size(36.dp)
+                                            },
+                                            onClick = {},
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Menu,
+                                                contentDescription = "Reorder",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = true,
+                                            onCheckedChange = { onToggle(row.first) },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        availableRows.forEach { row ->
+            NuvioSurfaceCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            row.second,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "Tap to include in Merge Row",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = false,
+                            onCheckedChange = { onToggle(row.first) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                            ),
+                        )
+                    }
+                }
             }
         }
     }

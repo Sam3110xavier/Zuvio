@@ -103,7 +103,8 @@ object CollectionEditorRepository {
     fun initialize(collectionId: String?) {
         val catalogs = CollectionRepository.getAvailableCatalogs()
         HomeCatalogSettingsRepository.syncCatalogs(AddonRepository.uiState.value.addons.enabledAddons())
-        val homeRows = HomeCatalogSettingsRepository.uiState.value.items.filter { !it.isCollection && it.enabled }
+        // Include visible and hidden catalog rows so the editor reflects Home Layout state.
+        val homeRows = HomeCatalogSettingsRepository.uiState.value.items.filter { !it.isCollection }
 
         if (collectionId != null) {
             val existing = CollectionRepository.getCollection(collectionId)
@@ -175,6 +176,28 @@ object CollectionEditorRepository {
         _uiState.value = _uiState.value.copy(
             selectedHomeRowKeys = if (key in selected) selected - key else selected + key,
         )
+    }
+
+    fun moveHomeRowByIndex(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        val rows = _uiState.value.selectedHomeRowKeys.toMutableList()
+        if (fromIndex !in rows.indices || toIndex !in rows.indices) return
+        rows.add(toIndex, rows.removeAt(fromIndex))
+        _uiState.value = _uiState.value.copy(selectedHomeRowKeys = rows)
+    }
+
+    /**
+     * Hides or restores the selected rows through HomeCatalogSettingsRepository.
+     * No Merge Row-specific visibility preference is stored.
+     */
+    fun setIncludedHomeRowsHidden(hidden: Boolean) {
+        val keys = _uiState.value.selectedHomeRowKeys
+        if (keys.isEmpty()) return
+
+        HomeCatalogSettingsRepository.setEnabledForKeys(keys, enabled = !hidden)
+        val currentRows = HomeCatalogSettingsRepository.uiState.value.items
+            .filter { !it.isCollection }
+        _uiState.value = _uiState.value.copy(availableHomeRows = currentRows)
     }
 
     @OptIn(ExperimentalUuidApi::class)
