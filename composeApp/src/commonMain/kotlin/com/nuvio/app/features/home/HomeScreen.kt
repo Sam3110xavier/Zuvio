@@ -99,6 +99,7 @@ import com.nuvio.app.features.watching.application.WatchingState
 import com.nuvio.app.features.watching.domain.WatchingContentRef
 import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.collection.MERGE_ROW_FOLDER_ID
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.components.HomeCollectionRowSection
 import kotlinx.coroutines.Dispatchers
@@ -914,7 +915,7 @@ fun HomeScreen(
     }
 
     val visibleCollections = remember(collections) {
-        collections.filter { it.folders.isNotEmpty() }
+        collections.filter { it.isMergeRow || it.folders.isNotEmpty() }
     }
     val collectionsMap = remember(visibleCollections) {
         visibleCollections.associateBy { "collection_${it.id}" }
@@ -1207,14 +1208,50 @@ fun HomeScreen(
                             if (settingsItem.isCollection) {
                                 val collection = collectionsMap[settingsItem.key]
                                 if (collection != null) {
-                                    item(key = keyedSettingsItem.lazyKey, contentType = HOME_COLLECTION_ROW_CONTENT_TYPE) {
-                                        HomeCollectionRowSection(
-                                            collection = collection,
-                                            modifier = Modifier.padding(bottom = 12.dp),
-                                            sectionPadding = homeSectionPadding,
-                                            animateGifs = animateCollectionGifs,
-                                            onFolderClick = onFolderClick,
-                                        )
+                                    if (collection.isMergeRow) {
+                                        val mergeSections = collection.homeRowKeys.mapNotNull(sectionsMap::get)
+                                        val mergedItems = mergeSections.flatMap { it.items }
+                                            .distinctBy { item -> "${item.type}:${item.id}" }
+                                        val baseSection = mergeSections.firstOrNull()
+                                        if (baseSection != null && mergedItems.isNotEmpty()) {
+                                            val mergeSection = baseSection.copy(
+                                                key = "merge_row_${collection.id}",
+                                                title = collection.title,
+                                                subtitle = "",
+                                                addonName = "",
+                                                items = mergedItems,
+                                                availableItemCount = maxOf(
+                                                    mergedItems.size,
+                                                    mergeSections.sumOf { it.availableItemCount },
+                                                ),
+                                                hasMore = mergeSections.any { it.hasMore },
+                                            )
+                                            item(key = keyedSettingsItem.lazyKey, contentType = HOME_CATALOG_ROW_CONTENT_TYPE) {
+                                                HomeCatalogRowSection(
+                                                    section = mergeSection,
+                                                    entries = mergedItems.take(HOME_CATALOG_PREVIEW_LIMIT),
+                                                    modifier = Modifier.padding(bottom = 12.dp),
+                                                    sectionPadding = homeSectionPadding,
+                                                    onViewAllClick = onFolderClick?.let {
+                                                        { it(collection.id, MERGE_ROW_FOLDER_ID) }
+                                                    },
+                                                    watchedKeys = watchedUiState.watchedKeys,
+                                                    fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                                                    onPosterClick = onPosterClick,
+                                                    onPosterLongClick = onPosterLongClick,
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        item(key = keyedSettingsItem.lazyKey, contentType = HOME_COLLECTION_ROW_CONTENT_TYPE) {
+                                            HomeCollectionRowSection(
+                                                collection = collection,
+                                                modifier = Modifier.padding(bottom = 12.dp),
+                                                sectionPadding = homeSectionPadding,
+                                                animateGifs = animateCollectionGifs,
+                                                onFolderClick = onFolderClick,
+                                            )
+                                        }
                                     }
                                 }
                             } else {

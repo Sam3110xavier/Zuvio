@@ -287,7 +287,18 @@ private fun CollectionListItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 val summary = buildString {
-                    append(stringResource(Res.string.collections_folder_count, collection.folders.size))
+                    if (collection.isMergeRow) {
+                        val selectedCount = collection.homeRowKeys.size
+                        append(
+                            if (selectedCount == 1) {
+                                "1 Home Row selected"
+                            } else {
+                                "$selectedCount Home Rows selected"
+                            },
+                        )
+                    } else {
+                        append(stringResource(Res.string.collections_folder_count, collection.folders.size))
+                    }
                     if (collection.pinToTop) {
                         append(" · ")
                         append(stringResource(Res.string.collections_pinned))

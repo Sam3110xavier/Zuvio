@@ -112,6 +112,35 @@ class HomeCatalogSettingsRepositoryTest {
     }
 
     @Test
+    fun batchVisibilityUpdatesUseTheSameEnabledStateAsHomeLayout() {
+        HomeCatalogSettingsRepository.syncCatalogs(
+            listOf(addon(listOf("popular", "latest", "trending"))),
+        )
+        val selectedKeys = HomeCatalogSettingsRepository.uiState.value.items
+            .take(2)
+            .map { it.key }
+
+        HomeCatalogSettingsRepository.setEnabledForKeys(selectedKeys, enabled = false)
+
+        assertEquals(
+            selectedKeys.toSet(),
+            HomeCatalogSettingsRepository.uiState.value.items
+                .filterNot { it.enabled }
+                .map { it.key }
+                .filter { it in selectedKeys }
+                .toSet(),
+        )
+
+        HomeCatalogSettingsRepository.setEnabledForKeys(selectedKeys, enabled = true)
+
+        assertTrue(
+            HomeCatalogSettingsRepository.uiState.value.items
+                .filter { it.key in selectedKeys }
+                .all { it.enabled },
+        )
+    }
+
+    @Test
     fun rowPlacementIsExcludedFromProfileSyncPayload() {
         HomeCatalogSettingsRepository.syncCatalogs(listOf(addon()))
         HomeCatalogSettingsRepository.setRowPlacement("test:movie:popular", HomeCatalogRowPlacement.PINNED_BOTTOM)

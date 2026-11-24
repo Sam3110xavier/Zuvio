@@ -12,6 +12,8 @@ import com.nuvio.app.features.catalog.supportsPagination
 import com.nuvio.app.core.poster.withCustomPosterUrls
 import com.nuvio.app.core.i18n.localizedMediaTypeLabel
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.HomeRepository
+import com.nuvio.app.features.servers.ServerCatalog
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.filterReleasedItems
@@ -53,6 +55,7 @@ data class FolderTab(
     val consecutiveDuplicatePages: Int = 0,
     val error: String? = null,
     val isAllTab: Boolean = false,
+    val homeSection: HomeCatalogSection? = null,
 ) {
     val canLoadMore: Boolean
         get() = supportsPagination && nextSkip != null
@@ -124,6 +127,46 @@ object FolderDetailRepository {
         val collection = CollectionRepository.getCollection(collectionId)
         if (collection == null) {
             _uiState.value = FolderDetailUiState(isLoading = false)
+            return
+        }
+
+        if (collection.isMergeRow && folderId == MERGE_ROW_FOLDER_ID) {
+            val selectedSections = HomeRepository.uiState.value.sections
+                .associateBy(HomeCatalogSection::key)
+                .let { sectionsByKey -> collection.homeRowKeys.mapNotNull(sectionsByKey::get) }
+            val syntheticFolder = CollectionFolder(id = folderId, title = collection.title)
+            val sourceTabs = selectedSections.map { section ->
+                FolderTab(
+                    label = section.title,
+                    typeLabel = section.subtitle,
+                    supportsPagination = section.target.supportsPagination,
+                    items = section.items,
+                    isLoading = false,
+                    nextSkip = section.items.size.takeIf { section.hasMore },
+                    homeSection = section,
+                )
+            }
+            val showAll = true
+            val tabs = buildList {
+                if (showAll) {
+                    add(FolderTab(
+                        label = runBlocking { getString(Res.string.collections_tab_all) },
+                        isLoading = false,
+                        isAllTab = true,
+                    ))
+                }
+                addAll(sourceTabs)
+            }
+            _uiState.value = FolderDetailUiState(
+                folder = syntheticFolder,
+                collectionTitle = collection.title,
+                viewMode = collection.folderViewMode,
+                tabs = tabs,
+                selectedTabIndex = 0,
+                isLoading = false,
+                showAllTab = showAll,
+            )
+            if (showAll) rebuildAllTab()
             return
         }
 
@@ -308,6 +351,7 @@ object FolderDetailRepository {
         val requestedSkip = if (reset) 0 else currentTab.nextSkip ?: return
         val currentSource = currentTab.source
         if (
+            currentTab.homeSection == null &&
             currentSource?.isTmdb != true &&
             currentSource?.isTrakt != true &&
             currentTab.manifestUrl == null
@@ -336,6 +380,22 @@ object FolderDetailRepository {
             runCatching {
                 val source = currentTab.source
                 when {
+                    currentTab.homeSection != null -> when (val target = currentTab.homeSection.target) {
+                        is CatalogTarget.Addon -> fetchCatalogPage(
+                            manifestUrl = target.manifestUrl,
+                            type = target.contentType,
+                            catalogId = target.catalogId,
+                            genre = target.genre,
+                            skip = requestedSkip.takeIf { it > 0 },
+                        )
+                        is CatalogTarget.Server -> ServerCatalog.page(
+                            target = target,
+                            skip = requestedSkip,
+                            limit = CATALOG_PAGE_SIZE,
+                        )
+                        else -> throw IllegalStateException("Unsupported Home Row target")
+                    }
+
                     source?.isTmdb == true -> TmdbCollectionSourceResolver.resolve(
                         source = source,
                         page = if (reset) 1 else requestedSkip,
@@ -446,6 +506,14 @@ object FolderDetailRepository {
         val collectionId = activeCollectionId ?: return emptyList()
 
         return current.tabs.filter { !it.isAllTab && it.items.isNotEmpty() }.mapNotNull { tab ->
+            tab.homeSection?.let { section ->
+                return@mapNotNull section.copy(
+                    key = "merge_${collectionId}_${section.key}",
+                    items = tab.items,
+                    availableItemCount = tab.items.size,
+                    hasMore = tab.canLoadMore,
+                )
+            }
             val directSource = tab.source?.let { it.isTmdb || it.isTrakt } == true
             val target = if (directSource) {
                 val sourceKey = tab.sourceKey ?: return@mapNotNull null

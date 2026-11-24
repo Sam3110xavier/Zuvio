@@ -48,7 +48,11 @@ internal object CollectionJsonPreserver {
                 )
             }
         }
-        return mergeObjects(raw, encoded, mapOf("folders" to mergedFolders))
+        // Drop the retired Merge Row visibility flag from legacy collection JSON.
+        val rawWithoutLegacyVisibility = raw?.let { source ->
+            JsonObject(source.filterKeys { key -> key != "hideIncludedHomeRows" })
+        }
+        return mergeObjects(rawWithoutLegacyVisibility, encoded, mapOf("folders" to mergedFolders))
     }
 
     private fun mergeFolder(

@@ -1,7 +1,11 @@
 package com.nuvio.app.features.collection
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.home.PosterShape
+import com.nuvio.app.features.home.HomeCatalogSettingsItem
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.trakt.TraktPublicListSearchResult
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +46,9 @@ data class CollectionEditorUiState(
     val viewMode: FolderViewMode = FolderViewMode.TABBED_GRID,
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),
+    val isMergeRow: Boolean = false,
+    val selectedHomeRowKeys: List<String> = emptyList(),
+    val availableHomeRows: List<HomeCatalogSettingsItem> = emptyList(),
     val isLoading: Boolean = true,
     val availableCatalogs: List<AvailableCatalog> = emptyList(),
     val editingFolder: CollectionFolder? = null,
@@ -95,6 +102,9 @@ object CollectionEditorRepository {
     @OptIn(ExperimentalUuidApi::class)
     fun initialize(collectionId: String?) {
         val catalogs = CollectionRepository.getAvailableCatalogs()
+        HomeCatalogSettingsRepository.syncCatalogs(AddonRepository.uiState.value.addons.enabledAddons())
+        // Include visible and hidden catalog rows so the editor reflects Home Layout state.
+        val homeRows = HomeCatalogSettingsRepository.uiState.value.items.filter { !it.isCollection }
 
         if (collectionId != null) {
             val existing = CollectionRepository.getCollection(collectionId)
@@ -108,6 +118,9 @@ object CollectionEditorRepository {
                     viewMode = existing.folderViewMode,
                     showAllTab = existing.showAllTab,
                     folders = existing.folders,
+                    isMergeRow = existing.isMergeRow,
+                    selectedHomeRowKeys = existing.homeRowKeys,
+                    availableHomeRows = homeRows,
                     isLoading = false,
                     availableCatalogs = catalogs,
                 )
@@ -124,6 +137,7 @@ object CollectionEditorRepository {
             viewMode = FolderViewMode.TABBED_GRID,
             showAllTab = true,
             folders = emptyList(),
+            availableHomeRows = homeRows,
             isLoading = false,
             availableCatalogs = catalogs,
         )
@@ -151,6 +165,39 @@ object CollectionEditorRepository {
 
     fun setShowAllTab(show: Boolean) {
         _uiState.value = _uiState.value.copy(showAllTab = show)
+    }
+
+    fun setMergeRowEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(isMergeRow = enabled)
+    }
+
+    fun toggleHomeRow(key: String) {
+        val selected = _uiState.value.selectedHomeRowKeys
+        _uiState.value = _uiState.value.copy(
+            selectedHomeRowKeys = if (key in selected) selected - key else selected + key,
+        )
+    }
+
+    fun moveHomeRowByIndex(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        val rows = _uiState.value.selectedHomeRowKeys.toMutableList()
+        if (fromIndex !in rows.indices || toIndex !in rows.indices) return
+        rows.add(toIndex, rows.removeAt(fromIndex))
+        _uiState.value = _uiState.value.copy(selectedHomeRowKeys = rows)
+    }
+
+    /**
+     * Hides or restores the selected rows through HomeCatalogSettingsRepository.
+     * No Merge Row-specific visibility preference is stored.
+     */
+    fun setIncludedHomeRowsHidden(hidden: Boolean) {
+        val keys = _uiState.value.selectedHomeRowKeys
+        if (keys.isEmpty()) return
+
+        HomeCatalogSettingsRepository.setEnabledForKeys(keys, enabled = !hidden)
+        val currentRows = HomeCatalogSettingsRepository.uiState.value.items
+            .filter { !it.isCollection }
+        _uiState.value = _uiState.value.copy(availableHomeRows = currentRows)
     }
 
     @OptIn(ExperimentalUuidApi::class)
@@ -841,7 +888,7 @@ object CollectionEditorRepository {
 
     fun save(): Boolean {
         val state = _uiState.value
-        if (state.title.isBlank()) return false
+        if (state.title.isBlank() || (state.isMergeRow && state.selectedHomeRowKeys.isEmpty())) return false
 
         val collection = Collection(
             id = state.collectionId,
@@ -849,8 +896,10 @@ object CollectionEditorRepository {
             backdropImageUrl = state.backdropImageUrl.ifBlank { null },
             pinToTop = state.pinToTop,
             viewMode = state.viewMode.name,
-            showAllTab = state.showAllTab,
-            folders = state.folders,
+            showAllTab = if (state.isMergeRow) true else state.showAllTab,
+            folders = if (state.isMergeRow) emptyList() else state.folders,
+            isMergeRow = state.isMergeRow,
+            homeRowKeys = if (state.isMergeRow) state.selectedHomeRowKeys else emptyList(),
         )
 
         CollectionMobileSettingsRepository.replaceCollectionFolderGifSettings(collection.id, collection.folders)
