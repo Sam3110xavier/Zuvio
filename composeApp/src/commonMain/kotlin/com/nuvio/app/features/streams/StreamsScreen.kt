@@ -843,7 +843,8 @@ internal fun StreamList(
             return@LaunchedEffect
         }
 
-        if (matchingSharedStream != null &&
+        val streamToAutoPlay = matchingSharedStream ?: sharedStream?.stream
+        if (streamToAutoPlay != null &&
             lastAutoFollowedStreamIdentity != sharedStreamIdentity
         ) {
             val currentParty = PartyRepository.state.value.party
@@ -857,7 +858,7 @@ internal fun StreamList(
             if (stillSameSharedStream) {
                 lastAutoFollowedStreamIdentity = sharedStreamIdentity
                 onStreamSelected(
-                    matchingSharedStream,
+                    streamToAutoPlay,
                     resumePositionMs,
                     resumeProgressFraction,
                 )
