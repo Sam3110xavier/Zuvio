@@ -227,6 +227,8 @@ data class CollectionFolder(
         get() = resolvedSources.mapNotNull { it.addonCatalogSource() }
 }
 
+const val MERGE_ROW_FOLDER_ID = "__merge_row__"
+
 @Immutable
 @Serializable
 data class Collection(
@@ -237,6 +239,8 @@ data class Collection(
     val viewMode: String = "TABBED_GRID",
     val showAllTab: Boolean = true,
     val folders: List<CollectionFolder> = emptyList(),
+    val isMergeRow: Boolean = false,
+    val homeRowKeys: List<String> = emptyList(),
 ) {
     val folderViewMode: FolderViewMode
         get() = FolderViewMode.fromString(viewMode)

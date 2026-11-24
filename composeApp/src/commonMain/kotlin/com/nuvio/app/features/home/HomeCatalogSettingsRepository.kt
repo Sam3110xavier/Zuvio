@@ -860,7 +860,7 @@ internal data class CollectionCatalogDefinition(
 
 internal fun visibleCollectionsWithUniqueIds(collections: List<Collection>): List<Collection> =
     collections
-        .filter { collection -> collection.folders.isNotEmpty() }
+        .filter { collection -> collection.isMergeRow || collection.folders.isNotEmpty() }
         .distinctBy(Collection::id)
 
 internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
@@ -869,7 +869,7 @@ internal fun buildCollectionDefinitions(collections: List<Collection>): List<Col
             key = "collection_${collection.id}",
             collectionId = collection.id,
             title = collection.title,
-            subtitle = runBlocking { getString(Res.string.collections_folder_count, collection.folders.size) },
+            subtitle = if (collection.isMergeRow) "Merge Row" else runBlocking { getString(Res.string.collections_folder_count, collection.folders.size) },
             isPinnedToTop = collection.pinToTop,
         )
     }

@@ -310,6 +310,33 @@ fun CollectionEditorScreen(
 
 
 
+            item {
+                NuvioSurfaceCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            CollectionEditorRepository.setMergeRowEnabled(!state.isMergeRow)
+                        },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text("Create Merge Row", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text("Combine selected Home Rows into one collection", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = state.isMergeRow,
+                            onCheckedChange = CollectionEditorRepository::setMergeRowEnabled,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
+                            ),
+                        )
+                    }
+                }
+            }
+
             // View Mode
         item {
                 NuvioSurfaceCard {
@@ -355,6 +382,7 @@ fun CollectionEditorScreen(
             }
 
             // Show All Tab
+            if (!state.isMergeRow) {
         item {
                 NuvioSurfaceCard {
                     Row(
@@ -391,6 +419,36 @@ fun CollectionEditorScreen(
                 }
             }
 
+            }
+
+            if (state.isMergeRow) {
+                item {
+                    NuvioSectionLabel(text = "Home Rows")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.availableHomeRows.forEach { homeRow ->
+                            FilterChip(
+                                selected = homeRow.key in state.selectedHomeRowKeys,
+                                onClick = { CollectionEditorRepository.toggleHomeRow(homeRow.key) },
+                                label = { Text(homeRow.displayTitle) },
+                                leadingIcon = if (homeRow.key in state.selectedHomeRowKeys) {
+                                    {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }
+                                } else null,
+                            )
+                        }
+                    }
+                    if (state.availableHomeRows.isEmpty()) {
+                        Text("No Home Rows are currently available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (state.selectedHomeRowKeys.isEmpty()) {
+                        Text("Select at least one Home Row.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
             // Folders Section Header
         item {
                 val newFolderTitle = stringResource(Res.string.collections_editor_new_folder)
@@ -451,6 +509,8 @@ fun CollectionEditorScreen(
                 }
             }
         }
+
+            }
 
             item {
                 Spacer(modifier = Modifier.height(96.dp + bottomInset))
