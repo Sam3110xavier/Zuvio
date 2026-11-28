@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Forward30
@@ -174,6 +175,7 @@ internal fun PlayerControlsShell(
     onOpenInExternalPlayer: (() -> Unit)? = null,
     onSubmitIntroClick: (() -> Unit)? = null,
     onSwitchEngineClick: (() -> Unit)? = null,
+    onCustomizeToolbarClick: (() -> Unit)? = null,
     onStreamInfoClick: () -> Unit = {},
     parentalWarnings: List<ParentalWarning> = emptyList(),
     showParentalGuide: Boolean = false,
@@ -318,6 +320,7 @@ internal fun PlayerControlsShell(
                     partyActive = partyActive,
                     onSwitchEngineClick = onSwitchEngineClick,
                     onDiscTitlesClick = onDiscTitlesClick,
+                    onCustomizeToolbarClick = onCustomizeToolbarClick,
                     onBack = onBack,
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -339,6 +342,7 @@ internal fun PlayerControlsShell(
                         isPortraitPlayback = isPortraitPlayback,
                         onPictureInPictureClick = onPictureInPictureClick,
                         onDiscTitlesClick = onDiscTitlesClick,
+                        onCustomizeToolbarClick = onCustomizeToolbarClick,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .windowInsetsPadding(playerToolbarTopInsets(metrics))
@@ -555,6 +559,7 @@ private fun PlayerHeader(
     partyActive: Boolean,
     onSwitchEngineClick: (() -> Unit)? = null,
     onDiscTitlesClick: (() -> Unit)? = null,
+    onCustomizeToolbarClick: (() -> Unit)? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -767,11 +772,22 @@ private fun PlayerHeader(
                                 LegacyTopButton.VIDEO_SETTINGS -> {
                                     if (onVideoSettingsClick != null) {
                                         PlayerHeaderIconButton(
-                                            icon = Icons.Rounded.Build,
+                                            icon = Icons.Rounded.Tune,
                                             contentDescription = stringResource(Res.string.player_action_video_settings),
                                             buttonSize = metrics.headerIconSize + 16.dp,
                                             iconSize = metrics.headerIconSize,
                                             onClick = onVideoSettingsClick,
+                                        )
+                                    }
+                                }
+                                LegacyTopButton.CUSTOMIZE_BUTTONS -> {
+                                    if (onCustomizeToolbarClick != null && !isLocked) {
+                                        PlayerHeaderIconButton(
+                                            icon = Icons.Rounded.Build,
+                                            contentDescription = stringResource(Res.string.settings_playback_toolbar_layout),
+                                            buttonSize = metrics.headerIconSize + 16.dp,
+                                            iconSize = metrics.headerIconSize,
+                                            onClick = onCustomizeToolbarClick,
                                         )
                                     }
                                 }

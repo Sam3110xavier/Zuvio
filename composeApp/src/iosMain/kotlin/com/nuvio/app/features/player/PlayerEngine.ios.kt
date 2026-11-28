@@ -31,6 +31,7 @@ import com.nuvio.app.core.ui.collectAfterPlayback
 import com.nuvio.app.core.ui.trimImageMemoryForPlayback
 import com.nuvio.app.features.autosync.AutoSyncMpvCoordinator
 import com.nuvio.app.features.autosync.AutoSyncMpvEngineController
+import com.nuvio.app.features.audiosync.createIosAudioSyncFallback
 import com.nuvio.app.features.autosync.IosAutoSyncMpvPlatform
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
@@ -211,7 +212,12 @@ actual fun PlatformPlayerSurface(
                 bridge.setMuted(muted)
             }
 
+            private var cachedAudioTracks: List<AudioTrack>? = null
+            private var cachedAudioGeneration = Long.MIN_VALUE
+
             override fun getAudioTracks(): List<AudioTrack> {
+                val generation = bridge.getTracksGeneration()
+                cachedAudioTracks?.let { if (generation == cachedAudioGeneration && generation >= 0) return it }
                 val count = bridge.getAudioTrackCount()
                 val tracks = (0 until count).map { i ->
                     AudioTrack(
@@ -228,6 +234,8 @@ actual fun PlatformPlayerSurface(
                     lastLoggedAudioTracks = tracksLog
                     InAppLogger.debug("Player/iOS", tracksLog)
                 }
+                cachedAudioTracks = tracks
+                cachedAudioGeneration = generation
                 return tracks
             }
 
@@ -248,6 +256,7 @@ actual fun PlatformPlayerSurface(
                             language = trackLanguage,
                             trackId = trackId,
                         ),
+                        formatBadge = subtitleFormatBadgeForCodec(bridge.getSubtitleTrackCodec(i)),
                     )
                 }
                 Logger.d(TAG) { "getSubtitleTracks: found ${tracks.size} tracks" }
@@ -375,6 +384,10 @@ actual fun PlatformPlayerSurface(
                 bridge.setSubtitleDelayMs(targetMs)
             }
 
+            override val supportsAssStyleCustomization = true
+
+            override val rendersAssNatively = true
+
             override fun applySubtitleStyle(style: SubtitleStyleState) {
                 InAppLogger.debug(
                     "Player/iOS",
@@ -392,6 +405,8 @@ actual fun PlatformPlayerSurface(
                     stripSdh = style.stripSdh,
                     styledOverlay = style.requiresComposeStyledOverlay,
                     outlineBlur = style.mpvNativeOutlineBlurLevel,
+                    customizeAss = style.appearance.customizeAss,
+                    assScale = style.assScale,
                 )
             }
 
@@ -417,18 +432,28 @@ actual fun PlatformPlayerSurface(
     val latestExternalSubtitles = rememberUpdatedState(externalSubtitles)
     val sanitizedSourceHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     val autoSyncCoordinator = remember(sourceUrl, sanitizedSourceHeaders, coroutineScope) {
+        val subtitleHeaders: (String) -> Map<String, String> = { subtitleUrl ->
+            latestExternalSubtitles.value
+                .firstOrNull { it.url == subtitleUrl }
+                ?.headers
+                .orEmpty()
+        }
         AutoSyncMpvCoordinator(
             scope = coroutineScope,
             sourceUrl = sourceUrl,
             sourceHeaders = sanitizedSourceHeaders,
-            getSubtitleHeaders = { subtitleUrl ->
-                latestExternalSubtitles.value
-                    .firstOrNull { it.url == subtitleUrl }
-                    ?.headers
-                    .orEmpty()
-            },
+            getSubtitleHeaders = subtitleHeaders,
             getPreferredLanguage = { latestPlayerSettings.value.preferredSubtitleLanguage },
             platform = IosAutoSyncMpvPlatform,
+            audioFallbackFactory = {
+                createIosAudioSyncFallback(
+                    scope = coroutineScope,
+                    bridge = bridge,
+                    sourceUrl = sourceUrl,
+                    sourceHeaders = sanitizedSourceHeaders,
+                    getSubtitleHeaders = subtitleHeaders,
+                )
+            },
         )
     }
     DisposableEffect(autoSyncCoordinator) {
@@ -453,6 +478,14 @@ actual fun PlatformPlayerSurface(
                 "hwdec=${latestPlayerSettings.value.iosHardwareDecoderMode.mpvValue} toneMapping=${latestPlayerSettings.value.iosToneMappingMode.mpvValue}",
         )
         bridge.applyIosVideoOutputSettings(latestPlayerSettings.value)
+        val playbackDrm = PlaybackDrmRegistry.forUrl(sourceUrl)
+        if (playbackDrm != null) {
+            InAppLogger.info("Player/iOS", "drm=${playbackDrm.logDescription}")
+            if (playbackDrm.isUnsupportedByMpv()) {
+                InAppLogger.warn("Player/iOS", "mpv only decrypts ClearKey keys from the playlist; this channel needs a license server")
+            }
+        }
+        bridge.setDemuxerLavfOptions(playbackDrm.mpvDemuxerLavfOptions())
         bridge.loadFileWithAudio(
             videoUrl = sourceUrl,
             audioUrl = sourceAudioUrl,

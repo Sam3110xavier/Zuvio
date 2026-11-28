@@ -3081,6 +3081,13 @@
     <string name="settings_playback_toolbar_hide">Move behind the arrow</string>
     <string name="settings_playback_toolbar_show">Always show</string>
     <string name="settings_playback_toolbar_note">Buttons that do not apply to the current video, such as Next Episode on a movie, are skipped.</string>
+    <string name="settings_playback_toolbar_align">Align</string>
+    <string name="settings_playback_toolbar_align_left">Left</string>
+    <string name="settings_playback_toolbar_align_center">Center</string>
+    <string name="settings_playback_toolbar_align_right">Right</string>
+    <string name="settings_playback_toolbar_placement_bar">Bar</string>
+    <string name="settings_playback_toolbar_placement_arrow">Arrow</string>
+    <string name="settings_playback_toolbar_placement_off">Off</string>
     <string name="player_toolbar_button_resize">Resize</string>
     <string name="player_toolbar_button_quality">Quality</string>
     <string name="player_night_mode">Night mode</string>
@@ -3159,6 +3166,7 @@
     <string name="subtitle_shadow">Drop shadow</string>
     <string name="subtitle_shadow_description">Separate the text from bright scenes.</string>
     <string name="subtitle_shadow_opacity">Shadow opacity</string>
+    <string name="subtitle_customize_ass">Customize ASS/SSA styling</string>
     <string name="subtitle_shadow_size">Shadow size</string>
     <string name="subtitle_outline_width">Outline width</string>
     <string name="subtitle_reset_appearance">Reset appearance</string>
